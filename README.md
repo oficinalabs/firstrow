@@ -32,6 +32,7 @@ Plataforma **generalista** (qualquer criador com lives/conteúdo pago), com as *
 | [docs/ARQUITETURA](docs/ARQUITETURA.md) | Vídeo, OBS, tokens, modelo de dados |
 | [docs/PAGAMENTOS](docs/PAGAMENTOS.md) | MB WAY vs Merchant of Record (decisão em aberto) |
 | [docs/ROADMAP](docs/ROADMAP.md) | Fases, MVP, piloto |
+| [docs/SPEC-MVP-FASE-0](docs/SPEC-MVP-FASE-0.md) | Spec do MVP: âmbito, esforço, custo |
 | [docs/DECISOES](docs/DECISOES.md) | Registo de decisões (o porquê) |
 | [docs/HISTORICO-EXPLORACAO](docs/HISTORICO-EXPLORACAO.md) | Como chegámos aqui |
 

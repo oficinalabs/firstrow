@@ -2,32 +2,43 @@
 
 > 🔒 fixo · ✏️ preencher · ☑️ escolher
 
-## Pagamentos
+## Pagamentos ⚠️ decisão em aberto — ver [docs/PAGAMENTOS.md](docs/PAGAMENTOS.md)
 - ☑️ **Provedor:**
   - [ ] Nenhum (grátis)
-  - [x] Polar (default — Merchant of Record, trata do IVA da UE)
+  - [ ] Polar (MoR) — **trata do IVA, mas NÃO faz MB WAY** ← conflito com o requisito
   - [ ] Lemon Squeezy (MoR)
-  - [ ] Stripe (quando tens de ser o comerciante)
-- ✏️ **Modelo:** `________`  ·  _subscrição mensal / anual / one-off_
-- ✏️ **Planos & preços:** `________`
-- ✏️ **Moeda:** `________`
-- 🔒 Se MoR: IVA, faturas e reverse-charge B2B tratados pelo provedor.
+  - [ ] Stripe (MB WAY limitado)
+  - [x] **A decidir** — provável **IfthenPay ou Eupago** (MB WAY + Multibanco nativos, PT), com o custo de sermos nós/a liga o comerciante (tratamos do IVA).
+- ✏️ **Modelo:** subscrição mensal por tier (por liga) + possível **PPV por evento** para eventos grandes.
+- ✏️ **Planos & preços:** definidos por cada liga. Ref. SmokingBars: 3,50€ (Acesso Antecipado) · 8,59€ (Live Stream).
+- ✏️ **Moeda:** EUR.
+- 🔒 **Requisito duro:** **MB WAY** é prioritário (é o que o público PT usa nos bilhetes). O trade-off MoR-vs-MB WAY está tratado em [docs/PAGAMENTOS.md](docs/PAGAMENTOS.md).
+
+## Vídeo / Streaming (adição à stack base)
+- ☑️ **Provedor:**
+  - [x] **Cloudflare Stream** (default — barato, ~1€/1000 min entregues)
+  - [ ] Mux (mais caro, features de topo)
+- 🔒 **Ingest:** RTMP/RTMPS a partir do **OBS** (o que as ligas já usam).
+- 🔒 **VOD:** gravação automática da live → arquivo gated (argumento de venda).
+- 🔒 **Acesso:** signed URLs / signed playback tokens de curta duração (nunca URL público).
+- ☑️ **DRM (Widevine/FairPlay):** [x] Fase 2 (se aparecer captura de ecrã séria) · [ ] MVP.
 
 ## Comunicação
 - 🔒 **Email transacional:** Resend (ver [Backend](03-BACKEND.md)).
-- ☑️ **Email marketing / newsletter:** [ ] Não · [ ] Resend Broadcasts · [ ] Outro: `________`
+- ☑️ **Email marketing / newsletter:** [ ] Não · [x] Resend Broadcasts (avisos de evento) · [ ] Outro: `________`
 
 ## IA
-- ☑️ **LLM:** [ ] Não · [x] Anthropic Claude
-  - ✏️ **Modelo:** `________`  ·  **Budget mensal:** `________`
+- ☑️ **LLM:** [x] Não (MVP) · [ ] Anthropic Claude
+  - _Futuro: moderação de chat, legendas._
 
 ## Outras integrações
-- ✏️ **OAuth / login social:** `________`
-- ✏️ **APIs externas:** `________`  ·  _ex.: mapas, dados financeiros, redes sociais_
-- ✏️ **Quotas / rate limits a vigiar:** `________`  ·  _o que pode partir no dia 1_
+- ✏️ **OAuth / login social:** Google (opcional).
+- ✏️ **APIs externas:** Cloudflare Stream (vídeo) · provedor de pagamento MB WAY (IfthenPay/Eupago).
+- ✏️ **Quotas / rate limits a vigiar:** minutos entregues do Cloudflare Stream (custo) · limites/rate do provedor de pagamento · nº de sessões concorrentes por conta.
 
 ## Conformidade (checklist)
 - [ ] Política de privacidade + termos
 - [ ] Banner de cookies (se aplicável)
-- [ ] Processamento de dados / RGPD mapeado
+- [ ] Processamento de dados / RGPD mapeado (ver [04-BASE-DE-DADOS.md](04-BASE-DE-DADOS.md))
 - [ ] Páginas legais ligadas no footer
+- [ ] Termos anti-partilha de conta (base para banir fugas)

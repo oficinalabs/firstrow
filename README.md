@@ -1,46 +1,42 @@
-# template-projeto
+# FirstRow
 
-Pack de arranque para projetos novos: uma **stack uniforme** + um conjunto de
-**templates de preenchimento** para que cada projeto parta sempre da mesma base.
+Plataforma de streaming e conteúdo pago com **acesso controlado** — vende lives, arquivo de VOD e conteúdo exclusivo sem perder dinheiro para links partilhados.
 
-## Como usar
+> Estado: **ideia / protótipo** · Domínio: `joinfirstrow.com` (a comprar) · Repo: `oficinalabs/firstrow`
 
-1. Clica em **Use this template** (ou copia esta pasta para o repo novo).
-2. Preenche os ficheiros de cima a baixo, **antes** de escrever código.
-3. Segue a convenção:
-   - 🔒 **Fixo** — o standard; não mexer sem uma boa razão escrita.
-   - ✏️ **Preencher** — valor específico deste projeto.
-   - ☑️ **Escolher** — marca **uma** opção com `[x]`; a recomendada já vem marcada.
+## O problema
 
-## Ficheiros
+Criadores que fazem lives pagas (hoje via Patreon + link privado do YouTube) perdem receita porque **o link circula** — quem não paga entra na mesma. FirstRow fecha essa porta.
 
-| # | Ficheiro | O quê |
-|---|---|---|
-| 00 | [GERAL](00-GERAL.md) | identidade, âmbito, stack fixa |
-| 01 | [DESIGN](01-DESIGN.md) | cores, tipografia, movimento |
-| 02 | [FRONTEND](02-FRONTEND.md) | interface e estado |
-| 03 | [BACKEND](03-BACKEND.md) | API, auth, jobs |
-| 04 | [BASE-DE-DADOS](04-BASE-DE-DADOS.md) | schema e dados |
-| 05 | [INFRA-E-DEPLOY](05-INFRA-E-DEPLOY.md) | hosting, CI/CD |
-| 06 | [SERVICOS-EXTERNOS](06-SERVICOS-EXTERNOS.md) | pagamentos, email, IA |
+## A cunha (o que nos distingue)
 
-## Stack fixa (num relance)
+Não é "mais um streaming". É **controlo de acesso à prova de fugas**:
 
-| Camada | Standard |
+- Sem link partilhável — tudo atrás de login.
+- Uma sessão a ver de cada vez, por conta.
+- Tokens de reprodução assinados e de curta duração.
+- Watermark dinâmica por espectador (rastreável).
+
+Detalhe em [`docs/SEGURANCA-E-ANTIPIRATARIA.md`](docs/SEGURANCA-E-ANTIPIRATARIA.md).
+
+## Posicionamento
+
+Plataforma **generalista** (qualquer criador com lives/conteúdo pago), com as **ligas portuguesas de batalhas escritas** como primeiro cliente (beachhead). Piloto: **SmokingBars**.
+
+## Documentação
+
+| Doc | O quê |
 |---|---|
-| Linguagem | TypeScript |
-| Framework | Next.js (App Router) |
-| Estilo / UI | Tailwind + shadcn/ui |
-| Estado do servidor | TanStack Query |
-| Formulários | React Hook Form + Zod |
-| Base de dados | PostgreSQL |
-| ORM | Drizzle |
-| Autenticação | Better Auth |
-| Email | Resend |
-| Erros | Sentry |
-| CI/CD | GitHub Actions |
-| Deploy | Vercel |
+| [docs/VISAO-E-NEGOCIO](docs/VISAO-E-NEGOCIO.md) | Posicionamento, mercado, contas reais, modelo de negócio |
+| [docs/SEGURANCA-E-ANTIPIRATARIA](docs/SEGURANCA-E-ANTIPIRATARIA.md) | Arquitetura anti-fugas |
+| [docs/ARQUITETURA](docs/ARQUITETURA.md) | Vídeo, OBS, tokens, modelo de dados |
+| [docs/PAGAMENTOS](docs/PAGAMENTOS.md) | MB WAY vs Merchant of Record (decisão em aberto) |
+| [docs/ROADMAP](docs/ROADMAP.md) | Fases, MVP, piloto |
+| [docs/DECISOES](docs/DECISOES.md) | Registo de decisões (o porquê) |
+| [docs/HISTORICO-EXPLORACAO](docs/HISTORICO-EXPLORACAO.md) | Como chegámos aqui |
 
----
+Convenções de stack e preenchimento: ficheiros `00`–`06` na raiz (do template `oficinalabs/template-projeto`).
 
-Documento vivo — ajusta à medida que testas peças novas.
+## Stack (num relance)
+
+TypeScript · Next.js (App Router) · Tailwind + shadcn/ui · Better Auth · Drizzle + PostgreSQL · Vercel · **Cloudflare Stream** (vídeo — a única adição à stack base).

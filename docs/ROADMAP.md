@@ -30,3 +30,14 @@ Objetivo: **provar que se tapa a fuga** num evento real e obter um case study.
 - F1: SmokingBars 100% na FirstRow, a receber mais que no Patreon.
 - F2: 2 ligas, co-branding a funcionar.
 - F3: 1º cliente fora do battle rap.
+
+## Backlog de features (ainda por agendar)
+
+### Bilhetes físicos + validação por QR
+Vender os bilhetes de entrada dos eventos **presenciais** na FirstRow, com **taxa baixa**, e "entregar tudo direitinho à liga":
+- **Para a liga:** lista de compradores (nome, email, quantidade), exportável.
+- **Para o cliente:** um **QR único** por bilhete, para validar à porta do recinto.
+- **Validação à entrada:** página/endpoint de scan → marca o QR como usado (evita reentradas e revenda de prints).
+- **Rail:** mesma integração de pagamento (Eupago MB WAY) já feita para o streaming.
+- **Porquê:** as ligas já vendem bilhetes por MB WAY hoje → porta para entrar nas operações delas para além do streaming; a taxa baixa é o argumento vs. bilhética genérica. Reforça o "somos a casa da liga" (streaming + bilhetes + dados dos fãs).
+- **Esboço técnico:** tabela `tickets` (evento, comprador, `qr_token` único, estado emitido/usado, `usado_em`); geração de QR; scan de validação; export para a liga. Pode cruzar com o acesso à VOD (quem foi ao vivo também vê a gravação).

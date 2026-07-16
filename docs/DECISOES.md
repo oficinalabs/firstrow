@@ -20,8 +20,11 @@ Barato (~1€/1000 min), RTMP/OBS, VOD automático, tokens assinados. Mux como a
 ## ADR-006 · Modelo: revenue-share ~10–12%, não garantias (2026-07-16)
 Undercut ao ~23% do Patreon; a liga ganha mais mesmo pagando-nos. Garantias só mais tarde, com dados. **Estado:** provisório.
 
-## ADR-007 · Pagamentos: MB WAY prioritário; MoR vs IfthenPay/Eupago em aberto (2026-07-16)
-Polar (default do template) não faz MB WAY. Ver [PAGAMENTOS.md](PAGAMENTOS.md). **Estado:** 🔴 aberto.
+## ADR-007 · Pagamentos: Eupago (split payments) (2026-07-16)
+Polar (default do template) não faz MB WAY. Spike IfthenPay vs Eupago → **Eupago**, por ter split payments (divide o pagamento entre o IBAN da liga e a comissão da FirstRow numa transação), recorrência e cartões internacionais; preço de MB WAY igual ao IfthenPay (~0,07€ + 0,7%, ~10x mais barato que os ~23% do Patreon). Ver [SPIKE-MBWAY-IFTHENPAY-VS-EUPAGO.md](SPIKE-MBWAY-IFTHENPAY-VS-EUPAGO.md) e [PAGAMENTOS.md](PAGAMENTOS.md). **Estado:** 🟢 decidido (falta confirmar split em sandbox + IVA).
 
 ## ADR-008 · Piloto: SmokingBars (2026-07-16)
 Melhor relação do dono do projeto; 131 patronos; 71% no tier de stream. **Estado:** fixo.
+
+## ADR-009 · Construir primeiro, apresentar produto pronto; cadeia de alvos (2026-07-16)
+Não esperar pelo "sim" de uma liga para construir — apresenta-se o produto **pronto**. Cadeia de prospects: **SmokingBars → Liga Knockout → PALOPs** (comunidade de escrita relevante). Nota: os PALOPs exigem **cartão** (MB WAY é só PT). Revoga o "gate" anterior do roadmap. **Estado:** fixo.

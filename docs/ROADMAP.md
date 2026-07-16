@@ -1,6 +1,6 @@
 # Roadmap — FirstRow
 
-> Gate de ouro: **não construir a sério antes da SmokingBars se comprometer com o piloto.**
+> Estratégia: **construir primeiro, apresentar o produto pronto.** Não dependemos de um único "sim" — cadeia de alvos: **SmokingBars → Liga Knockout → PALOPs** (comunidade de escrita, mas exige cartão, não MB WAY). Revoga o gate anterior — ver [DECISOES.md](DECISOES.md) ADR-009.
 
 ## Fase 0 — Piloto / validação (SmokingBars)
 Objetivo: **provar que se tapa a fuga** num evento real e obter um case study.

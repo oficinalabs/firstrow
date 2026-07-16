@@ -27,6 +27,7 @@ Plataforma **generalista** (qualquer criador com lives/conteúdo pago), com as *
 
 | Doc | O quê |
 |---|---|
+| [docs/SETUP](docs/SETUP.md) | Passo a passo para pôr o MVP a correr |
 | [docs/VISAO-E-NEGOCIO](docs/VISAO-E-NEGOCIO.md) | Posicionamento, mercado, contas reais, modelo de negócio |
 | [docs/SEGURANCA-E-ANTIPIRATARIA](docs/SEGURANCA-E-ANTIPIRATARIA.md) | Arquitetura anti-fugas |
 | [docs/ARQUITETURA](docs/ARQUITETURA.md) | Vídeo, OBS, tokens, modelo de dados |

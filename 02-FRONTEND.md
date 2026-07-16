@@ -23,7 +23,7 @@
   - [ ] tRPC (RPC tipado, apps grandes)
 
 ## Conteúdo
-- ☑️ **i18n:** [ ] Não · [x] Sim (next-intl) — idiomas: ✏️ `________`
+- ☑️ **i18n:** [ ] Não · [x] Sim (next-intl) — idiomas: ✏️ PT (produto); marca/naming em EN.
 - ☑️ **Tabelas:** [x] TanStack Table (quando houver dados tabulares)
 - ☑️ **Gráficos:** [ ] Nenhum · [x] Recharts · [ ] Tremor · [ ] Nivo / visx
 - 🔒 **SEO:** Metadata API, `sitemap.ts`, `robots.ts`, imagens OG.
@@ -33,9 +33,11 @@
 app/            rotas (App Router)
 components/     UI reutilizável
   ui/           shadcn
+  player/       leitor de vídeo + overlay de watermark (client)
 lib/            helpers, clients, utils
 server/         lógica de servidor / actions
+  video/        mint de token de reprodução + heartbeat de concorrência
 db/             schema + queries (ver Base de Dados)
 styles/         tokens + globals
 ```
-- ✏️ **Desvios a esta estrutura:** `________`
+- ✏️ **Desvios a esta estrutura:** `app/(watch)/` para rotas de visualização gated (só com sessão + entitlement). O leitor e a watermark são client components; a autorização é sempre no servidor.

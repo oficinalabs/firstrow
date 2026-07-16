@@ -1,10 +1,12 @@
 # 🎨 Design — Sistema Visual
 
 > 🔒 fixo · ✏️ preencher · ☑️ escolher (a recomendada já vem marcada)
+>
+> **Cores e tipografia: a decidir na fase de design.** Personalidade, tema e regras já fixadas.
 
 ## Cores
 > Define tudo como **tokens** (CSS variables). Nada de hex soltos pelos componentes.
-- ✏️ **Cor primária:** `#________`  ·  _ex.: #D11E5C_
+- ✏️ **Cor primária:** `#________`  ·  _a decidir_
 - ✏️ **Cor secundária:** `#________`
 - ✏️ **Cor de acento / CTA:** `#________`
 - ✏️ **Neutro — fundo (claro):** `#________`  ·  _off-white escolhido, não branco puro_
@@ -16,7 +18,7 @@
 - 🔒 **Neutros com viés:** o cinza leva um leve toque da primária (nunca cinza puro).
 
 ## Tipografia
-- ✏️ **Display (títulos):** `________`
+- ✏️ **Display (títulos):** `________`  ·  _a decidir_
 - ✏️ **Corpo (texto):** `________`
 - ☑️ **Mono (código / dados):**
   - [x] Stack do sistema (`ui-monospace, SF Mono, …`)
@@ -25,7 +27,7 @@
 - 🔒 **Escala:** define uma (ex.: 1.25) e fica nela. Títulos com `text-wrap: balance`.
 
 ## Forma & espaço
-- ✏️ **Raio de cantos:** `___px`  ·  _ex.: 3px_
+- ✏️ **Raio de cantos:** `___px`  ·  _a decidir_
 - 🔒 **Espaçamento:** múltiplos de 4px. Layout com flex/grid + `gap` (não margens soltas).
 - ✏️ **Largura máx. de conteúdo:** `____px`  ·  _ex.: 1120px_
 
@@ -40,7 +42,7 @@
 - ☑️ **Primitivas:**
   - [x] Radix (default do shadcn)
   - [ ] Base UI (mais ativo em 2026)
-- ✏️ **Ícones:** `________`  ·  _ex.: Lucide_
+- ✏️ **Ícones:** Lucide (default do shadcn).
 - ☑️ **Componentes animados (copy-paste):**
   - [ ] Nenhum
   - [x] Magic UI (micro-interações e marketing)
@@ -59,6 +61,6 @@
 - 🔒 **Regras:** anima só `transform` / `opacity` / `filter` / `clip-path` · < 300ms · ease-out · respeita `prefers-reduced-motion`.
 
 ## Tom & acessibilidade
-- ✏️ **Personalidade (3 adjetivos):** `________`
-- ✏️ **Evitar (anti-exemplos):** `________`
+- ✏️ **Personalidade (3 adjetivos):** confiante, premium, direto.
+- ✏️ **Evitar (anti-exemplos):** ar amador/cheesy; estética "streamer" barata; excesso de vermelho gaming. Tem de impor respeito às ligas.
 - 🔒 **Contraste:** WCAG AA mínimo · foco de teclado sempre visível.

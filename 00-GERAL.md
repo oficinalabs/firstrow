@@ -4,8 +4,6 @@
 > - 🔒 **Fixo** — é o standard. Não mexer sem uma boa razão escrita.
 > - ✏️ **Preencher** — valor específico deste projeto.
 > - ☑️ **Escolher** — marca **uma** opção com `[x]`. A recomendada já vem marcada.
->
-> Copia esta pasta para cada projeto novo e preenche de cima a baixo **antes** de escrever código.
 
 ## Índice
 1. [Geral](00-GERAL.md) — este ficheiro
@@ -16,16 +14,18 @@
 6. [Infra & Deploy](05-INFRA-E-DEPLOY.md) — hosting, CI/CD
 7. [Serviços Externos](06-SERVICOS-EXTERNOS.md) — pagamentos, email, IA
 
+> **Estratégia, segurança e processo** deste projeto estão em [`docs/`](docs/) — começa por [docs/VISAO-E-NEGOCIO.md](docs/VISAO-E-NEGOCIO.md).
+
 ---
 
 ## Identidade
-- ✏️ **Nome:** `________`
-- ✏️ **Slug / repositório:** `________`
-- ✏️ **Uma frase (o que é):** `________`
-- ✏️ **Domínio:** `________`
+- ✏️ **Nome:** FirstRow
+- ✏️ **Slug / repositório:** `firstrow` (`oficinalabs/firstrow`)
+- ✏️ **Uma frase (o que é):** plataforma de streaming e conteúdo pago com acesso controlado à prova de fugas.
+- ✏️ **Domínio:** `joinfirstrow.com` — **ainda não comprado** (fica para depois).
 - ☑️ **Tipo de projeto:**
+  - [x] SaaS (subscrição)
   - [ ] Site institucional / landing
-  - [ ] SaaS (subscrição)
   - [ ] Web app (sem cobrança)
   - [ ] API / serviço
   - [ ] Engine de dados (batch/cron)
@@ -35,10 +35,10 @@
   - [ ] Produção
 
 ## Âmbito
-- ✏️ **Problema que resolve:** `________`
-- ✏️ **Público-alvo:** `________`
-- ✏️ **Métrica de sucesso (uma):** `________`
-- ✏️ **Fora de âmbito (não fazer):** `________`
+- ✏️ **Problema que resolve:** criadores de lives pagas perdem receita porque o link privado é partilhado/traficado (hoje: Patreon + link de live privada no YouTube).
+- ✏️ **Público-alvo:** organizações/criadores portugueses com lives e conteúdo pago. **Primeiro nicho (beachhead):** ligas de batalhas escritas — SmokingBars (piloto) e Liga Knockout.
+- ✏️ **Métrica de sucesso (uma):** % da audiência live que paga — i.e. fechar a fuga de links, medido num evento real da SmokingBars.
+- ✏️ **Fora de âmbito (não fazer):** rede social/feed completo estilo Patreon; app nativa; qualquer mercado fora de PT por agora (Brasil descartado — ver [docs/DECISOES.md](docs/DECISOES.md)).
 
 ## Standards fixos (valem para toda a stack)
 - 🔒 **Linguagem:** TypeScript (modo strict). Python só em engines de dados.
@@ -48,7 +48,7 @@
 - 🔒 **Node:** versão LTS, fixada em `.nvmrc`.
 - 🔒 **Commits:** Conventional Commits (`feat:`, `fix:`, `chore:` …).
 - 🔒 **Branching:** `main` protegida; trabalho em branch + Pull Request.
-- ✏️ **Idiomas do produto:** `________` (ex.: PT, EN)
+- ✏️ **Idiomas do produto:** PT (produto); marca/naming em EN.
 
 ## Stack fixa (num relance)
 | Camada | Standard |
@@ -65,9 +65,10 @@
 | Erros | Sentry |
 | CI/CD | GitHub Actions |
 | Deploy | Vercel |
+| **Vídeo (adição deste projeto)** | **Cloudflare Stream** — live (RTMP/OBS) + VOD + tokens assinados |
 
-> Isto é a **espinha dorsal**. As camadas opcionais e as escolhas por projeto estão nos ficheiros seguintes.
+> Isto é a **espinha dorsal**. A única adição à stack base é o fornecedor de vídeo (ver [06-SERVICOS-EXTERNOS.md](06-SERVICOS-EXTERNOS.md) e [docs/ARQUITETURA.md](docs/ARQUITETURA.md)).
 
 ## Marca (resumo — detalhe em [Design](01-DESIGN.md))
-- ✏️ **Tom numa palavra:** `________`
-- ✏️ **Referências / inspiração:** `________`
+- ✏️ **Tom numa palavra:** exclusivo — "a porta privada para algo que vale a pena pagar".
+- ✏️ **Referências / inspiração:** modelo OTT/desporto (DAZN, UFC Fight Pass); Patreon é o que substituímos.

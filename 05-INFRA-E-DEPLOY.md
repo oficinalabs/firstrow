@@ -7,7 +7,7 @@
   - [x] Vercel (default — arrancar rápido, preview deploys)
   - [ ] Coolify + Hetzner (portfólio, custo fixo)
   - [ ] Railway (meio-termo gerido)
-- ✏️ **Base de dados alojada em:** Supabase (ver [Base de Dados](04-BASE-DE-DADOS.md))
+- ✏️ **Base de dados alojada em:** Neon (ver [Base de Dados](04-BASE-DE-DADOS.md))
 - ✏️ **Domínio & DNS:** `joinfirstrow.com` (a comprar) · DNS na Cloudflare (que também aloja o Stream) · SSL 🔒 automático.
 
 ## CI/CD (fixo)

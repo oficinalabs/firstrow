@@ -5,8 +5,8 @@ Tudo corre dentro da pasta `firstrow/`. Os comandos assumem que estás lá: `cd 
 
 ## Parte 1 — Local + base de dados (~10 min)
 1. Copia o ambiente: `cp .env.example .env`
-2. Cria uma conta grátis no **Supabase** e um projeto novo.
-3. No Supabase: **Connect** (topo) → **Connection string** → **URI**. Usa a **Session pooler** ou **Direct connection**. Copia para o `.env` em `DATABASE_URL` e troca `[YOUR-PASSWORD]` pela password do projeto.
+2. Cria uma conta grátis no **Neon** e um projeto novo (o free tier dá ~100 projetos).
+3. No Neon: **Connect** → copia a **connection string** (Pooled connection) → cola em `DATABASE_URL` no `.env`. (Opcional: `npx neon@latest init` liga o MCP do Neon ao Claude Code.)
 4. Gera o secret de auth: corre `openssl rand -base64 32` e cola o resultado em `BETTER_AUTH_SECRET`.
 5. Preenche no `.env`: `NEXT_PUBLIC_APP_URL=http://localhost:3000`, `BETTER_AUTH_URL=http://localhost:3000`, `ADMIN_EMAILS=<o teu email>`.
 6. Cria as tabelas: `pnpm db:push`

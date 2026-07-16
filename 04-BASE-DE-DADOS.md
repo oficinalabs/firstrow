@@ -5,8 +5,8 @@
 ## Motor & fornecedor
 - 🔒 **Motor:** PostgreSQL.
 - ☑️ **Fornecedor:**
-  - [x] Supabase (gerido) — **só como Postgres**; a auth é Better Auth, não Supabase Auth.
-  - [ ] Neon (serverless, scale-to-zero)
+  - [x] **Neon** (serverless Postgres, scale-to-zero) — free tier generoso (~100 projetos) + MCP oficial. Só como Postgres; a auth é Better Auth.
+  - [ ] Supabase (gerido)
   - [ ] Self-host (Coolify / Hetzner)
   - [ ] SQLite / Turso (edge, app pequena)
 - ☑️ **ORM:**
@@ -37,5 +37,5 @@
 ## Dados & conformidade
 - ✏️ **Dados pessoais (PII) guardados:** nome, email, estado de subscrição, IP/sessões. **Dados de pagamento NÃO** — ficam no provedor (não guardamos cartões).
 - 🔒 Encriptar em trânsito e em repouso. Segredos fora da BD.
-- ✏️ **Backups:** diários, retenção 30 dias (Supabase).
+- ✏️ **Backups:** point-in-time restore do Neon (retenção conforme o plano).
 - ✏️ **Retenção / apagar conta (RGPD):** apagar conta → anonimizar PII + soft delete; purga definitiva agendada. Página de pedido de exportação/eliminação.

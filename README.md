@@ -30,7 +30,8 @@ Plataforma **generalista** (qualquer criador com lives/conteúdo pago), com as *
 | [docs/VISAO-E-NEGOCIO](docs/VISAO-E-NEGOCIO.md) | Posicionamento, mercado, contas reais, modelo de negócio |
 | [docs/SEGURANCA-E-ANTIPIRATARIA](docs/SEGURANCA-E-ANTIPIRATARIA.md) | Arquitetura anti-fugas |
 | [docs/ARQUITETURA](docs/ARQUITETURA.md) | Vídeo, OBS, tokens, modelo de dados |
-| [docs/PAGAMENTOS](docs/PAGAMENTOS.md) | MB WAY vs Merchant of Record (decisão em aberto) |
+| [docs/PAGAMENTOS](docs/PAGAMENTOS.md) | MB WAY — decisão: Eupago (split payments) |
+| [docs/SPIKE-MBWAY-IFTHENPAY-VS-EUPAGO](docs/SPIKE-MBWAY-IFTHENPAY-VS-EUPAGO.md) | Spike: IfthenPay vs Eupago |
 | [docs/ROADMAP](docs/ROADMAP.md) | Fases, MVP, piloto |
 | [docs/SPEC-MVP-FASE-0](docs/SPEC-MVP-FASE-0.md) | Spec do MVP: âmbito, esforço, custo |
 | [docs/DECISOES](docs/DECISOES.md) | Registo de decisões (o porquê) |

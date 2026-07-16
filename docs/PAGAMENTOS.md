@@ -17,8 +17,13 @@ Pergunta-chave por resolver:
 - **A liga é o comerciante** dos seus subscritores (como hoje no Patreon) e a FirstRow fatura-lhe a comissão à parte — mais simples no IVA para nós, e cada liga trata do seu.
 - **Ou a FirstRow é o comerciante** (marketplace) e faz o split — mais poder e dados, mas herda todo o IVA/faturação.
 
-## Recomendação (provisória)
-Para o MVP: **IfthenPay ou Eupago** (MB WAY nativo, barato), com **a liga como comerciante** dos seus subscritores e a FirstRow a cobrar a comissão por fatura separada. Confirmar viabilidade de split/subcontas e obrigações de IVA antes de fixar.
+## Decisão
+**Eupago, com split payments** (ver [SPIKE-MBWAY-IFTHENPAY-VS-EUPAGO.md](SPIKE-MBWAY-IFTHENPAY-VS-EUPAGO.md)). O espectador paga uma vez por MB WAY e a Eupago divide automaticamente: ~88% para o IBAN da liga, ~10% de comissão para a FirstRow, taxa deduzida no payout. Resolve o "quem é o comerciante". Preço MB WAY ~0,07€ + 0,7% (~2–3% all-in, vs ~23% do Patreon). Alternativa (fallback): IfthenPay, se optarmos por "cada liga é o comerciante" e faturarmos a comissão à parte.
+
+## A confirmar na integração
+- Split com MB WAY one-off em sandbox; taxa exata do split.
+- IVA/faturação (nem Eupago nem IfthenPay são Merchant of Record — confirmar modelo com contabilista).
+- Onboarding/KYC (regulados pelo Banco de Portugal).
 
 ## Estado
-🔴 **Decisão em aberto.** Não bloqueia o desenho do resto; bloqueia o go-live. Reavaliar com um contabilista e com os termos do provedor.
+🟢 **Decidido: Eupago.** Não bloqueia o desenho; os pontos "a confirmar" bloqueiam o go-live.

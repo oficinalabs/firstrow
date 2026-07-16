@@ -2,13 +2,14 @@
 
 > 🔒 fixo · ✏️ preencher · ☑️ escolher
 
-## Pagamentos ⚠️ decisão em aberto — ver [docs/PAGAMENTOS.md](docs/PAGAMENTOS.md)
+## Pagamentos ✅ Eupago (split payments) — ver [docs/PAGAMENTOS.md](docs/PAGAMENTOS.md)
 - ☑️ **Provedor:**
   - [ ] Nenhum (grátis)
-  - [ ] Polar (MoR) — **trata do IVA, mas NÃO faz MB WAY** ← conflito com o requisito
+  - [ ] Polar (MoR) — trata do IVA, mas NÃO faz MB WAY
   - [ ] Lemon Squeezy (MoR)
   - [ ] Stripe (MB WAY limitado)
-  - [x] **A decidir** — provável **IfthenPay ou Eupago** (MB WAY + Multibanco nativos, PT), com o custo de sermos nós/a liga o comerciante (tratamos do IVA).
+  - [ ] IfthenPay (fallback — simples, sem split)
+  - [x] **Eupago** — MB WAY + Multibanco + cartão; **split payments** (comissão da FirstRow deduzida automaticamente); recorrência p/ Fase 1. Nós/a liga tratamos do IVA (não é MoR).
 - ✏️ **Modelo:** subscrição mensal por tier (por liga) + possível **PPV por evento** para eventos grandes.
 - ✏️ **Planos & preços:** definidos por cada liga. Ref. SmokingBars: 3,50€ (Acesso Antecipado) · 8,59€ (Live Stream).
 - ✏️ **Moeda:** EUR.

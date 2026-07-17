@@ -7,11 +7,14 @@ const HINT_TONES = {
   destructive: "text-destructive",
 } as const;
 
-// Cartão de indicador do backoffice: label mono uppercase, valor grande em
-// mono tabular (€ e contagens chegam já formatados por lib/format.ts).
+// Cartão de indicador: label mono uppercase + valor grande mono tabular (€ e
+// contagens chegam já formatados por lib/format.ts). Sufixo (`sub`), pista
+// (`hint`/`hintTone`) e cor do valor (`valueClassName`) são opcionais.
+// Canónico — usado pelo backoffice e pelos bilhetes.
 export function StatCard({
   label,
   value,
+  sub,
   hint,
   hintTone = "muted",
   valueClassName,
@@ -20,6 +23,7 @@ export function StatCard({
 }: React.ComponentProps<"div"> & {
   label: string;
   value: React.ReactNode;
+  sub?: React.ReactNode;
   hint?: React.ReactNode;
   hintTone?: keyof typeof HINT_TONES;
   valueClassName?: string;
@@ -31,6 +35,7 @@ export function StatCard({
       </span>
       <span className={cn("mt-2 font-mono text-2xl font-semibold tabular-nums", valueClassName)}>
         {value}
+        {sub ? <span className="text-sm font-normal text-muted-foreground">{sub}</span> : null}
       </span>
       {hint ? <span className={cn("mt-1 text-xs", HINT_TONES[hintTone])}>{hint}</span> : null}
     </Card>

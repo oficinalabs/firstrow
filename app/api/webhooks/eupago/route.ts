@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
+import { sendReceiptEmail } from "@/lib/email";
 import { type EupagoWebhookPayload, verifyWebhookSignature } from "@/lib/eupago";
+import { tenant } from "@/lib/tenant";
 import { activateEntitlement } from "@/server/entitlements";
 import { issueTicket, refundTicket } from "@/server/tickets";
 
@@ -15,11 +17,25 @@ export async function POST(req: Request) {
 
   // Só ativamos o acesso quando o pagamento é confirmado. O prefixo do
   // identifier distingue bilhetes físicos ("tkt_") de entitlements (uuid puro).
+  // A ativação devolve o recibo só na 1ª confirmação (idempotente) → email 1x.
   if (payload.status === "Paid" && payload.identifier) {
-    if (payload.identifier.startsWith("tkt_")) {
-      await issueTicket(payload.identifier, String(payload.reference ?? ""));
-    } else {
-      await activateEntitlement(payload.identifier, String(payload.reference ?? ""));
+    const ref = String(payload.reference ?? "");
+    const receipt = payload.identifier.startsWith("tkt_")
+      ? await issueTicket(payload.identifier, ref)
+      : await activateEntitlement(payload.identifier, ref);
+
+    if (receipt) {
+      const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? "";
+      await sendReceiptEmail({
+        nome: receipt.nome ?? undefined,
+        eventoTitulo: receipt.eventoTitulo,
+        canalNome: tenant.name,
+        eventoData: receipt.eventoData,
+        valorCents: receipt.valorCents,
+        numeroRecibo: ref || undefined,
+        emailConta: receipt.emailConta,
+        urlEvento: `${appUrl}/eventos/${receipt.eventId}`,
+      });
     }
   }
 

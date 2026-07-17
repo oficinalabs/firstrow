@@ -3,6 +3,7 @@ import { and, desc, eq, gt, inArray, isNotNull, or, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { user } from "@/db/auth-schema";
 import { events, tickets } from "@/db/schema";
+import { buildReceipt, type ReceiptData } from "@/server/receipts";
 
 // Uma compra pendente segura lugar durante este intervalo (o MB WAY expira aos
 // 5 min); depois deixa de contar para a lotação e o retry reutiliza-a.
@@ -96,11 +97,21 @@ export async function createPendingTicket(
 
 // Pagamento confirmado → emite o QR. Idempotente: os webhooks repetem-se e o
 // token nunca é regenerado (só transita a partir de "pending").
-export async function issueTicket(ticketId: string, providerRef: string): Promise<void> {
-  await db
+export async function issueTicket(
+  ticketId: string,
+  providerRef: string,
+): Promise<ReceiptData | null> {
+  const [row] = await db
     .update(tickets)
     .set({ status: "issued", qrToken: newQrToken(), providerRef, updatedAt: new Date() })
-    .where(and(eq(tickets.id, ticketId), eq(tickets.status, "pending")));
+    .where(and(eq(tickets.id, ticketId), eq(tickets.status, "pending")))
+    .returning({
+      userId: tickets.userId,
+      eventId: tickets.eventId,
+      priceCents: tickets.priceCents,
+    });
+  if (!row) return null;
+  return buildReceipt(row.userId, row.eventId, row.priceCents);
 }
 
 export async function refundTicket(ticketId: string): Promise<void> {

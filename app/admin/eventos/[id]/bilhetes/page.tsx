@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { BuyersTable } from "@/components/tickets/buyers-table";
-import { StatCard } from "@/components/tickets/stat-card";
+import { StatCard } from "@/components/ui/stat-card";
 import { BackofficeShell } from "@/components/ui/backoffice-shell";
 import { buttonVariants } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -73,7 +73,11 @@ export default async function AdminEventoBilhetesPage({
                 }
               />
               <StatCard label="Receita bilhetes" value={formatEuro(stats.receitaCents)} />
-              <StatCard label="Já entraram" value={formatNumber(stats.entraram)} tone="success" />
+              <StatCard
+                label="Já entraram"
+                value={formatNumber(stats.entraram)}
+                valueClassName="text-success"
+              />
               <StatCard label="Por usar" value={formatNumber(porUsar)} />
             </div>
 

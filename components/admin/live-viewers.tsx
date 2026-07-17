@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { StatCard } from "@/components/admin/stat-card";
+import { StatCard } from "@/components/ui/stat-card";
 import { formatNumber } from "@/lib/format";
 
 type LiveCounts = { viewers: number; blockedToday: number };

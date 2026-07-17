@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<meta name="design_doc_mode" content="canvas">
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@600;700;800;900&family=Instrument+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#1A1A1E;}
+a{color:#EAE04A;text-decoration:none;} a:hover{color:#F3EC77;}
+@keyframes fr-pulse{0%,100%{opacity:1;}50%{opacity:0.35;}}
+</style>
+</helmet>
+<section id="tokens" data-screen-label="Tokens e componentes" style="display:flex;flex-direction:column;gap:26px;padding:48px;align-items:flex-start;font-family:'Instrument Sans';">
+  <div style="display:flex;flex-direction:column;gap:8px;">
+    <div style="font:800 24px Archivo;color:#F5F4F0;">FirstRow — Design tokens &amp; componentes base</div>
+    <div style="font:400 12px 'IBM Plex Mono';color:#9A9AA2;">neutros quentes · ação TINTA (inverte em dark) · AO VIVO #E5372B só para live · acento LIMÃO #EAE04A — forte nos 2 modos: em light é marcador/fundo com texto tinta, em dark é texto/linha · raio 6px</div>
+    <div style="font:400 12px 'IBM Plex Mono';color:#9A9AA2;">ecrãs: <a href="Espectador.dc.html">Espectador</a></div>
+  </div>
+  <div style="display:flex;flex-wrap:wrap;gap:24px;max-width:2200px;align-items:flex-start;">
+
+    <div style="background:#202024;border:1px solid #2E2E34;border-radius:16px;padding:20px;width:740px;display:flex;flex-direction:column;gap:16px;">
+      <div style="font:700 15px Archivo;color:#F5F4F0;">Paleta</div>
+      <div style="font:500 11px 'IBM Plex Mono';color:#9A9AA2;">NEUTROS QUENTES — LADO CLARO</div>
+      <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:10px;">
+        <div><div style="height:44px;border-radius:6px;background:#F6F5F1;"></div><div style="font:500 10.5px 'IBM Plex Mono';color:#F5F4F0;margin-top:6px;">#F6F5F1</div><div style="font:400 10px 'IBM Plex Mono';color:#9A9AA2;">fundo</div></div>
+        <div><div style="height:44px;border-radius:6px;background:#FCFBF8;"></div><div style="font:500 10.5px 'IBM Plex Mono';color:#F5F4F0;margin-top:6px;">#FCFBF8</div><div style="font:400 10px 'IBM Plex Mono';color:#9A9AA2;">cartão</div></div>
+        <div><div style="height:44px;border-radius:6px;background:#ECEAE3;"></div><div style="font:500 10.5px 'IBM Plex Mono';color:#F5F4F0;margin-top:6px;">#ECEAE3</div><div style="font:400 10px 'IBM Plex Mono';color:#9A9AA2;">muted</div></div>
+        <div><div style="height:44px;border-radius:6px;background:#DFDCD4;"></div><div style="font:500 10.5px 'IBM Plex Mono';color:#F5F4F0;margin-top:6px;">#DFDCD4</div><div style="font:400 10px 'IBM Plex Mono';color:#9A9AA2;">linha</div></div>
+        <div><div style="height:44px;border-radius:6px;background:#6E6A61;"></div><div style="font:500 10.5px 'IBM Plex Mono';color:#F5F4F0;margin-top:6px;">#6E6A61</div><div style="font:400 10px 'IBM Plex Mono';color:#9A9AA2;">texto 2º</div></div>
+        <div><div style="height:44px;border-radius:6px;background:#3B3934;"></div><div style="font:500 10.5px 'IBM Plex Mono';color:#F5F4F0;margin-top:6px;">#3B3934</div><div style="font:400 10px 'IBM Plex Mono';color:#9A9AA2;">grafite</div></div>
+        <div><div style="height:44px;border-radius:6px;background:#161512;border:1px solid #2E2E34;"></div><div style="font:500 10.5px 'IBM Plex Mono';color:#F5F4F0;margin-top:6px;">#161512</div><div style="font:400 10px 'IBM Plex Mono';color:#9A9AA2;">tinta</div></div>
+      </div>
+      <div style="font:500 11px 'IBM Plex Mono';color:#9A9AA2;">SUPERFÍCIES — LADO ESCURO (espectador)</div>
+      <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:10px;">
+        <div><div style="height:44px;border-radius:6px;background:#0F0E0C;border:1px solid #2E2E34;"></div><div style="font:500 10.5px 'IBM Plex Mono';color:#F5F4F0;margin-top:6px;">#0F0E0C</div><div style="font:400 10px 'IBM Plex Mono';color:#9A9AA2;">barra FR</div></div>
+        <div><div style="height:44px;border-radius:6px;background:#131211;border:1px solid #2E2E34;"></div><div style="font:500 10.5px 'IBM Plex Mono';color:#F5F4F0;margin-top:6px;">#131211</div><div style="font:400 10px 'IBM Plex Mono';color:#9A9AA2;">fundo</div></div>
+        <div><div style="height:44px;border-radius:6px;background:#1B1A18;border:1px solid #2E2E34;"></div><div style="font:500 10.5px 'IBM Plex Mono';color:#F5F4F0;margin-top:6px;">#1B1A18</div><div style="font:400 10px 'IBM Plex Mono';color:#9A9AA2;">cartão</div></div>
+        <div><div style="height:44px;border-radius:6px;background:#2B2926;"></div><div style="font:500 10.5px 'IBM Plex Mono';color:#F5F4F0;margin-top:6px;">#2B2926</div><div style="font:400 10px 'IBM Plex Mono';color:#9A9AA2;">linha</div></div>
+        <div><div style="height:44px;border-radius:6px;background:#A39F96;"></div><div style="font:500 10.5px 'IBM Plex Mono';color:#F5F4F0;margin-top:6px;">#A39F96</div><div style="font:400 10px 'IBM Plex Mono';color:#9A9AA2;">texto 2º</div></div>
+        <div><div style="height:44px;border-radius:6px;background:#F1EFEA;"></div><div style="font:500 10.5px 'IBM Plex Mono';color:#F5F4F0;margin-top:6px;">#F1EFEA</div><div style="font:400 10px 'IBM Plex Mono';color:#9A9AA2;">texto</div></div>
+        <div></div>
+      </div>
+      <div style="font:500 11px 'IBM Plex Mono';color:#9A9AA2;">FUNCIONAIS</div>
+      <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:10px;">
+        <div><div style="height:44px;border-radius:6px;background:#161512;border:1px solid #2E2E34;"></div><div style="font:500 10.5px 'IBM Plex Mono';color:#F5F4F0;margin-top:6px;">#161512</div><div style="font:400 10px 'IBM Plex Mono';color:#9A9AA2;">ação (tinta)</div></div>
+        <div><div style="height:44px;border-radius:6px;background:#2A2823;border:1px solid #2E2E34;"></div><div style="font:500 10.5px 'IBM Plex Mono';color:#F5F4F0;margin-top:6px;">#2A2823</div><div style="font:400 10px 'IBM Plex Mono';color:#9A9AA2;">ação hover</div></div>
+        <div><div style="height:44px;border-radius:6px;background:#E5372B;"></div><div style="font:500 10.5px 'IBM Plex Mono';color:#F5F4F0;margin-top:6px;">#E5372B</div><div style="font:400 10px 'IBM Plex Mono';color:#9A9AA2;">AO VIVO — só live</div></div>
+        <div><div style="height:44px;border-radius:6px;background:#A62E24;"></div><div style="font:500 10.5px 'IBM Plex Mono';color:#F5F4F0;margin-top:6px;">#A62E24</div><div style="font:400 10px 'IBM Plex Mono';color:#9A9AA2;">destrutivo</div></div><div><div style="height:44px;border-radius:6px;background:#2F9E63;"></div><div style="font:500 10.5px 'IBM Plex Mono';color:#F5F4F0;margin-top:6px;">#2F9E63</div><div style="font:400 10px 'IBM Plex Mono';color:#9A9AA2;">sucesso</div></div>
+        <div><div style="height:44px;border-radius:6px;background:#E08A1E;"></div><div style="font:500 10.5px 'IBM Plex Mono';color:#F5F4F0;margin-top:6px;">#E08A1E</div><div style="font:400 10px 'IBM Plex Mono';color:#9A9AA2;">aviso</div></div><div><div style="height:44px;border-radius:6px;background:#EAE04A;"></div><div style="font:500 10.5px 'IBM Plex Mono';color:#F5F4F0;margin-top:6px;">#EAE04A</div><div style="font:400 10px 'IBM Plex Mono';color:#9A9AA2;">limão — acento</div></div>
+      </div>
+      <div style="background:#18181C;border:1px solid #2E2E34;border-radius:6px;padding:14px 16px;font:400 11px 'IBM Plex Mono';color:#A39F96;line-height:1.8;">--background #F6F5F1 · --foreground #161512 · --card #FCFBF8 · --border #DFDCD4<br>--primary #161512 (hover #2A2823) · --primary-foreground #F6F5F1 · --muted #ECEAE3 · --muted-foreground #6E6A61<br>--destructive #A62E24 · --live #E5372B (custom) · --success #2F9E63 · --radius 6px<br>dark: --background #131211 · --card #1B1A18 · --border #2B2926 · --foreground #F1EFEA · --primary #F1EFEA<br>--accent #EAE04A (limão) — em light: fundo/marcador com texto tinta; em dark: texto e linhas; nunca em CTAs (sempre tinta)</div>
+    </div>
+
+    <div style="background:#202024;border:1px solid #2E2E34;border-radius:16px;padding:20px;width:560px;display:flex;flex-direction:column;gap:16px;">
+      <div style="font:700 15px Archivo;color:#F5F4F0;">Tipografia</div>
+      <div style="background:#FCFBF8;border-radius:8px;padding:22px;display:flex;flex-direction:column;gap:16px;color:#161512;">
+        <div>
+          <div style="font:400 10px 'IBM Plex Mono';color:#6E6A61;margin-bottom:5px;">ARCHIVO 800 — DISPLAY, TÍTULOS DE EVENTO</div>
+          <div style="font:800 36px Archivo;letter-spacing:-0.01em;line-height:1.05;">A tua primeira fila.</div>
+        </div>
+        <div>
+          <div style="font:400 10px 'IBM Plex Mono';color:#6E6A61;margin-bottom:5px;">ARCHIVO 700 — TÍTULOS DE SECÇÃO</div>
+          <div style="font:700 22px Archivo;">SB Clash #14 — Final de Verão</div>
+        </div>
+        <div>
+          <div style="font:400 10px 'IBM Plex Mono';color:#6E6A61;margin-bottom:5px;">INSTRUMENT SANS 400/600 — UI E CORPO</div>
+          <div style="font:400 15px 'Instrument Sans';line-height:1.55;max-width:44ch;">Compra com MB WAY e vê em qualquer dispositivo. Uma sessão por conta — sem links partilháveis.</div>
+        </div>
+        <div>
+          <div style="font:400 10px 'IBM Plex Mono';color:#6E6A61;margin-bottom:5px;">IBM PLEX MONO 500 — NÚMEROS, HORAS, CÓDIGOS, LABELS</div>
+          <div style="font:500 15px 'IBM Plex Mono';">7,50 € · 21:00 · rtmp://in.joinfirstrow.com/live</div>
+        </div>
+      </div>
+      <div style="font:400 11px 'IBM Plex Mono';color:#9A9AA2;">escala: 12 · 13 · 14 · 16 · 18 · 22 · 28 · 36 · 48 — corpo 14/16, tabelas 13</div>
+    </div>
+
+    <div style="background:#202024;border:1px solid #2E2E34;border-radius:16px;padding:20px;width:360px;display:flex;flex-direction:column;gap:16px;">
+      <div style="font:700 15px Archivo;color:#F5F4F0;">Espaço, raio, foco</div>
+      <div style="display:flex;flex-direction:column;gap:6px;">
+        <div style="display:flex;align-items:center;gap:10px;"><div style="width:4px;height:12px;background:#8D8A82;"></div><span style="font:400 10.5px 'IBM Plex Mono';color:#9A9AA2;">4</span></div>
+        <div style="display:flex;align-items:center;gap:10px;"><div style="width:8px;height:12px;background:#8D8A82;"></div><span style="font:400 10.5px 'IBM Plex Mono';color:#9A9AA2;">8</span></div>
+        <div style="display:flex;align-items:center;gap:10px;"><div style="width:12px;height:12px;background:#8D8A82;"></div><span style="font:400 10.5px 'IBM Plex Mono';color:#9A9AA2;">12</span></div>
+        <div style="display:flex;align-items:center;gap:10px;"><div style="width:16px;height:12px;background:#8D8A82;"></div><span style="font:400 10.5px 'IBM Plex Mono';color:#9A9AA2;">16</span></div>
+        <div style="display:flex;align-items:center;gap:10px;"><div style="width:24px;height:12px;background:#8D8A82;"></div><span style="font:400 10.5px 'IBM Plex Mono';color:#9A9AA2;">24</span></div>
+        <div style="display:flex;align-items:center;gap:10px;"><div style="width:32px;height:12px;background:#8D8A82;"></div><span style="font:400 10.5px 'IBM Plex Mono';color:#9A9AA2;">32</span></div>
+        <div style="display:flex;align-items:center;gap:10px;"><div style="width:48px;height:12px;background:#8D8A82;"></div><span style="font:400 10.5px 'IBM Plex Mono';color:#9A9AA2;">48</span></div>
+        <div style="display:flex;align-items:center;gap:10px;"><div style="width:64px;height:12px;background:#8D8A82;"></div><span style="font:400 10.5px 'IBM Plex Mono';color:#9A9AA2;">64</span></div>
+      </div>
+      <div style="display:flex;gap:14px;align-items:center;">
+        <div style="width:88px;height:56px;border:1px solid #DFDCD4;border-radius:6px;background:#FCFBF8;"></div>
+        <div style="font:400 11px 'IBM Plex Mono';color:#9A9AA2;line-height:1.6;">raio único: 6px<br>(nada de pill, nada de 2xl)</div>
+      </div>
+      <div style="display:flex;gap:14px;align-items:center;">
+        <div style="width:88px;height:40px;border:1px solid #DFDCD4;border-radius:6px;background:#FCFBF8;outline:2px solid #E3D93F;outline-offset:2px;"></div>
+        <div style="font:400 11px 'IBM Plex Mono';color:#9A9AA2;line-height:1.6;">foco teclado:<br>ring 2px limão, offset 2</div>
+      </div>
+    </div>
+
+    <div style="background:#202024;border:1px solid #2E2E34;border-radius:16px;padding:20px;width:620px;display:flex;flex-direction:column;gap:12px;">
+      <div style="font:700 15px Archivo;color:#F5F4F0;">Botões</div>
+      <div style="background:#F6F5F1;border-radius:8px;padding:18px;display:flex;flex-wrap:wrap;gap:10px;align-items:center;">
+        <button style="font:600 14px 'Instrument Sans';background:#161512;color:#F1EFEA;border:none;border-radius:6px;padding:0 18px;height:40px;cursor:pointer;">Comprar acesso · 7,50 €</button>
+        <button style="font:600 14px 'Instrument Sans';background:transparent;color:#161512;border:1px solid #C6C2B8;border-radius:6px;padding:0 16px;height:40px;cursor:pointer;">Bilhete físico · 12 €</button>
+        <button style="font:600 14px 'Instrument Sans';background:transparent;color:#6E6A61;border:none;border-radius:6px;padding:0 12px;height:40px;cursor:pointer;">Cancelar</button>
+        <button style="font:600 14px 'Instrument Sans';background:#A62E24;color:#FDF6F4;border:none;border-radius:6px;padding:0 16px;height:40px;cursor:pointer;">Revogar sessão</button>
+        <button style="font:600 14px 'Instrument Sans';background:#ECEAE3;color:#A6A29A;border:none;border-radius:6px;padding:0 18px;height:40px;cursor:default;">Esgotado</button>
+      </div>
+      <div style="background:#131211;border-radius:8px;padding:18px;display:flex;flex-wrap:wrap;gap:10px;align-items:center;">
+        <button style="font:600 14px 'Instrument Sans';background:#F1EFEA;color:#161512;border:none;border-radius:6px;padding:0 18px;height:40px;cursor:pointer;">Comprar acesso · 7,50 €</button>
+        <button style="font:600 14px 'Instrument Sans';background:transparent;color:#F1EFEA;border:1px solid #3B3934;border-radius:6px;padding:0 16px;height:40px;cursor:pointer;">Bilhete físico · 12 €</button>
+        <button style="font:700 14px 'Instrument Sans';background:#E5372B;color:#FFF6F4;border:none;border-radius:6px;padding:0 18px;height:40px;cursor:pointer;display:flex;align-items:center;gap:8px;"><span style="width:8px;height:8px;border-radius:50%;background:#FFF6F4;animation:fr-pulse 1.6s infinite;"></span>Ver agora — AO VIVO</button>
+      </div>
+      <div style="font:400 11px 'IBM Plex Mono';color:#9A9AA2;line-height:1.6;">tinta = ação principal, 1 por ecrã (inverte em dark) · vermelho #E5372B = só AO VIVO e urgência · limão só em detalhes, nunca em CTAs · CTAs de compra dizem sempre o preço</div>
+    </div>
+
+    <div style="background:#202024;border:1px solid #2E2E34;border-radius:16px;padding:20px;width:400px;display:flex;flex-direction:column;gap:12px;">
+      <div style="font:700 15px Archivo;color:#F5F4F0;">Inputs</div>
+      <div style="background:#FCFBF8;border-radius:8px;padding:18px;display:flex;flex-direction:column;gap:16px;">
+        <div style="display:flex;flex-direction:column;gap:6px;">
+          <label style="font:600 13px 'Instrument Sans';color:#161512;">Email</label>
+          <input type="text" value="rui.m@gmail.com" style="font:400 14.5px 'Instrument Sans';color:#161512;background:#FFFFFF;border:1px solid #C6C2B8;border-radius:6px;height:44px;padding:0 12px;">
+        </div>
+        <div style="display:flex;flex-direction:column;gap:6px;">
+          <label style="font:600 13px 'Instrument Sans';color:#161512;">Telemóvel (MB WAY)</label>
+          <div style="display:flex;">
+            <span style="font:500 14px 'IBM Plex Mono';color:#6E6A61;background:#ECEAE3;border:1px solid #C6C2B8;border-right:none;border-radius:6px 0 0 6px;height:44px;display:flex;align-items:center;padding:0 12px;">+351</span>
+            <input type="text" value="91 234 56" style="font:500 15px 'IBM Plex Mono';color:#161512;background:#FFFFFF;border:1px solid #A62E24;border-radius:0 6px 6px 0;height:44px;padding:0 12px;flex:1;min-width:0;">
+          </div>
+          <div style="font:400 12.5px 'Instrument Sans';color:#A62E24;">Confirma o número — faltam dígitos.</div>
+        </div>
+      </div>
+      <div style="font:400 11px 'IBM Plex Mono';color:#9A9AA2;">altura 44px (touch) · erro no bordo + frase humana por baixo</div>
+    </div>
+
+    <div style="background:#202024;border:1px solid #2E2E34;border-radius:16px;padding:20px;width:400px;display:flex;flex-direction:column;gap:12px;">
+      <div style="font:700 15px Archivo;color:#F5F4F0;">Badges e estados</div>
+      <div style="background:#131211;border-radius:8px;padding:18px;display:flex;flex-wrap:wrap;gap:10px;align-items:center;">
+        <span style="font:700 11px 'IBM Plex Mono';letter-spacing:0.08em;background:#E5372B;color:#FFF6F4;border-radius:4px;padding:5px 9px;display:inline-flex;align-items:center;gap:6px;"><span style="width:6px;height:6px;border-radius:50%;background:#FFF6F4;animation:fr-pulse 1.6s infinite;"></span>AO VIVO</span>
+        <span style="font:600 11px 'IBM Plex Mono';letter-spacing:0.08em;background:transparent;color:#A39F96;border:1px solid #3B3934;border-radius:4px;padding:4px 9px;">SÁB · 21:00</span>
+        <span style="font:600 11px 'IBM Plex Mono';letter-spacing:0.08em;background:#2B2926;color:#A39F96;border-radius:4px;padding:5px 9px;">ESGOTADO</span>
+        <span style="font:600 11px 'IBM Plex Mono';letter-spacing:0.08em;background:transparent;color:#EAE04A;border:1px solid #EAE04A;border-radius:4px;padding:4px 9px;">SUBSCRITORES</span>
+      </div>
+      <div style="background:#FCFBF8;border-radius:8px;padding:18px;display:flex;flex-wrap:wrap;gap:10px;align-items:center;">
+        <span style="font:700 11px 'IBM Plex Mono';letter-spacing:0.08em;background:#2F9E63;color:#F2FBF5;border-radius:4px;padding:5px 9px;">VÁLIDO — 1ª ENTRADA</span>
+        <span style="font:700 11px 'IBM Plex Mono';letter-spacing:0.08em;background:#A62E24;color:#FDF6F4;border-radius:4px;padding:5px 9px;">JÁ USADO ÀS 21:34</span>
+        <span style="font:700 11px 'IBM Plex Mono';letter-spacing:0.08em;background:#E08A1E;color:#FFF9F1;border-radius:4px;padding:5px 9px;">OUTRO EVENTO</span>
+      </div>
+    </div>
+
+    <div style="background:#202024;border:1px solid #2E2E34;border-radius:16px;padding:20px;width:620px;display:flex;flex-direction:column;gap:12px;">
+      <div style="font:700 15px Archivo;color:#F5F4F0;">Tabela compacta (backoffice)</div>
+      <div style="background:#FCFBF8;border-radius:8px;padding:6px 18px 10px;">
+        <div style="display:grid;grid-template-columns:86px 1fr 1fr 90px;gap:12px;padding:10px 0 8px;border-bottom:1px solid #DFDCD4;font:600 10.5px 'IBM Plex Mono';letter-spacing:0.07em;color:#6E6A61;">
+          <span>DATA</span><span>COMPRADOR</span><span>EVENTO</span><span style="text-align:right;">VALOR</span>
+        </div>
+        <div style="display:grid;grid-template-columns:86px 1fr 1fr 90px;gap:12px;padding:9px 0;border-bottom:1px solid #ECEAE3;font:400 13px 'Instrument Sans';color:#161512;align-items:center;">
+          <span style="font:400 12px 'IBM Plex Mono';color:#6E6A61;">12 jul</span><span>Marta Silveira</span><span style="color:#6E6A61;">SB Clash #14 · PPV</span><span style="font:500 13px 'IBM Plex Mono';text-align:right;">7,50 €</span>
+        </div>
+        <div style="display:grid;grid-template-columns:86px 1fr 1fr 90px;gap:12px;padding:9px 0;border-bottom:1px solid #ECEAE3;font:400 13px 'Instrument Sans';color:#161512;align-items:center;">
+          <span style="font:400 12px 'IBM Plex Mono';color:#6E6A61;">12 jul</span><span>João Tavares</span><span style="color:#6E6A61;">SB Clash #14 · Bilhete</span><span style="font:500 13px 'IBM Plex Mono';text-align:right;">12,00 €</span>
+        </div>
+        <div style="display:grid;grid-template-columns:86px 1fr 1fr 90px;gap:12px;padding:9px 0;font:400 13px 'Instrument Sans';color:#161512;align-items:center;">
+          <span style="font:400 12px 'IBM Plex Mono';color:#6E6A61;">11 jul</span><span>André Boavida</span><span style="color:#6E6A61;">Subscrição · Primeira Fila</span><span style="font:500 13px 'IBM Plex Mono';text-align:right;">9,99 €</span>
+        </div>
+      </div>
+      <div style="font:400 11px 'IBM Plex Mono';color:#9A9AA2;">linhas 36px · datas e € em mono tabular à direita · zebra não: só hairlines</div>
+    </div>
+
+    <div style="background:#202024;border:1px solid #2E2E34;border-radius:16px;padding:20px;width:620px;display:flex;flex-direction:column;gap:12px;">
+      <div style="font:700 15px Archivo;color:#F5F4F0;">Player frame + watermark</div>
+      <div style="position:relative;aspect-ratio:16/9;border-radius:6px;overflow:hidden;background:repeating-linear-gradient(45deg,#1D1C1A,#1D1C1A 8px,#181715 8px,#181715 16px);">
+        <span style="position:absolute;top:12px;left:12px;font:700 11px 'IBM Plex Mono';letter-spacing:0.08em;background:#E5372B;color:#FFF6F4;border-radius:4px;padding:5px 9px;display:inline-flex;align-items:center;gap:6px;"><span style="width:6px;height:6px;border-radius:50%;background:#FFF6F4;animation:fr-pulse 1.6s infinite;"></span>AO VIVO</span>
+        <span style="position:absolute;top:12px;right:12px;font:500 11px 'IBM Plex Mono';background:rgba(15,14,12,0.7);color:#F1EFEA;border-radius:4px;padding:5px 9px;">1 204 a ver</span>
+        <div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;pointer-events:none;">
+          <span style="font:500 13px 'IBM Plex Mono';color:rgba(241,239,234,0.3);transform:rotate(-12deg);white-space:nowrap;">rui.m@gmail.com · FirstRow · 21:47:12</span>
+        </div>
+        <div style="position:absolute;left:0;right:0;bottom:0;padding:10px 14px;display:flex;align-items:center;gap:12px;background:linear-gradient(transparent,rgba(15,14,12,0.85));">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="#F1EFEA"><polygon points="6,4 20,12 6,20"></polygon></svg>
+          <div style="flex:1;height:3px;border-radius:2px;background:rgba(241,239,234,0.25);position:relative;"><div style="position:absolute;left:0;top:0;bottom:0;width:92%;background:#E5372B;border-radius:2px;"></div></div>
+          <span style="font:500 11px 'IBM Plex Mono';color:#E5372B;">DIRETO</span>
+        </div>
+        <div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;"><span style="font:400 10px 'IBM Plex Mono';color:#57544E;margin-top:64px;">[ stream 16:9 ]</span></div>
+      </div>
+      <div style="font:400 11px 'IBM Plex Mono';color:#9A9AA2;line-height:1.6;">watermark: email + hora, mono 13px, 30% opacidade, roda de posição a cada 90s · progresso a vermelho só em direto</div>
+    </div>
+
+    <div style="background:#202024;border:1px solid #2E2E34;border-radius:16px;padding:20px;width:740px;display:flex;flex-direction:column;gap:12px;">
+      <div style="font:700 15px Archivo;color:#F5F4F0;">Co-branding — o canal dentro da moldura FirstRow</div>
+      <div style="border-radius:8px;overflow:hidden;border:1px solid #2E2E34;">
+        <div style="background:#0F0E0C;height:44px;display:flex;align-items:center;justify-content:space-between;padding:0 18px;">
+          <div style="display:flex;align-items:center;gap:8px;color:#F1EFEA;">
+            <svg width="20" height="20" viewBox="0 0 24 24"><circle cx="12" cy="12" r="11" fill="#F1EFEA"></circle><polygon points="16.2,5 16.2,19 11.8,19 11.8,10 8.2,10" fill="#0F0E0C"></polygon></svg>
+            <span style="font:700 14px Archivo;">FirstRow</span>
+          </div>
+          <span style="font:400 12px 'Instrument Sans';color:#A39F96;">Os meus bilhetes · Conta</span>
+        </div>
+        <div style="height:3px;background:#6CC24A;"></div>
+        <div style="background:#131211;padding:16px 18px;display:flex;align-items:center;gap:14px;">
+          <div style="width:44px;height:44px;border-radius:6px;background:repeating-linear-gradient(45deg,#232220,#232220 6px,#1D1C1A 6px,#1D1C1A 12px);display:flex;align-items:center;justify-content:center;"><span style="font:400 8px 'IBM Plex Mono';color:#57544E;">logo</span></div>
+          <div style="flex:1;">
+            <div style="font:800 18px Archivo;color:#F1EFEA;">SmokingBars</div>
+            <div style="font:400 12px 'Instrument Sans';color:#A39F96;">Batalhas de rap · Lisboa</div>
+          </div>
+          <button style="font:600 13px 'Instrument Sans';background:transparent;color:#6CC24A;border:1px solid #6CC24A;border-radius:6px;padding:0 14px;height:36px;cursor:pointer;">Seguir</button>
+          <button style="font:600 13px 'Instrument Sans';background:#F1EFEA;color:#161512;border:none;border-radius:6px;padding:0 14px;height:36px;cursor:pointer;">Subscrever · 4,99 €/mês</button>
+        </div>
+      </div>
+      <div style="font:400 11.5px 'IBM Plex Mono';color:#9A9AA2;line-height:1.7;">O CANAL pinta: linha de topo, botão Seguir, realces de agenda, banner e logo.<br>A FIRSTROW pinta: a barra de topo (sempre tinta), os botões de ação e dinheiro (tinta, invertidos em dark), checkout, player, QR.<br>NUNCA: cor do canal em botões de pagamento ou estados AO VIVO — a confiança é da plataforma.</div>
+    </div>
+
+  </div>
+</section>
+</x-dc>
+</body>
+</html>

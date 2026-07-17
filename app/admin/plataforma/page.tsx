@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { PageHeader } from "@/components/admin/page-header";
-import { StatCard } from "@/components/admin/stat-card";
+import { StatCard } from "@/components/ui/stat-card";
 import { formatEuro, formatNumber } from "@/lib/format";
 import { getPlatformTotals } from "@/server/stats";
 

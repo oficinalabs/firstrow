@@ -2,6 +2,7 @@ import { and, eq } from "drizzle-orm";
 import { db } from "@/db";
 import { entitlements } from "@/db/schema";
 import { newId } from "@/lib/ids";
+import { buildReceipt, type ReceiptData } from "@/server/receipts";
 
 export async function hasActiveEntitlement(userId: string, eventId: string): Promise<boolean> {
   const rows = await db
@@ -33,9 +34,17 @@ export async function createPendingEntitlement(userId: string, eventId: string) 
   return rows[0];
 }
 
-export async function activateEntitlement(entitlementId: string, providerRef: string) {
-  await db
+export async function activateEntitlement(
+  entitlementId: string,
+  providerRef: string,
+): Promise<ReceiptData | null> {
+  // Idempotente: só transita pending→active uma vez (os webhooks repetem-se);
+  // devolve os dados do recibo só nessa primeira vez, para o email sair 1x.
+  const [row] = await db
     .update(entitlements)
     .set({ status: "active", providerRef })
-    .where(eq(entitlements.id, entitlementId));
+    .where(and(eq(entitlements.id, entitlementId), eq(entitlements.status, "pending")))
+    .returning({ userId: entitlements.userId, eventId: entitlements.eventId });
+  if (!row) return null;
+  return buildReceipt(row.userId, row.eventId);
 }

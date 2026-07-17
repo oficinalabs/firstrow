@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<meta name="design_doc_mode" content="canvas">
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@600;700;800;900&family=Instrument+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#1A1A1E;}
+a{color:#EAE04A;text-decoration:none;} a:hover{color:#F3EC77;}
+@keyframes fr-pulse{0%,100%{opacity:1;}50%{opacity:0.35;}}
+</style>
+</helmet>
+<section id="mkt" data-screen-label="Marketing — Homepage e Para criadores" style="display:flex;flex-direction:column;gap:26px;padding:48px;align-items:flex-start;font-family:'Instrument Sans';">
+  <div style="display:flex;flex-direction:column;gap:8px;max-width:960px;">
+    <div style="font:800 24px Archivo;color:#F5F4F0;">Marketing — Homepage + Para criadores</div>
+    <div style="font:400 12px 'IBM Plex Mono';color:#9A9AA2;line-height:1.7;">Decisão: sem página de preços separada — a taxa é uma e simples (10% tudo incluído), vive na página de criadores com a comparação. A homepage é dos espectadores; o pitch B2B tem uma banda própria em tinta no fim. Ecrãs: <a href="Espectador.dc.html">Espectador</a> · <a href="Plataforma - Tokens.dc.html">Tokens</a></div>
+  </div>
+  <div style="display:flex;flex-wrap:wrap;gap:48px;align-items:flex-start;">
+
+    <div style="display:flex;flex-direction:column;gap:10px;">
+      <div style="font:500 11px 'IBM Plex Mono';color:#9A9AA2;">HOMEPAGE · DESKTOP 1440 · PAPEL</div>
+      <div id="home-desktop" data-screen-label="Homepage — desktop" style="width:1440px;background:#F6F5F1;color:#161512;outline:1px solid #2E2E34;">
+        <div style="background:#0F0E0C;height:56px;display:flex;align-items:center;justify-content:space-between;padding:0 32px;">
+          <div style="display:flex;align-items:center;gap:9px;color:#F1EFEA;">
+            <svg width="22" height="22" viewBox="0 0 24 24"><circle cx="12" cy="12" r="11" fill="#F1EFEA"></circle><polygon points="16.2,5 16.2,19 11.8,19 11.8,10 8.2,10" fill="#0F0E0C"></polygon></svg>
+            <span style="font:700 15px Archivo;color:#F1EFEA;">FirstRow</span>
+          </div>
+          <div style="display:flex;align-items:center;gap:22px;">
+            <span style="font:500 14px 'Instrument Sans';color:#A39F96;">Explorar canais</span>
+            <span style="font:500 14px 'Instrument Sans';color:#A39F96;">Para criadores</span>
+            <span style="font:500 14px 'Instrument Sans';color:#F1EFEA;">Entrar</span>
+            <button style="font:600 13.5px 'Instrument Sans';background:#F1EFEA;color:#161512;border:none;border-radius:6px;padding:0 14px;height:36px;cursor:pointer;">Criar conta</button>
+          </div>
+        </div>
+        <div style="max-width:1152px;margin:0 auto;padding:0 16px;">
+          <div style="display:grid;grid-template-columns:1.2fr 1fr;gap:56px;padding:72px 0 56px;align-items:start;">
+            <div>
+              <div style="font:800 58px Archivo;letter-spacing:-0.02em;line-height:1.02;text-wrap:balance;">O melhor lugar não é grátis.<br>É o teu.</div>
+              <div style="font:400 17px 'Instrument Sans';color:#6E6A61;line-height:1.55;margin-top:20px;max-width:46ch;">Lives, arquivo e bilhetes dos canais que valem a pena pagar — comédia, música, batalhas, esports, formação. Pagas com MB WAY, vês em qualquer lado. Quem não paga, não entra.</div>
+              <div style="display:flex;gap:12px;margin-top:28px;">
+                <button style="font:600 15px 'Instrument Sans';background:#161512;color:#F1EFEA;border:none;border-radius:6px;padding:0 22px;height:48px;cursor:pointer;white-space:nowrap;">Explorar canais</button>
+                <button style="font:600 14px 'Instrument Sans';background:transparent;color:#161512;border:1px solid #C6C2B8;border-radius:6px;padding:0 18px;height:48px;cursor:pointer;white-space:nowrap;">Tenho um convite de canal</button>
+              </div>
+            </div>
+            <div style="border:1px solid #DFDCD4;border-radius:6px;background:#FCFBF8;overflow:hidden;">
+              <div style="padding:12px 16px;border-bottom:1px solid #DFDCD4;display:flex;align-items:center;justify-content:space-between;">
+                <span style="font:700 13px Archivo;">Agora na FirstRow</span>
+                <span style="font:700 10px 'IBM Plex Mono';letter-spacing:0.08em;background:#E5372B;color:#FFF6F4;border-radius:4px;padding:4px 8px;display:inline-flex;align-items:center;gap:6px;"><span style="width:6px;height:6px;border-radius:50%;background:#FFF6F4;animation:fr-pulse 1.6s infinite;"></span>2 AO VIVO</span>
+              </div>
+              <div style="display:flex;align-items:center;gap:12px;padding:12px 16px;border-bottom:1px solid #ECEAE3;">
+                <div style="width:64px;aspect-ratio:16/9;border-radius:4px;background:repeating-linear-gradient(45deg,#ECEAE3,#ECEAE3 6px,#E3E0D7 6px,#E3E0D7 12px);flex-shrink:0;"></div>
+                <div style="flex:1;"><div style="font:600 13px 'Instrument Sans';">SB Clash #14 — Final de Verão</div><div style="font:400 11.5px 'Instrument Sans';color:#6E6A61;">SmokingBars · 1 204 a ver</div></div>
+                <span style="font:600 11px 'IBM Plex Mono';color:#E5372B;">● LIVE</span>
+              </div>
+              <div style="display:flex;align-items:center;gap:12px;padding:12px 16px;border-bottom:1px solid #ECEAE3;">
+                <div style="width:64px;aspect-ratio:16/9;border-radius:4px;background:repeating-linear-gradient(45deg,#ECEAE3,#ECEAE3 6px,#E3E0D7 6px,#E3E0D7 12px);flex-shrink:0;"></div>
+                <div style="flex:1;"><div style="font:600 13px 'Instrument Sans';">Stand-up: noite de estreias</div><div style="font:400 11.5px 'Instrument Sans';color:#6E6A61;">Riso Franco · 387 a ver</div></div>
+                <span style="font:600 11px 'IBM Plex Mono';color:#E5372B;">● LIVE</span>
+              </div>
+              <div style="display:flex;align-items:center;gap:12px;padding:12px 16px;">
+                <div style="width:38px;text-align:center;"><div style="font:600 15px 'IBM Plex Mono';">26</div><div style="font:400 9px 'IBM Plex Mono';color:#6E6A61;">JUL</div></div>
+                <div style="flex:1;"><div style="font:600 13px 'Instrument Sans';">Torneio Arena — quartos de final</div><div style="font:400 11.5px 'Instrument Sans';color:#6E6A61;">NovaLiga Esports · 21:00 · PPV 4,00 €</div></div>
+                <span style="font:400 16px 'Instrument Sans';color:#B4B0A6;">›</span>
+              </div>
+            </div>
+          </div>
+          <div style="padding:8px 0 48px;">
+            <div style="display:flex;align-items:baseline;justify-content:space-between;border-bottom:2px solid #161512;padding-bottom:10px;">
+              <div style="font:800 26px Archivo;">Esta semana</div>
+              <span style="font:600 13.5px 'Instrument Sans';text-decoration:underline;text-decoration-color:#EAE04A;text-decoration-thickness:3px;text-underline-offset:4px;">Agenda completa ›</span>
+            </div>
+            <div style="display:flex;align-items:center;gap:18px;padding:16px 4px;border-bottom:1px solid #DFDCD4;">
+              <div style="width:44px;text-align:center;"><div style="font:600 18px 'IBM Plex Mono';">24</div><div style="font:400 10px 'IBM Plex Mono';color:#6E6A61;">JUL</div></div>
+              <span style="font:600 10px 'IBM Plex Mono';letter-spacing:0.07em;color:#6E6A61;border:1px solid #C6C2B8;border-radius:4px;padding:3px 7px;width:76px;text-align:center;">COMÉDIA</span>
+              <div style="flex:1;"><div style="font:600 15px 'Instrument Sans';">Noite de estreias — 5 comediantes, material novo</div><div style="font:400 12.5px 'Instrument Sans';color:#6E6A61;margin-top:2px;">Riso Franco · 22:00</div></div>
+              <span style="font:500 14px 'IBM Plex Mono';">3,50 €</span>
+              <span style="font:400 16px 'Instrument Sans';color:#B4B0A6;">›</span>
+            </div>
+            <div style="display:flex;align-items:center;gap:18px;padding:16px 4px;border-bottom:1px solid #DFDCD4;">
+              <div style="width:44px;text-align:center;"><div style="font:600 18px 'IBM Plex Mono';">25</div><div style="font:400 10px 'IBM Plex Mono';color:#6E6A61;">JUL</div></div>
+              <span style="font:600 10px 'IBM Plex Mono';letter-spacing:0.07em;color:#6E6A61;border:1px solid #C6C2B8;border-radius:4px;padding:3px 7px;width:76px;text-align:center;">MÚSICA</span>
+              <div style="flex:1;"><div style="font:600 15px 'Instrument Sans';">Ao vivo do estúdio — álbum tocado do início ao fim</div><div style="font:400 12.5px 'Instrument Sans';color:#6E6A61;margin-top:2px;">Marta Vale · 21:30</div></div>
+              <span style="font:500 14px 'IBM Plex Mono';">6,00 €</span>
+              <span style="font:400 16px 'Instrument Sans';color:#B4B0A6;">›</span>
+            </div>
+            <div style="display:flex;align-items:center;gap:18px;padding:16px 4px;border-bottom:1px solid #DFDCD4;">
+              <div style="width:44px;text-align:center;"><div style="font:600 18px 'IBM Plex Mono';">26</div><div style="font:400 10px 'IBM Plex Mono';color:#6E6A61;">JUL</div></div>
+              <span style="font:600 10px 'IBM Plex Mono';letter-spacing:0.07em;color:#6E6A61;border:1px solid #C6C2B8;border-radius:4px;padding:3px 7px;width:76px;text-align:center;">BATALHAS</span>
+              <div style="flex:1;"><div style="font:600 15px 'Instrument Sans';">SB Clash #14 — Final de Verão</div><div style="font:400 12.5px 'Instrument Sans';color:#6E6A61;margin-top:2px;">SmokingBars · 21:00 · também com bilhete físico</div></div>
+              <span style="font:500 14px 'IBM Plex Mono';">7,50 €</span>
+              <span style="font:400 16px 'Instrument Sans';color:#B4B0A6;">›</span>
+            </div>
+            <div style="display:flex;align-items:center;gap:18px;padding:16px 4px;border-bottom:1px solid #DFDCD4;">
+              <div style="width:44px;text-align:center;"><div style="font:600 18px 'IBM Plex Mono';">27</div><div style="font:400 10px 'IBM Plex Mono';color:#6E6A61;">JUL</div></div>
+              <span style="font:600 10px 'IBM Plex Mono';letter-spacing:0.07em;color:#6E6A61;border:1px solid #C6C2B8;border-radius:4px;padding:3px 7px;width:76px;text-align:center;">ESPORTS</span>
+              <div style="flex:1;"><div style="font:600 15px 'Instrument Sans';">Torneio Arena — meias-finais</div><div style="font:400 12.5px 'Instrument Sans';color:#6E6A61;margin-top:2px;">NovaLiga Esports · 18:00</div></div>
+              <span style="font:500 14px 'IBM Plex Mono';">4,00 €</span>
+              <span style="font:400 16px 'Instrument Sans';color:#B4B0A6;">›</span>
+            </div>
+            <div style="display:flex;align-items:center;gap:18px;padding:16px 4px;">
+              <div style="width:44px;text-align:center;"><div style="font:600 18px 'IBM Plex Mono';">28</div><div style="font:400 10px 'IBM Plex Mono';color:#6E6A61;">JUL</div></div>
+              <span style="font:600 10px 'IBM Plex Mono';letter-spacing:0.07em;color:#6E6A61;border:1px solid #C6C2B8;border-radius:4px;padding:3px 7px;width:76px;text-align:center;">FORMAÇÃO</span>
+              <div style="flex:1;"><div style="font:600 15px 'Instrument Sans';">Masterclass: iluminação de palco na prática</div><div style="font:400 12.5px 'Instrument Sans';color:#6E6A61;margin-top:2px;">Backstage Academy · 19:00 · inclui gravação</div></div>
+              <span style="font:500 14px 'IBM Plex Mono';">15,00 €</span>
+              <span style="font:400 16px 'Instrument Sans';color:#B4B0A6;">›</span>
+            </div>
+          </div>
+          <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:0;padding:0 0 56px;">
+            <div style="border-left:2px solid #161512;padding:4px 24px 4px 18px;">
+              <div style="font:600 11px 'IBM Plex Mono';letter-spacing:0.08em;color:#6E6A61;">1</div>
+              <div style="font:700 16px Archivo;margin-top:6px;">Compra com MB WAY</div>
+              <div style="font:400 13px 'Instrument Sans';color:#6E6A61;line-height:1.5;margin-top:4px;">Sem cartão, sem conta nova. Confirmas na app e está feito.</div>
+            </div>
+            <div style="border-left:2px solid #161512;padding:4px 24px 4px 18px;">
+              <div style="font:600 11px 'IBM Plex Mono';letter-spacing:0.08em;color:#6E6A61;">2</div>
+              <div style="font:700 16px Archivo;margin-top:6px;">Vê onde quiseres</div>
+              <div style="font:400 13px 'Instrument Sans';color:#6E6A61;line-height:1.5;margin-top:4px;">Telemóvel, portátil, TV. O acesso é da tua conta, não de um link.</div>
+            </div>
+            <div style="border-left:2px solid #161512;padding:4px 24px 4px 18px;">
+              <div style="font:600 11px 'IBM Plex Mono';letter-spacing:0.08em;color:#6E6A61;">3</div>
+              <div style="font:700 16px Archivo;margin-top:6px;">A porta fica fechada</div>
+              <div style="font:400 13px 'Instrument Sans';color:#6E6A61;line-height:1.5;margin-top:4px;">1 sessão de cada vez e marca de água com o teu email. O que pagas, vale.</div>
+            </div>
+          </div>
+        </div>
+        <div style="background:#0F0E0C;color:#F1EFEA;">
+          <div style="max-width:1152px;margin:0 auto;padding:56px 16px;display:flex;align-items:center;justify-content:space-between;gap:40px;">
+            <div>
+              <div style="font:600 11px 'IBM Plex Mono';letter-spacing:0.08em;color:#EAE04A;">PARA CRIADORES E LIGAS</div>
+              <div style="font:800 34px Archivo;letter-spacing:-0.01em;margin-top:10px;line-height:1.1;">Traz o teu público.<br>Nós fechamos a porta.</div>
+              <div style="font:400 14.5px 'Instrument Sans';color:#A39F96;line-height:1.55;margin-top:12px;max-width:52ch;">Lives pay-per-view, arquivo, subscrições e bilhetes físicos com scanner — com 10% de taxa, tudo incluído, e sem links piratas a comerem-te a bilheteira.</div>
+            </div>
+            <button style="font:600 15px 'Instrument Sans';background:#F1EFEA;color:#161512;border:none;border-radius:6px;padding:0 24px;height:48px;cursor:pointer;white-space:nowrap;flex-shrink:0;">Para criadores ›</button>
+          </div>
+        </div>
+        <div style="border-top:1px solid #DFDCD4;padding:18px 32px;display:flex;align-items:center;justify-content:space-between;">
+          <div style="display:flex;align-items:center;gap:8px;">
+            <svg width="16" height="16" viewBox="0 0 24 24"><circle cx="12" cy="12" r="11" fill="#6E6A61"></circle><polygon points="16.2,5 16.2,19 11.8,19 11.8,10 8.2,10" fill="#F6F5F1"></polygon></svg>
+            <span style="font:400 11px 'IBM Plex Mono';color:#6E6A61;">© 2026 FirstRow · joinfirstrow.com</span>
+          </div>
+          <span style="font:400 11px 'IBM Plex Mono';color:#6E6A61;">Termos · Privacidade · Suporte</span>
+        </div>
+      </div>
+    </div>
+
+    <div style="display:flex;flex-direction:column;gap:10px;">
+      <div style="font:500 11px 'IBM Plex Mono';color:#9A9AA2;">PARA CRIADORES / LIGAS · DESKTOP 1440 · PAPEL (inclui preços)</div>
+      <div id="criadores-desktop" data-screen-label="Para criadores — desktop" style="width:1440px;background:#F6F5F1;color:#161512;outline:1px solid #2E2E34;">
+        <div style="background:#0F0E0C;height:56px;display:flex;align-items:center;justify-content:space-between;padding:0 32px;">
+          <div style="display:flex;align-items:center;gap:9px;color:#F1EFEA;">
+            <svg width="22" height="22" viewBox="0 0 24 24"><circle cx="12" cy="12" r="11" fill="#F1EFEA"></circle><polygon points="16.2,5 16.2,19 11.8,19 11.8,10 8.2,10" fill="#0F0E0C"></polygon></svg>
+            <span style="font:700 15px Archivo;color:#F1EFEA;">FirstRow</span>
+          </div>
+          <div style="display:flex;align-items:center;gap:22px;">
+            <span style="font:500 14px 'Instrument Sans';color:#A39F96;">Explorar canais</span>
+            <span style="font:500 14px 'Instrument Sans';color:#F1EFEA;">Para criadores</span>
+            <button style="font:600 13.5px 'Instrument Sans';background:#F1EFEA;color:#161512;border:none;border-radius:6px;padding:0 14px;height:36px;cursor:pointer;">Criar canal</button>
+          </div>
+        </div>
+        <div style="max-width:1152px;margin:0 auto;padding:0 16px;">
+          <div style="padding:72px 0 40px;max-width:820px;">
+            <div style="font:600 11px 'IBM Plex Mono';letter-spacing:0.08em;color:#6E6A61;">PARA CRIADORES, LIGAS E ORGANIZAÇÕES</div>
+            <div style="font:800 52px Archivo;letter-spacing:-0.02em;line-height:1.04;margin-top:14px;text-wrap:balance;">Vender acesso não devia ser um ato de fé.</div>
+            <div style="font:400 16.5px 'Instrument Sans';color:#6E6A61;line-height:1.55;margin-top:18px;max-width:58ch;">Publicas o evento, partilhas o link, e cada visualização é uma venda: sem links partilháveis, 1 sessão por conta, watermark com o email de quem vê. Lives, arquivo, subscrições e bilhetes físicos — num só sítio, pagos por MB WAY.</div>
+            <div style="display:flex;gap:12px;margin-top:26px;">
+              <button style="font:600 15px 'Instrument Sans';background:#161512;color:#F1EFEA;border:none;border-radius:6px;padding:0 22px;height:48px;cursor:pointer;">Criar canal</button>
+              <button style="font:600 14px 'Instrument Sans';background:transparent;color:#161512;border:1px solid #C6C2B8;border-radius:6px;padding:0 18px;height:48px;cursor:pointer;">Falar connosco</button>
+            </div>
+          </div>
+          <div style="padding:16px 0 48px;">
+            <div style="font:800 26px Archivo;border-bottom:2px solid #161512;padding-bottom:10px;">Uma taxa. Sem letras pequenas.</div>
+            <div style="display:grid;grid-template-columns:1.3fr 1fr 1fr 1fr;gap:0;margin-top:6px;">
+              <div style="padding:14px 4px 10px;border-bottom:1px solid #DFDCD4;"></div>
+              <div style="padding:14px 12px 10px;border-bottom:2px solid #EAE04A;background:#FCFBF8;font:700 14px Archivo;">FirstRow</div>
+              <div style="padding:14px 12px 10px;border-bottom:1px solid #DFDCD4;font:600 13px 'Instrument Sans';color:#6E6A61;">Membership típico</div>
+              <div style="padding:14px 12px 10px;border-bottom:1px solid #DFDCD4;font:600 13px 'Instrument Sans';color:#6E6A61;">Bilheteira típica</div>
+              <div style="padding:12px 4px;border-bottom:1px solid #ECEAE3;font:400 13.5px 'Instrument Sans';">Taxa da plataforma</div>
+              <div style="padding:12px;border-bottom:1px solid #ECEAE3;background:#FCFBF8;font:600 13.5px 'IBM Plex Mono';">10%</div>
+              <div style="padding:12px;border-bottom:1px solid #ECEAE3;font:400 13px 'IBM Plex Mono';color:#6E6A61;">8–12%</div>
+              <div style="padding:12px;border-bottom:1px solid #ECEAE3;font:400 13px 'IBM Plex Mono';color:#6E6A61;">—</div>
+              <div style="padding:12px 4px;border-bottom:1px solid #ECEAE3;font:400 13.5px 'Instrument Sans';">Processamento de pagamentos</div>
+              <div style="padding:12px;border-bottom:1px solid #ECEAE3;background:#FCFBF8;font:600 13.5px 'IBM Plex Mono';">incluído</div>
+              <div style="padding:12px;border-bottom:1px solid #ECEAE3;font:400 13px 'IBM Plex Mono';color:#6E6A61;">+ 2–5%</div>
+              <div style="padding:12px;border-bottom:1px solid #ECEAE3;font:400 13px 'IBM Plex Mono';color:#6E6A61;">1,50–3,00 €/bilhete</div>
+              <div style="padding:12px 4px;border-bottom:1px solid #ECEAE3;font:400 13.5px 'Instrument Sans';">Lives PPV com anti-fuga</div>
+              <div style="padding:12px;border-bottom:1px solid #ECEAE3;background:#FCFBF8;font:600 13.5px 'IBM Plex Mono';">sim</div>
+              <div style="padding:12px;border-bottom:1px solid #ECEAE3;font:400 13px 'IBM Plex Mono';color:#6E6A61;">não</div>
+              <div style="padding:12px;border-bottom:1px solid #ECEAE3;font:400 13px 'IBM Plex Mono';color:#6E6A61;">não</div>
+              <div style="padding:12px 4px;border-bottom:1px solid #ECEAE3;font:400 13.5px 'Instrument Sans';">Bilhetes físicos + scanner de porta</div>
+              <div style="padding:12px;border-bottom:1px solid #ECEAE3;background:#FCFBF8;font:600 13.5px 'IBM Plex Mono';">sim</div>
+              <div style="padding:12px;border-bottom:1px solid #ECEAE3;font:400 13px 'IBM Plex Mono';color:#6E6A61;">não</div>
+              <div style="padding:12px;border-bottom:1px solid #ECEAE3;font:400 13px 'IBM Plex Mono';color:#6E6A61;">sim</div>
+              <div style="padding:12px 4px;font:400 13.5px 'Instrument Sans';">Payout</div>
+              <div style="padding:12px;background:#FCFBF8;font:600 13.5px 'IBM Plex Mono';">semanal</div>
+              <div style="padding:12px;font:400 13px 'IBM Plex Mono';color:#6E6A61;">mensal</div>
+              <div style="padding:12px;font:400 13px 'IBM Plex Mono';color:#6E6A61;">pós-evento</div>
+            </div>
+            <div style="font:400 11px 'IBM Plex Mono';color:#6E6A61;margin-top:10px;">valores de mercado indicativos · a tua conta mostra sempre bruto → taxa → líquido, ao cêntimo</div>
+          </div>
+          <div style="padding:8px 0 56px;display:flex;flex-direction:column;gap:0;">
+            <div style="display:grid;grid-template-columns:1fr 380px;gap:40px;align-items:center;padding:28px 0;border-top:1px solid #DFDCD4;">
+              <div>
+                <div style="font:600 11px 'IBM Plex Mono';letter-spacing:0.08em;color:#6E6A61;">ANTI-FUGA</div>
+                <div style="font:700 22px Archivo;margin-top:8px;">Quem não paga, não vê. Mesmo.</div>
+                <div style="font:400 14px 'Instrument Sans';color:#6E6A61;line-height:1.55;margin-top:8px;max-width:52ch;">Sem links partilháveis — o acesso vive na conta. Uma sessão de cada vez: se a conta abrir noutro sítio, a primeira pára. E cada frame leva o email de quem está a ver.</div>
+              </div>
+              <div style="position:relative;aspect-ratio:16/9;border-radius:6px;overflow:hidden;background:repeating-linear-gradient(45deg,#1D1C1A,#1D1C1A 8px,#181715 8px,#181715 16px);">
+                <div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;"><span style="font:500 12px 'IBM Plex Mono';color:rgba(241,239,234,0.35);transform:rotate(-12deg);white-space:nowrap;">fulano@email.pt · FirstRow · 21:47</span></div>
+              </div>
+            </div>
+            <div style="display:grid;grid-template-columns:1fr 380px;gap:40px;align-items:center;padding:28px 0;border-top:1px solid #DFDCD4;">
+              <div>
+                <div style="font:600 11px 'IBM Plex Mono';letter-spacing:0.08em;color:#6E6A61;">LIVE + ARQUIVO + SUBSCRIÇÕES</div>
+                <div style="font:700 22px Archivo;margin-top:8px;">O evento paga-se três vezes.</div>
+                <div style="font:400 14px 'Instrument Sans';color:#6E6A61;line-height:1.55;margin-top:8px;max-width:52ch;">PPV na noite, replay de 48h, e o arquivo a render como subscrição no mês seguinte. Transmites por OBS com o RTMP do evento — mais nada.</div>
+              </div>
+              <div style="border:1px solid #DFDCD4;border-radius:6px;background:#FCFBF8;padding:14px 16px;font:500 12px 'IBM Plex Mono';color:#161512;display:flex;flex-direction:column;gap:8px;">
+                <div style="color:#6E6A61;">SERVIDOR RTMP</div>
+                <div>rtmp://in.joinfirstrow.com/live</div>
+                <div style="color:#6E6A61;margin-top:4px;">CHAVE DA STREAM</div>
+                <div style="display:flex;justify-content:space-between;align-items:center;"><span>fr_live_••••••••7k2m</span><span style="font:600 11px 'Instrument Sans';text-decoration:underline;text-decoration-color:#EAE04A;text-decoration-thickness:3px;text-underline-offset:3px;font-family:'Instrument Sans';">Copiar</span></div>
+              </div>
+            </div>
+            <div style="display:grid;grid-template-columns:1fr 380px;gap:40px;align-items:center;padding:28px 0;border-top:1px solid #DFDCD4;">
+              <div>
+                <div style="font:600 11px 'IBM Plex Mono';letter-spacing:0.08em;color:#6E6A61;">BILHETES FÍSICOS</div>
+                <div style="font:700 22px Archivo;margin-top:8px;">A porta também é nossa.</div>
+                <div style="font:400 14px 'Instrument Sans';color:#6E6A61;line-height:1.55;margin-top:8px;max-width:52ch;">Vendes bilhetes com lotação, o público mostra o QR, tu validas com o telemóvel — verde entra, vermelho não. Lista de compradores e exportação CSV incluídas.</div>
+              </div>
+              <div style="display:flex;gap:10px;align-items:center;justify-content:center;border:1px solid #DFDCD4;border-radius:6px;background:#FCFBF8;padding:18px;">
+                <span style="font:700 11px 'IBM Plex Mono';letter-spacing:0.07em;background:#2F9E63;color:#F2FBF5;border-radius:4px;padding:6px 10px;">VÁLIDO — 1ª ENTRADA</span>
+                <span style="font:700 11px 'IBM Plex Mono';letter-spacing:0.07em;background:#A62E24;color:#FDF6F4;border-radius:4px;padding:6px 10px;">JÁ USADO 21:34</span>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div style="background:#0F0E0C;color:#F1EFEA;">
+          <div style="max-width:1152px;margin:0 auto;padding:48px 16px;display:flex;align-items:center;justify-content:space-between;gap:40px;">
+            <div style="font:800 30px Archivo;letter-spacing:-0.01em;">Abre o teu canal esta semana.</div>
+            <div style="display:flex;gap:12px;flex-shrink:0;">
+              <button style="font:600 15px 'Instrument Sans';background:#F1EFEA;color:#161512;border:none;border-radius:6px;padding:0 22px;height:48px;cursor:pointer;">Criar canal</button>
+              <button style="font:600 14px 'Instrument Sans';background:transparent;color:#F1EFEA;border:1px solid #3B3934;border-radius:6px;padding:0 18px;height:48px;cursor:pointer;">Falar connosco</button>
+            </div>
+          </div>
+        </div>
+        <div style="border-top:1px solid #DFDCD4;padding:18px 32px;display:flex;align-items:center;justify-content:space-between;">
+          <div style="display:flex;align-items:center;gap:8px;">
+            <svg width="16" height="16" viewBox="0 0 24 24"><circle cx="12" cy="12" r="11" fill="#6E6A61"></circle><polygon points="16.2,5 16.2,19 11.8,19 11.8,10 8.2,10" fill="#F6F5F1"></polygon></svg>
+            <span style="font:400 11px 'IBM Plex Mono';color:#6E6A61;">© 2026 FirstRow · joinfirstrow.com</span>
+          </div>
+          <span style="font:400 11px 'IBM Plex Mono';color:#6E6A61;">Termos · Privacidade · Suporte</span>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</section>
+</x-dc>
+</body>
+</html>

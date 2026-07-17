@@ -42,7 +42,7 @@ Recorrência Eupago ainda não confirmada em sandbox → **não implementar bill
 
 ### A — Fundação (TEM de ser a 1ª a fazer merge; as outras arrancam depois)
 Tokens CSS light/dark + `data-theme` · fontes next/font · componentes base `components/ui/` (Button, Input, Badge, LiveBadge c/ pulse, Card, Table compacta, Skeleton, EmptyState) · logo/favicons/OG/app-icons de `assets/` → `public/brand/` + metadata no layout · shell de navegação (barra FR dark do espectador + sidebar light do backoffice) · restyle mínimo da watermark/player-frame (tokens). Fica o "kit" que todas as frentes consomem.
-**Dona de:** `app/globals.css`, `app/layout.tsx`, `components/ui/*`, `public/*`, `lib/tenant.ts`.
+**Dona de:** `app/globals.css`, `app/layout.tsx`, `components/ui/*`, `public/*`, `lib/tenant.ts`, `lib/format.ts` (formatadores partilhados) e o mapeamento tokens→Tailwind (`@theme`) que impede hex hardcoded nas outras frentes.
 
 ### B — Espectador core (depois de A)
 Página de canal (`/`, dark, hero com próxima live + countdown, agenda, arquivo, co-branding) · evento + checkout MB WAY (4 estados: telemóvel→pendente→sucesso→expirado; reusa BuyButton/rotas existentes) · player live + sessão revogada + VOD (restyle do WatchPlayer; badge AO VIVO; watermark) · mobile-first.
@@ -63,6 +63,13 @@ Schema `tickets` + colunas em `events` (contrato acima) + `pnpm db:push` · comp
 ### F — Marketing + transversal + emails (depois de A)
 Homepage marketing (dupla audiência) · `/criadores` (pitch B2B com comparação de taxas ~23% Patreon vs ~12% FirstRow — números em docs/VISAO-E-NEGOCIO.md) · 404 · página de erro · empty states/skeletons onde faltem · emails React Email + Resend (recibo de compra, "vai começar") em `emails/`.
 **Dona de:** `app/(marketing)/*`, `app/not-found.tsx`, `app/error.tsx`, `emails/*`, `lib/email.ts`.
+
+## Boas práticas de código (obrigatórias em TODAS as frentes)
+- **DRY / componentes:** qualquer secção, cartão ou padrão visual usado **2+ vezes vira componente reutilizável** (ex.: `EventCard`, `CountdownTimer`, `StatCard`, `SectionHeader`, `QrCard`, `PriceTag`). Zero copy-paste de JSX entre páginas. Componentes de domínio em `components/<domínio>/`; genéricos em `components/ui/`.
+- **Tokens, não valores:** **ZERO hex, px mágicos ou nomes de fonte hardcoded nos componentes** — cores, raio, espaçamentos e fontes só via variáveis CSS/tokens do tema (definidos uma vez em `app/globals.css` pela Frente A e mapeados para classes Tailwind via `@theme`). Trocar a paleta amanhã = mexer num único ficheiro. **Hex fora de `globals.css` bloqueia o PR.**
+- **Formatadores partilhados:** `lib/format.ts` (criado pela Frente A) com `formatEuro` ("8,59 €"), `formatDate`/`formatDateTime` (PT-PT), `formatPhone` — usar SEMPRE; nunca formatar euros/datas à mão nas páginas.
+- **Server Components por defeito;** `"use client"` só onde há interação real. Zod nas fronteiras (regra do repo). Named exports; ficheiros pequenos e focados; sem lógica de negócio dentro de componentes de UI (vive em `server/`).
+- **Estados sempre desenhados:** nenhuma página nova sem os três — loading (`Skeleton`), vazio (`EmptyState`), erro.
 
 ## Regras de qualidade (TODAS as frentes — "não pode falhar nada")
 1. **Fidelidade:** abrir o `.dc.html` correspondente e replicar (cores/tipos/espaçamentos dos tokens; copy PT-PT do design). Proibido: gradientes roxos, glassmorphism, emojis como ícones, cartões arredondados XL — manter o look editorial aprovado (raio 6px).

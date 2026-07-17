@@ -5,6 +5,7 @@ import { HowItWorksCard } from "@/components/eventos/how-it-works-card";
 import { PosterPlaceholder } from "@/components/eventos/poster-placeholder";
 import { PurchaseCard } from "@/components/eventos/purchase-card";
 import { ViewerFooter } from "@/components/eventos/viewer-footer";
+import { TicketPurchaseCard } from "@/components/tickets/ticket-purchase-card";
 import { Badge } from "@/components/ui/badge";
 import { buttonVariants } from "@/components/ui/button";
 import { LiveBadge } from "@/components/ui/live-badge";
@@ -84,6 +85,10 @@ export default async function EventPage({ params }: { params: Promise<{ eventId:
               )
             }
           />
+
+          {event.ticketPriceCents != null && (
+            <TicketPurchaseCard eventId={eventId} priceCents={event.ticketPriceCents} />
+          )}
 
           <HowItWorksCard title="Como funciona o acesso" lines={ACCESS_LINES} />
         </div>

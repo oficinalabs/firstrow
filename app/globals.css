@@ -1,53 +1,222 @@
 @import "tailwindcss";
 
+/*
+ * FirstRow — design tokens.
+ * Fonte de verdade: design/FirstRow Plataforma/Plataforma - Tokens.dc.html
+ *
+ * ÚNICO sítio do projeto onde podem existir cores em hex e o raio base.
+ * Todas as frentes consomem os tokens via classes Tailwind (bg-card, text-live,
+ * border-input, rounded-md, font-display…) — trocar a paleta é mexer só aqui.
+ *
+ * Temas por segmento de layout via data-theme:
+ *   :root = light (backoffice, marketing) · [data-theme="dark"] = espectador.
+ */
+
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  color-scheme: light;
+
+  /* neutros quentes — lado claro */
+  --background: #f6f5f1;
+  --foreground: #161512; /* tinta */
+  --card: #fcfbf8;
+  --card-foreground: #161512;
+  --muted: #eceae3;
+  --muted-foreground: #6e6a61; /* texto 2º */
+  --foreground-secondary: #6e6a61; /* alias semântico de texto 2º */
+  --graphite: #3b3934; /* meta enfatizada em light; borda forte em dark */
+  --border: #dfdcd4; /* hairline */
+  --input: #c6c2b8; /* borda de controlos e botões outline */
+  --field: #ffffff; /* fundo de inputs */
+
+  /* ação = tinta (1 por ecrã; inverte em dark) */
+  --primary: #161512;
+  --primary-hover: #2a2823;
+  --primary-foreground: #f6f5f1;
+
+  /* funcionais */
+  --accent: #eae04a; /* limão — light: marcador/fundo c/ texto tinta; nunca em CTAs */
+  --accent-foreground: #161512;
+  --live: #e5372b; /* SÓ live/urgência */
+  --live-foreground: #fff6f4;
+  --success: #2f9e63;
+  --success-foreground: #f2fbf5;
+  --warning: #e08a1e;
+  --warning-foreground: #fff9f1;
+  --destructive: #a62e24;
+  --destructive-foreground: #fdf6f4;
+  --ring: #e3d93f; /* foco: ring 2px, offset 2 */
+
+  /* moldura FirstRow — sempre tinta, independente do tema */
+  --bar: #0f0e0c;
+  --bar-foreground: #f1efea;
+  --bar-muted: #a39f96;
+  --bar-border: #201f1d;
+  --bar-active: #1b1a18; /* item ativo na sidebar do backoffice */
+
+  --radius: 6px; /* raio único (nada de pill, nada de 2xl) */
 }
+
+[data-theme="dark"] {
+  color-scheme: dark;
+
+  /* superfícies — lado escuro (espectador) */
+  --background: #131211;
+  --foreground: #f1efea;
+  --card: #1b1a18;
+  --card-foreground: #f1efea;
+  --muted: #2b2926;
+  --muted-foreground: #a39f96;
+  --foreground-secondary: #a39f96;
+  --border: #2b2926;
+  --input: #3b3934;
+  --field: #131211;
+
+  /* ação invertida: botão claro, texto tinta */
+  --primary: #f1efea;
+  --primary-hover: #ffffff;
+  --primary-foreground: #161512;
+
+  /* limão em dark: texto/linha, nunca fundo */
+  --ring: #eae04a;
+}
+
+/* dark: segue o data-theme do segmento (não o esquema do sistema) */
+@custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
 
 @theme inline {
+  /* apaga a paleta por defeito do Tailwind: bg-red-500 e afins deixam de
+     existir — só os tokens semânticos abaixo geram utilitários. */
+  --color-*: initial;
+
+  --color-transparent: transparent;
+  --color-current: currentColor;
+  --color-white: #ffffff; /* overlays sobre vídeo */
+  --color-black: #000000;
+
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-foreground-secondary: var(--foreground-secondary);
+  --color-graphite: var(--graphite);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-field: var(--field);
+  --color-primary: var(--primary);
+  --color-primary-hover: var(--primary-hover);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-live: var(--live);
+  --color-live-foreground: var(--live-foreground);
+  --color-success: var(--success);
+  --color-success-foreground: var(--success-foreground);
+  --color-warning: var(--warning);
+  --color-warning-foreground: var(--warning-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-ring: var(--ring);
+  --color-bar: var(--bar);
+  --color-bar-foreground: var(--bar-foreground);
+  --color-bar-muted: var(--bar-muted);
+  --color-bar-border: var(--bar-border);
+  --color-bar-active: var(--bar-active);
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+  /* raio único: qualquer rounded-* dá 6px (badges usam rounded-xs = 4px) */
+  --radius-xs: calc(var(--radius) - 2px);
+  --radius-sm: var(--radius);
+  --radius-md: var(--radius);
+  --radius-lg: var(--radius);
+  --radius-xl: var(--radius);
+  --radius-2xl: var(--radius);
+  --radius-3xl: var(--radius);
+  --radius-4xl: var(--radius);
+
+  /* tipografia (vars definidas por next/font no layout) */
+  --font-display: var(--font-archivo), system-ui, sans-serif;
+  --font-sans: var(--font-instrument-sans), system-ui, sans-serif;
+  --font-mono: var(--font-plex-mono), ui-monospace, monospace;
+
+  /* escala do design: 11 · 12 · 13 · 14 · 16 · 18 · 22 · 28 · 36 · 48 */
+  --text-2xs: 0.6875rem; /* 11px — badges e labels mono */
+  --text-2xs--line-height: 1.3;
+  --text-2sm: 0.8125rem; /* 13px — tabelas e UI compacta */
+  --text-2sm--line-height: 1.45;
+  --text-xl: 1.375rem; /* 22px */
+  --text-xl--line-height: 1.25;
+  --text-2xl: 1.75rem; /* 28px */
+  --text-2xl--line-height: 1.2;
+  --text-3xl: 2.25rem; /* 36px */
+  --text-3xl--line-height: 1.1;
+  --text-4xl: 3rem; /* 48px */
+  --text-4xl--line-height: 1.05;
+
+  --tracking-label: 0.08em; /* labels mono uppercase */
+  --tracking-display: -0.01em; /* títulos display Archivo */
+
+  --animate-fr-pulse: fr-pulse 1.6s infinite;
+
+  @keyframes fr-pulse {
+    0%,
+    100% {
+      opacity: 1;
+    }
+    50% {
+      opacity: 0.35;
+    }
   }
 }
 
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+@layer base {
+  * {
+    border-color: var(--color-border);
+  }
+
+  body {
+    background: var(--color-background);
+    color: var(--color-foreground);
+    font-family: var(--font-sans);
+  }
+
+  /* foco visível sempre: ring 2px limão, offset 2 */
+  :focus-visible {
+    outline: 2px solid var(--color-ring);
+    outline-offset: 2px;
+  }
+
+  /* limão como marcador também na seleção de texto */
+  ::selection {
+    background: var(--color-accent);
+    color: var(--color-accent-foreground);
+  }
 }
 
-@keyframes wm-float {
+/* Watermark do player: roda de posição a cada 90s (4 posições × 90s = 360s). */
+@keyframes wm-hop {
   0% {
-    top: 8%;
-    left: 6%;
+    top: 12%;
+    left: 8%;
   }
   25% {
     top: 68%;
-    left: 62%;
+    left: 58%;
   }
   50% {
-    top: 40%;
+    top: 30%;
     left: 22%;
   }
   75% {
-    top: 78%;
-    left: 44%;
+    top: 76%;
+    left: 12%;
   }
   100% {
-    top: 8%;
-    left: 6%;
+    top: 12%;
+    left: 8%;
   }
 }
 
-.wm-float {
-  animation: wm-float 23s linear infinite;
+.wm-hop {
+  animation: wm-hop 360s step-end infinite;
 }

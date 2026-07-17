@@ -3,7 +3,7 @@
   "vcs": { "enabled": true, "clientKind": "git", "useIgnoreFile": true },
   "files": {
     "ignoreUnknown": true,
-    "includes": ["**", "!public", "!assets", "!db/migrations", "!design"]
+    "includes": ["**", "!public", "!assets", "!db/migrations", "!design", "!.claude"]
   },
   "formatter": {
     "enabled": true,

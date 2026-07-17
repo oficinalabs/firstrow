@@ -3,7 +3,7 @@
   "vcs": { "enabled": true, "clientKind": "git", "useIgnoreFile": true },
   "files": {
     "ignoreUnknown": true,
-    "includes": ["**", "!public", "!db/migrations"]
+    "includes": ["**", "!public", "!assets", "!db/migrations", "!design"]
   },
   "formatter": {
     "enabled": true,
@@ -19,6 +19,7 @@
     "formatter": { "quoteStyle": "double" }
   },
   "css": {
+    "parser": { "tailwindDirectives": true },
     "linter": { "enabled": false }
   },
   "assist": {

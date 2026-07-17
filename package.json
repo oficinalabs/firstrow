@@ -18,9 +18,11 @@
     "db:migrate": "drizzle-kit migrate",
     "db:push": "drizzle-kit push",
     "db:studio": "drizzle-kit studio",
+    "email:preview": "react-email dev --dir emails",
     "auth:generate": "npx @better-auth/cli@latest generate --output db/auth-schema.ts"
   },
   "dependencies": {
+    "@react-email/components": "^1.0.12",
     "@tanstack/react-query": "^5.101.2",
     "better-auth": "^1.6.23",
     "class-variance-authority": "^0.7.1",
@@ -33,6 +35,7 @@
     "qrcode": "^1.5.4",
     "react": "19.2.4",
     "react-dom": "19.2.4",
+    "resend": "^6.17.2",
     "tailwind-merge": "^3.6.0",
     "zod": "^4.4.3"
   },
@@ -45,6 +48,7 @@
     "@types/react-dom": "^19",
     "dotenv": "^17.4.2",
     "drizzle-kit": "^0.31.10",
+    "react-email": "^6.9.0",
     "tailwindcss": "^4",
     "typescript": "^5"
   }

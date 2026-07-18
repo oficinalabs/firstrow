@@ -76,8 +76,8 @@ export default function Recibo({
       </Button>
 
       <Text style={{ ...email.text.note, marginTop: 16 }}>
-        O acesso é da tua conta ({emailConta}) — não há link para partilhar. Dúvidas? Responde a
-        este email.
+        O acesso é da tua conta ({emailConta}) — não há link para partilhar. Este endereço não
+        recebe respostas: para qualquer dúvida, fala diretamente com {canalNome}.
       </Text>
     </EmailLayout>
   );

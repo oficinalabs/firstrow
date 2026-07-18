@@ -24,6 +24,12 @@ export function SignInForm({ redirectTo }: { redirectTo: string }) {
     setLoading(true);
     const { error: authError } = await signIn.email({ email, password });
     if (authError) {
+      // Password certa, email por confirmar: o servidor já mandou um link novo
+      // (sendOnSignIn). Levamos a pessoa para a página que explica o passo.
+      if ((authError as AuthClientError).code === "EMAIL_NOT_VERIFIED") {
+        router.push(`/verificar-email?email=${encodeURIComponent(email)}&reenviado=1`);
+        return;
+      }
       setError(
         humanAuthError(authError as AuthClientError, "Não conseguimos entrar. Tenta outra vez."),
       );

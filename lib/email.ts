@@ -1,7 +1,9 @@
 import { createElement, type ReactElement } from "react";
 import { Resend } from "resend";
 import Recibo, { type ReciboProps } from "@/emails/recibo";
+import RedefinirPassword, { type RedefinirPasswordProps } from "@/emails/redefinir-password";
 import VaiComecar, { type VaiComecarProps } from "@/emails/vai-comecar";
+import VerificarEmail, { type VerificarEmailProps } from "@/emails/verificar-email";
 import { formatTime } from "@/lib/format";
 
 /*
@@ -27,6 +29,19 @@ function getResend(): Resend | null {
   return client;
 }
 
+/**
+ * Há credencial para enviar emails?
+ *
+ * Isto é a base da HONESTIDADE dos ecrãs de auth: sem `RESEND_API_KEY` nenhum
+ * email sai daqui, por isso a UI tem de dizer "o envio ainda não está ativo"
+ * em vez de "email a caminho". O endpoint do Better Auth responde sempre
+ * `{ status: true }` (é assim que evita revelar que emails existem), logo a
+ * verdade sobre o envio só pode vir daqui — do servidor.
+ */
+export function isEmailEnabled(): boolean {
+  return Boolean(process.env.RESEND_API_KEY);
+}
+
 export type SendResult = { sent: boolean; id?: string; error?: string };
 
 async function send(to: string, subject: string, react: ReactElement): Promise<SendResult> {
@@ -47,6 +62,26 @@ async function send(to: string, subject: string, react: ReactElement): Promise<S
     console.warn(`[email] Erro inesperado ao enviar "${subject}": ${message}`);
     return { sent: false, error: message };
   }
+}
+
+/** Ativação de conta. `to` = email a confirmar (no registo e nos reenvios). */
+export function sendVerificationEmail(
+  params: VerificarEmailProps & { to: string },
+): Promise<SendResult> {
+  const { to, ...emailProps } = params;
+  return send(to, "Confirma o teu email — FirstRow", createElement(VerificarEmail, emailProps));
+}
+
+/** Link para criar uma nova password (ecrã /recuperar). */
+export function sendPasswordResetEmail(
+  params: RedefinirPasswordProps & { to: string },
+): Promise<SendResult> {
+  const { to, ...emailProps } = params;
+  return send(
+    to,
+    "Criar uma nova password — FirstRow",
+    createElement(RedefinirPassword, emailProps),
+  );
 }
 
 /** Recibo de compra (MB WAY). Enviado para o email da conta compradora. */

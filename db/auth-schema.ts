@@ -1,5 +1,20 @@
 import { boolean, pgTable, text, timestamp } from "drizzle-orm/pg-core";
 
+/*
+ * Papéis. A BD é a verdade — `ADMIN_EMAILS` serve só para promover o primeiro
+ * platform_admin (bootstrap). Ver `server/authz.ts` para os helpers de acesso.
+ *
+ *   platform_admin — nós; vê e gere tudo na plataforma
+ *   league_owner   — dono de uma liga; gere os eventos e o dinheiro da liga
+ *   league_staff   — equipa da liga; opera transmissão e porta (QR)
+ *   viewer         — espectador; compra e vê (o papel de toda a gente)
+ */
+export const ROLES = ["platform_admin", "league_owner", "league_staff", "viewer"] as const;
+
+export type Role = (typeof ROLES)[number];
+
+export const DEFAULT_ROLE: Role = "viewer";
+
 export const user = pgTable("user", {
   id: text("id").primaryKey(),
   name: text("name").notNull(),
@@ -8,6 +23,9 @@ export const user = pgTable("user", {
     .$defaultFn(() => false)
     .notNull(),
   image: text("image"),
+  // Nunca aceita valor vindo do cliente: em `lib/auth.ts` o campo é declarado
+  // com `input: false`, senão um registo podia pedir role=platform_admin.
+  role: text("role").$type<Role>().notNull().default(DEFAULT_ROLE),
   createdAt: timestamp("created_at")
     .$defaultFn(() => new Date())
     .notNull(),

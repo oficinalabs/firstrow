@@ -5,16 +5,16 @@ import { Button } from "@/components/ui/button";
 import { Field, FieldError, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { authClient } from "@/lib/auth-client";
+import { AuthNotice } from "./auth-notice";
 import { type AuthClientError, humanAuthError } from "./error-messages";
 import { LemonLink } from "./lemon-link";
 
 type State =
   | { kind: "idle" }
   | { kind: "sent"; email: string }
-  | { kind: "disabled" }
   | { kind: "error"; message: string };
 
-export function RecoverForm() {
+export function RecoverForm({ emailEnabled }: { emailEnabled: boolean }) {
   const [loading, setLoading] = useState(false);
   const [state, setState] = useState<State>({ kind: "idle" });
 
@@ -25,17 +25,14 @@ export function RecoverForm() {
     const email = String(form.get("email") ?? "").trim();
 
     setLoading(true);
-    const { error } = await authClient.requestPasswordReset({ email, redirectTo: "/entrar" });
+    const { error } = await authClient.requestPasswordReset({
+      email,
+      redirectTo: "/redefinir-password",
+    });
     setLoading(false);
 
     if (!error) {
       setState({ kind: "sent", email });
-      return;
-    }
-    // O envio de email ainda não está configurado no servidor (sem Resend):
-    // estado honesto, não fabricamos sucesso.
-    if ((error as AuthClientError).code === "RESET_PASSWORD_DISABLED") {
-      setState({ kind: "disabled" });
       return;
     }
     setState({
@@ -47,16 +44,25 @@ export function RecoverForm() {
     });
   }
 
-  if (state.kind === "sent") {
+  /*
+   * Sem RESEND_API_KEY não sai email nenhum: dizemos isso à cara em vez de um
+   * formulário que responde "enviado" e não envia nada. O endpoint devolve
+   * sempre sucesso (para não revelar que emails existem), por isso a verdade
+   * sobre o envio só pode vir do servidor — ver `authCapabilities`.
+   */
+  if (!emailEnabled) {
     return (
       <div className="flex flex-col gap-4">
-        <div className="rounded-sm border border-success bg-success/10 px-4 py-3.5">
-          <p className="text-2sm font-semibold text-foreground">Email a caminho.</p>
-          <p className="mt-1 text-2sm leading-relaxed text-foreground-secondary">
-            Se houver conta com <span className="font-medium text-foreground">{state.email}</span>,
-            enviámos um link para criar uma nova password. Vê também o spam.
-          </p>
-        </div>
+        <AuthNotice tone="warning" title="O envio de email ainda não está ativo.">
+          Estamos a ligar este passo. Para já, fala connosco em{" "}
+          <a
+            href="mailto:ola@firstrow.pt"
+            className="font-medium text-foreground underline decoration-accent decoration-2 underline-offset-2"
+          >
+            ola@firstrow.pt
+          </a>{" "}
+          e repomos a tua password à mão.
+        </AuthNotice>
         <div className="text-center">
           <LemonLink href="/entrar">‹ Voltar a entrar</LemonLink>
         </div>
@@ -64,24 +70,13 @@ export function RecoverForm() {
     );
   }
 
-  if (state.kind === "disabled") {
+  if (state.kind === "sent") {
     return (
       <div className="flex flex-col gap-4">
-        <div className="rounded-sm border border-warning bg-warning/10 px-4 py-3.5">
-          <p className="text-2sm font-semibold text-foreground">
-            O envio de email ainda não está ativo.
-          </p>
-          <p className="mt-1 text-2sm leading-relaxed text-foreground-secondary">
-            Estamos a ligar este passo. Para já, fala connosco em{" "}
-            <a
-              href="mailto:ola@firstrow.pt"
-              className="font-medium text-foreground underline decoration-accent decoration-2 underline-offset-2"
-            >
-              ola@firstrow.pt
-            </a>{" "}
-            e repomos a tua password à mão.
-          </p>
-        </div>
+        <AuthNotice tone="success" title="Email a caminho.">
+          Se houver conta com <span className="font-medium text-foreground">{state.email}</span>,
+          enviámos um link para criar uma nova password. Vê também o spam.
+        </AuthNotice>
         <div className="text-center">
           <LemonLink href="/entrar">‹ Voltar a entrar</LemonLink>
         </div>

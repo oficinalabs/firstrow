@@ -3,8 +3,8 @@ import Link from "next/link";
 import { CONTACT_EMAIL } from "@/components/marketing/dados";
 
 /*
- * Rodapé do marketing (tema light). É por aqui que a homepage (/sobre) e o
- * pitch (/criadores) ficam descobríveis — a raiz "/" é a página de canal.
+ * Rodapé do marketing (tema light). É por aqui que a apresentação (/sobre) e o
+ * pitch (/criadores) ficam descobríveis — a raiz "/" é a visão geral dos canais.
  * Termos/Privacidade ainda não têm página (ver PR) — por agora só o que existe.
  */
 export function MarketingFooter() {

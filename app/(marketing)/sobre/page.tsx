@@ -6,7 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { buttonVariants } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { SectionHeader } from "@/components/ui/section-header";
-import { tenant } from "@/lib/tenant";
+import { channelPath, defaultChannel } from "@/lib/channels";
 
 const HERO_SUB =
   "Lives, arquivo e bilhetes dos canais que valem a pena pagar — comédia, música, " +
@@ -50,7 +50,7 @@ export default function SobrePage() {
 
         <Card
           className="overflow-hidden"
-          style={{ "--tenant": tenant.accentColor } as React.CSSProperties}
+          style={{ "--tenant": defaultChannel.accentColor } as React.CSSProperties}
         >
           <div className="flex items-center justify-between border-b border-border px-4 py-3">
             <span className="font-display text-2sm font-bold">O primeiro canal na FirstRow</span>
@@ -61,11 +61,13 @@ export default function SobrePage() {
               aria-hidden
               className="flex size-11 shrink-0 items-center justify-center rounded-sm bg-muted font-display text-base font-bold text-foreground"
             >
-              {tenant.initials}
+              {defaultChannel.initials}
             </div>
             <div className="min-w-0">
-              <div className="truncate text-sm font-semibold">{tenant.name}</div>
-              <div className="truncate text-2sm text-muted-foreground">{tenant.tagline}</div>
+              <div className="truncate text-sm font-semibold">{defaultChannel.name}</div>
+              <div className="truncate text-2sm text-muted-foreground">
+                {defaultChannel.tagline}
+              </div>
             </div>
           </div>
           <div className="flex items-center gap-2 border-t border-border px-4 py-3">
@@ -76,7 +78,7 @@ export default function SobrePage() {
           </div>
           <div className="border-t border-border p-3">
             <Link
-              href="/"
+              href={channelPath(defaultChannel)}
               className={buttonVariants({ variant: "secondary", size: "sm", className: "w-full" })}
             >
               Ver o canal

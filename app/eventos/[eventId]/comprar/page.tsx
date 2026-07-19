@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { notFound, redirect } from "next/navigation";
 import { BuyButton } from "@/components/checkout/buy-button";
 import { CheckoutFrame } from "@/components/checkout/checkout-frame";
-import { tenant } from "@/lib/tenant";
+import { defaultChannel } from "@/lib/channels";
 import { requireUser } from "@/server/auth-helper";
 import { hasActiveEntitlement } from "@/server/entitlements";
 import { getEvent } from "@/server/events";
@@ -33,7 +33,7 @@ export default async function CheckoutPage({ params }: { params: Promise<{ event
         eventTitle={event.title}
         startsAt={event.startsAt.toISOString()}
         priceCents={event.priceCents}
-        channelName={tenant.name}
+        channelName={defaultChannel.name}
       />
     </CheckoutFrame>
   );

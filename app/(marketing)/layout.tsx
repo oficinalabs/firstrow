@@ -8,7 +8,7 @@ export const metadata: Metadata = {
   metadataBase: new URL(SITE_URL),
 };
 
-// Moldura light das páginas de marketing (a raiz "/" é a página de canal, dark).
+// Moldura light do marketing (a raiz "/" é a visão geral do espectador, dark).
 export default function MarketingLayout({ children }: { children: React.ReactNode }) {
   return (
     <div className="flex min-h-dvh flex-col bg-background text-foreground">

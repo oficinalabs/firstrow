@@ -1,6 +1,16 @@
 import { Card } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 
+/**
+ * As três verdades do acesso, como no design. Ficam aqui em vez de repetidas
+ * página a página — a visão geral e o canal mostram exactamente o mesmo.
+ */
+export const COMO_FUNCIONA = [
+  "Compras com MB WAY, sem cartão.",
+  "O acesso é da tua conta — 1 sessão de cada vez.",
+  "Nada de links: quem não paga, não entra.",
+];
+
 /** Cartão "como funciona": label mono + frases curtas (canal e página de evento). */
 export function HowItWorksCard({
   title,

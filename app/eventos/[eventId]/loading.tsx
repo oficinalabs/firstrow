@@ -3,7 +3,7 @@ import { ViewerShell } from "@/components/ui/viewer-shell";
 
 export default function EventLoading() {
   return (
-    <ViewerShell active="canal">
+    <ViewerShell active="inicio">
       <div className="mx-auto flex w-full max-w-xl flex-1 flex-col px-4 pt-4 md:pt-6">
         <Skeleton className="h-4 w-28" />
         <Skeleton className="mt-3 aspect-video" />

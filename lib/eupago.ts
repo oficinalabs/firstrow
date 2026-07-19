@@ -71,7 +71,13 @@ function normalizePhone(raw: string): { alias: string; customerPhone: string; co
  *  · **sandbox** — cobra por MB WAY simples e avisa no log. Não há dinheiro
  *    real, e sem isto era impossível testar o resto da cadeia.
  */
-export async function createMbwayCharge(input: CreateSplitMbwayInput): Promise<unknown> {
+export type MbwayCharge = {
+  /** Referência curta da Eupago — a mesma que o webhook devolve depois. */
+  reference: string | null;
+  transactionId: string | null;
+};
+
+export async function createMbwayCharge(input: CreateSplitMbwayInput): Promise<MbwayCharge> {
   const apiKey = requireEnv("EUPAGO_API_KEY");
   const isProduction = process.env.EUPAGO_ENV === "production";
   const phone = normalizePhone(input.phone);
@@ -125,7 +131,12 @@ export async function createMbwayCharge(input: CreateSplitMbwayInput): Promise<u
     // sobre o que está errado no pedido, e não traz dados do comprador.
     throw new Error(`Eupago MB WAY falhou (${path}): ${res.status} ${await res.text()}`);
   }
-  return res.json();
+
+  const data = (await res.json()) as { reference?: string | number; transactionID?: string };
+  return {
+    reference: data.reference != null ? String(data.reference) : null,
+    transactionId: data.transactionID ?? null,
+  };
 }
 
 /* ------------------------------------------------------------------ *

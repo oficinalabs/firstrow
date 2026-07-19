@@ -5,6 +5,7 @@ import { buildSplit } from "@/lib/split";
 import { requireApi } from "@/server/api-guard";
 import { createPendingEntitlement } from "@/server/entitlements";
 import { getEvent } from "@/server/events";
+import { recordChargeReference } from "@/server/purchases";
 
 /*
  * Compra do acesso à live. Autorização = ter sessão; o dono do recurso é
@@ -33,13 +34,17 @@ export async function POST(req: Request, { params }: { params: Promise<{ eventId
   const amountEur = event.priceCents / 100;
   const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? "";
 
-  await createMbwayCharge({
+  const charge = await createMbwayCharge({
     amountEur,
     phone: body.phone,
     identifier: entitlement.id,
     beneficiaries: buildSplit(amountEur),
     callbackUrl: `${appUrl}/api/webhooks/eupago`,
   });
+
+  // Guardar a referência agora, e não só quando o webhook chegar: é o que
+  // permite reconciliar uma compra cujo webhook se perca pelo caminho.
+  await recordChargeReference("entitlement", entitlement.id, charge.reference);
 
   // A resposta crua da Eupago NÃO sai daqui: traz referências e identificadores
   // do nosso contrato que o browser não precisa de ver. O cliente só quer

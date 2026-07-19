@@ -5,6 +5,7 @@ import { limitByIp } from "@/lib/rate-limit";
 import { buildSplit } from "@/lib/split";
 import { requireApi } from "@/server/api-guard";
 import { getEvent } from "@/server/events";
+import { recordChargeReference } from "@/server/purchases";
 import { createPendingTicket } from "@/server/tickets";
 
 const bodySchema = z.object({ phone: z.string().trim().min(9) });
@@ -41,13 +42,17 @@ export async function POST(req: Request, { params }: { params: Promise<{ eventId
   const amountEur = result.ticket.priceCents / 100;
   const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? "";
 
-  await createMbwayCharge({
+  const charge = await createMbwayCharge({
     amountEur,
     phone: parsed.data.phone,
     identifier: result.ticket.id,
     beneficiaries: buildSplit(amountEur),
     callbackUrl: `${appUrl}/api/webhooks/eupago`,
   });
+
+  // Guardar a referência agora, e não só quando o webhook chegar: é o que
+  // permite reconciliar uma compra cujo webhook se perca pelo caminho.
+  await recordChargeReference("ticket", result.ticket.id, charge.reference);
 
   // Só o id do bilhete — a resposta crua da Eupago fica no servidor.
   // O `ticketId` é o que o cliente usa para fazer polling do estado.

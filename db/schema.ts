@@ -1,4 +1,12 @@
-import { index, integer, pgTable, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
+import {
+  boolean,
+  index,
+  integer,
+  pgTable,
+  text,
+  timestamp,
+  uniqueIndex,
+} from "drizzle-orm/pg-core";
 import { user } from "./auth-schema";
 
 /*
@@ -164,4 +172,91 @@ export const playbackSessions = pgTable(
     revokedAt: timestamp("revoked_at"),
   },
   (t) => [index("playback_sessions_user_idx").on(t.userId)],
+);
+
+/*
+ * Que texto de consentimento foi mostrado nesta compra. Os três casos da
+ * secção 6 de `docs/legal/CONTEUDO-PAGINAS.md`:
+ *
+ *   bilhete — evento presencial com data marcada (só informativo, sem checkbox)
+ *   ppv     — acesso a uma live com data marcada (checkbox obrigatória)
+ *   vod     — arquivo já gravado; renúncia expressa aos 14 dias (checkbox)
+ */
+export const CONSENT_KINDS = ["bilhete", "ppv", "vod"] as const;
+
+export type ConsentKind = (typeof CONSENT_KINDS)[number];
+
+/*
+ * ============================================================================
+ *  PROVA DE CONSENTIMENTO — o que foi mostrado a quem, e quando
+ * ============================================================================
+ *
+ * Exigência de `docs/legal/CONTEUDO-PAGINAS.md` (secção 6): por cada compra
+ * temos de conseguir apresentar, numa disputa, o **texto exato** que a pessoa
+ * viu antes de pagar, com data/hora, IP e conta. Não chega dizer "está nos
+ * Termos" — a prova é por compra.
+ *
+ * ────────────────────────────────────────────────────────────────────────────
+ *  PORQUE É QUE NENHUMA CHAVE ESTRANGEIRA AQUI É `cascade`
+ * ────────────────────────────────────────────────────────────────────────────
+ *
+ * A mesma política diz que faturação e histórico de compras se guardam **10
+ * anos, mesmo depois de a conta ser fechada**. Uma prova que desaparecesse com
+ * a conta, com o evento ou com a compra não era prova nenhuma — era o oposto:
+ * bastava apagar a conta para o registo se evaporar exatamente quando é preciso.
+ *
+ * Por isso as ligações são todas `set null` e **os dados que provam alguma
+ * coisa estão copiados para a própria linha** (`userEmail`, `eventTitle`,
+ * `consentText`). A linha vale por si, mesmo sem nada à volta.
+ *
+ * ⚠️ RETENÇÃO: o `ipAddress` daqui NÃO é um log de sessão. A política dá 90
+ * dias aos registos de sessão/IP e 10 anos à faturação; este IP é parte da
+ * prova da compra, logo segue os 10 anos. Uma limpeza periódica de IPs não
+ * pode varrer esta tabela.
+ *
+ * É um registo em ACRESCENTO, sem unicidade por compra: se alguém voltar ao
+ * checkout e aceitar outra vez, ficam as duas linhas. O histórico de quando se
+ * consentiu é mais defensável do que uma linha reescrita.
+ *
+ * (Só a tabela é desta frente. Quem a preenche é o fluxo de checkout.)
+ */
+export const purchaseConsents = pgTable(
+  "purchase_consents",
+  {
+    id: text("id").primaryKey(),
+
+    // ── Ligações: úteis para navegar, nunca para sustentar a prova ──────────
+    userId: text("user_id").references(() => user.id, { onDelete: "set null" }),
+    eventId: text("event_id").references(() => events.id, { onDelete: "set null" }),
+    /** A compra: exatamente uma destas fica preenchida (PPV/VOD vs. bilhete). */
+    entitlementId: text("entitlement_id").references(() => entitlements.id, {
+      onDelete: "set null",
+    }),
+    ticketId: text("ticket_id").references(() => tickets.id, { onDelete: "set null" }),
+
+    // ── A prova: cópia do que era verdade no momento da compra ──────────────
+    /** Quem era, à data. Sobrevive ao apagar da conta — é o registo fiscal. */
+    userEmail: text("user_email").notNull(),
+    /** O que estava a comprar, à data. */
+    eventTitle: text("event_title").notNull(),
+    kind: text("kind").$type<ConsentKind>().notNull(),
+    /** O texto **exato** mostrado. É isto que se apresenta numa disputa. */
+    consentText: text("consent_text").notNull(),
+    /** Versão do texto legal, para saber que redação estava em vigor. */
+    textVersion: text("text_version").notNull(),
+    /**
+     * Resultado da checkbox. NULL quando o caso não tem checkbox (bilhete
+     * presencial, que é só informativo) — distinto de `false`, que seria
+     * "mostrou-se e não aceitou".
+     */
+    checkboxAccepted: boolean("checkbox_accepted"),
+    ipAddress: text("ip_address"),
+    userAgent: text("user_agent"),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (t) => [
+    index("purchase_consents_user_idx").on(t.userId),
+    index("purchase_consents_entitlement_idx").on(t.entitlementId),
+    index("purchase_consents_ticket_idx").on(t.ticketId),
+  ],
 );

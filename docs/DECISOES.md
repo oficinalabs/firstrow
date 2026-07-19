@@ -26,6 +26,29 @@ Polar (default do template) não faz MB WAY. Spike IfthenPay vs Eupago → **Eup
 ## ADR-008 · Piloto: SmokingBars (2026-07-16)
 Melhor relação do dono do projeto; 131 patronos; 71% no tier de stream. **Estado:** fixo.
 
+## ADR-012 · Prova de consentimento por compra, que sobrevive ao fecho de conta (2026-07-19)
+[CONTEUDO-PAGINAS.md](legal/CONTEUDO-PAGINAS.md) §6 exige que, por cada compra, se consiga apresentar numa disputa o **texto exato** mostrado antes do pagamento, com data/hora, IP, conta e resultado da checkbox. Não chega estar nos Termos — a prova é por compra.
+
+**Decisão.** Tabela `purchase_consents`, em acrescento (sem unicidade por compra: consentir duas vezes deixa duas linhas, e o histórico é mais defensável do que uma linha reescrita).
+
+**O que decidiu o desenho:** a mesma política guarda faturação e histórico de compras **10 anos, mesmo depois de a conta ser fechada**. Logo:
+- **Nenhuma FK em cascade.** As quatro ligações (`user`, `event`, `entitlement`, `ticket`) são `ON DELETE SET NULL`. Uma prova que morresse com a conta era o contrário de uma prova — bastava apagar a conta para o registo desaparecer quando é preciso.
+- **O que prova está copiado na linha** (`user_email`, `event_title`, `consent_text`). A linha vale por si, sem nada à volta. Verificado: apagar a conta deixa `user_id` a NULL e mantém email, texto, IP e checkbox.
+- ⚠️ **O `ip_address` desta tabela não é um log de sessão.** A política dá 90 dias a sessões/IP e 10 anos à faturação; este IP é parte da prova da compra. Uma limpeza periódica de IPs **não pode** varrer esta tabela.
+
+**Estado:** 🟢 tabela e schema feitos (Frente E). O fluxo de checkout que a preenche, os textos legais e a versão do texto ficam por fazer.
+
+## ADR-011 · Ser dono de um canal é uma linha, não uma coluna (2026-07-19)
+A SmokingBars **ainda não é cliente** — não assinaram e não têm conta. Não há a quem dar o canal; quem o opera é o Rui (`ruicosta607@gmail.com`), que a migração semeia como `owner` quando não existe nenhum.
+
+**Decisão.** A posse vive em `channel_members` e não numa coluna `channels.owner_id`. Duas razões: entregar o canal à liga quando ela assinar passa a ser um INSERT e um DELETE em vez de uma migração; e **dois donos ao mesmo tempo** é um caso real, porque estas ligas têm sócios.
+
+**Invariante:** um canal nunca fica sem `owner`. Garantido na aplicação (`server/channel-members.ts`), **não** numa constraint — o Postgres não exprime "mantém pelo menos uma linha com role='owner' por canal" sem triggers, e um trigger escondido é pior do que uma função com nome. A condição vai **dentro do `where`** de cada escrita, para duas remoções em paralelo não passarem ambas na contagem.
+
+Hoje é redundante, porque `platform_admin` passa por cima de tudo. Fica à mesma: é o estado certo nos dados e é o que torna a entrega limpa.
+
+**Estado:** 🟢 decidido e implementado (Frente E). Falta a UI (Frente F).
+
 ## ADR-010 · Papéis em dois andares: global vs. por canal (2026-07-19)
 Os papéis eram todos globais (`user.role`: `platform_admin`, `league_owner`, `league_staff`, `viewer`). Com um canal só — SmokingBars, *hardcoded* em `lib/channels.ts` — não fazia diferença; com a **Liga Knockout** (ADR-009) a entrar, um `league_owner` passava a ser dono dos eventos e do **dinheiro** da outra liga. Era a dívida que bloqueava o multi-tenant.
 

@@ -193,9 +193,9 @@ nenhum recebe **zeros**, não a receita de toda a gente.
 
 ### Como foi verificado
 
-Postgres real (PGlite sobre socket) com o schema anterior à migração e dados
-com a forma dos de produção, e depois uma segunda liga semeada. As funções
-testadas são as **de produção**, importadas diretamente:
+**Isolamento** — Postgres real (PGlite sobre socket) com o schema anterior à
+migração, dados com a forma dos de produção, e depois uma segunda liga semeada.
+As funções testadas são as **de produção**, importadas diretamente:
 
 - 10 asserções sobre os predicados puros — dono de A não gere nem opera B; staff
   opera mas não gere; `platform_admin` passa sem ser membro; papel de canal
@@ -204,10 +204,33 @@ testadas são as **de produção**, importadas diretamente:
   pagamentos recentes e dashboard, cada um só com o seu canal; `platform_admin`
   vê os dois; e o caso crítico: **conta sem canais vê zero, não tudo**.
 
-Tudo verde. A migração foi corrida contra a mesma base: aplicar → reaplicar
-(idempotente) → `--rollback` → aplicar outra vez, com os 2 eventos, os
-entitlements, os bilhetes e a sessão de reprodução intactos em todas as
-passagens.
+**Migração** — contra a base **`firstrow_teste`** (Neon, separada de produção),
+partindo do schema anterior materializado com `drizzle-kit push` e um fixture
+com a forma de produção: 2 eventos `draft`, 1 `platform_admin` + 3 `viewer`,
+compras, bilhetes e sessão de reprodução.
+
+Os dois ramos foram exercitados:
+
+| Cenário | Resultado |
+| --- | --- |
+| **com** `league_owner`/`league_staff` (que produção não tem) | convertidos em `owner`/`staff` do canal; o Rui **não** é acrescentado, porque já há dono |
+| **sem** nenhum (igual a produção hoje) | nada a converter; o Rui entra como `owner` da SmokingBars |
+
+Ciclo completo em ambos: aplicar → reaplicar (idempotente) → `--rollback` →
+aplicar outra vez, com os 2 eventos, entitlements, bilhetes e sessão intactos
+em todas as passagens. Mais 20 asserções sobre o estado final, incluindo:
+
+- o `--rollback` devolve `league_owner`/`league_staff` à coluna **antes** de
+  deitar as filiações fora, e recusa-se a apagar `purchase_consents` se ela
+  tiver registos;
+- **a prova de consentimento sobrevive ao fecho de conta** — apagar o
+  utilizador deixa `user_id` e `entitlement_id` a NULL e mantém email, texto
+  exato, IP e resultado da checkbox;
+- **um canal nunca fica sem dono** — remover ou despromover o último `owner` é
+  recusado; com dois donos passa; e o que sobra volta a ser intocável.
+
+Os nomes das restrições foram conferidos contra `drizzle-kit generate`, para um
+`generate`/`push` futuro não ver diferenças onde não há nenhuma.
 
 ---
 
@@ -578,10 +601,21 @@ decisão do dono:
 10. **Ninguém consegue criar nem editar canais pela app.** A tabela `channels`
     existe e é lida em todo o lado, mas escrever nela é SQL à mão. A UI é da
     **Frente F**; o schema já tem os campos todos à espera dela.
-11. **Não há como convidar membros para um canal.** `channel_members` só se
-    preenche por SQL ou pela migração. Enquanto não houver ecrã, um dono novo
-    entra por `insert` manual — vale a pena um comando antes de a segunda liga
-    assinar.
+11. **As funções de membros existem, falta o ecrã.** `server/channel-members.ts`
+    tem `listChannelMembers`, `setChannelMemberByEmail` e `removeChannelMember`,
+    já com o invariante de que **um canal nunca fica sem dono** (recusa remover
+    ou despromover o último `owner`, com a condição dentro do `where` para
+    aguentar duas remoções em paralelo). Não há UI nenhuma a chamá-las — é da
+    Frente F.
+16. **A prova de consentimento tem retenção própria e ninguém a está a aplicar.**
+    `purchase_consents` guarda IP como **prova de compra** (10 anos), não como
+    log de sessão (90 dias). Se algum dia entrar uma limpeza periódica de IPs,
+    **tem de excluir esta tabela** — ver ADR-012. Também não há ainda purga para
+    os 10 anos: quando houver, é por `created_at`.
+17. **`purchase_consents` está vazia de significado até o checkout a preencher.**
+    A tabela e o schema são desta frente; o fluxo, os textos legais e o esquema
+    de versões (`text_version`) não. Enquanto ninguém escrever lá, a obrigação
+    legal continua por cumprir — a tabela sozinha não prova nada.
 12. **O backoffice não tem seletor de canal.** Quem gere **um** canal vê-o na
     sidebar; o `platform_admin` (que gere todos) não vê canal nenhum, porque a
     pergunta "qual é o canal ativo?" não tem resposta única para ele — e

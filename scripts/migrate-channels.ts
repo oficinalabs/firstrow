@@ -31,12 +31,11 @@ import postgres from "postgres";
  *       user.role = 'league_staff' → membro `staff` da SmokingBars
  *    e devolve essas contas a `viewer` no papel global. Ninguém ganha nem
  *    perde acesso: muda só ONDE o acesso está guardado.
- *
- * O QUE NÃO FAZ, DE PROPÓSITO: não promove ninguém a dono. Se não houver
- * nenhum `league_owner`, a SmokingBars fica sem membros — e continua gerível,
- * porque `platform_admin` passa por cima de tudo (`server/authz.ts`). Inventar
- * um dono seria dar acesso a quem não o tinha, e isso não é trabalho de uma
- * migração.
+ * 5. Garante que a SmokingBars **tem dono**: se, depois da conversão, não
+ *    houver nenhum `owner`, entra `OWNER_EMAIL` como dono.
+ * 6. Cria `purchase_consents` — a prova de consentimento por compra exigida por
+ *    `docs/legal/CONTEUDO-PAGINAS.md` (secção 6). Vai nesta migração para não
+ *    abrirmos outra daqui a uma semana; quem a preenche é o checkout.
  *
  * TUDO NUMA TRANSAÇÃO e tudo IDEMPOTENTE: corre as vezes que quiseres.
  */
@@ -50,6 +49,20 @@ const SMOKINGBARS = {
   bannerUrl: null as string | null,
   initials: "SB",
 };
+
+/*
+ * Quem fica dono da SmokingBars se mais ninguém for.
+ *
+ * A SmokingBars **ainda não é cliente** — não disseram que sim e não têm conta
+ * na plataforma. Não há a quem dar o canal, e o Rui é quem o opera.
+ *
+ * Ser dono é uma LINHA em `channel_members` e não uma coluna em `channels`,
+ * o que faz da entrega à liga um INSERT e um DELETE em vez de uma migração —
+ * e deixa haver dois donos ao mesmo tempo, que é o caso real de uma liga com
+ * sócios. Hoje é redundante (o `platform_admin` passa por cima de tudo); fica
+ * à mesma, porque é o estado certo nos dados.
+ */
+const OWNER_EMAIL = "ruicosta607@gmail.com";
 
 /** Papel global antigo → papel dentro do canal. */
 const ROLE_MAP = [
@@ -103,7 +116,7 @@ const sql = postgres(url, {
 type Contagem = { n: number };
 
 async function relatorio(label: string) {
-  const [[eventos], [semCanal], [canais], [membros]] = await Promise.all([
+  const [[eventos], [semCanal], [canais], [membros], [consentimentos]] = await Promise.all([
     sql<Contagem[]>`select count(*)::int as n from events`,
     sql<Contagem[]>`
       select count(*)::int as n from information_schema.columns
@@ -112,6 +125,9 @@ async function relatorio(label: string) {
       select count(*)::int as n from information_schema.tables where table_name = 'channels'`,
     sql<Contagem[]>`
       select count(*)::int as n from information_schema.tables where table_name = 'channel_members'`,
+    sql<Contagem[]>`
+      select count(*)::int as n from information_schema.tables
+       where table_name = 'purchase_consents'`,
   ]);
 
   const papeis = await sql<{ role: string; n: number }[]>`
@@ -121,7 +137,8 @@ async function relatorio(label: string) {
   console.info(
     `eventos: ${eventos.n} · tabela channels: ${canais.n ? "sim" : "não"} · ` +
       `tabela channel_members: ${membros.n ? "sim" : "não"} · ` +
-      `coluna events.channel_id: ${semCanal.n ? "sim" : "não"}`,
+      `coluna events.channel_id: ${semCanal.n ? "sim" : "não"} · ` +
+      `tabela purchase_consents: ${consentimentos.n ? "sim" : "não"}`,
   );
   console.info(`papéis: ${papeis.map((r) => `${r.role}=${r.n}`).join(" · ") || "(nenhum)"}`);
 
@@ -251,6 +268,74 @@ async function avancar() {
         console.info(`✓ nenhuma conta com ${legacy} — nada a converter.`);
       }
     }
+
+    // 7. O canal não pode ficar sem dono. Só entra se a conversão acima não
+    //    tiver deixado nenhum — quem já for dono manda.
+    const [donoExistente] = await tx<{ email: string }[]>`
+      select u.email from channel_members m
+        join "user" u on u.id = m.user_id
+       where m.channel_id = ${piloto.id} and m.role = 'owner' limit 1`;
+
+    if (donoExistente) {
+      console.info(`✓ ${SMOKINGBARS.name} já tem dono (${donoExistente.email}) — não se toca.`);
+    } else {
+      const [conta] = await tx<{ id: string }[]>`
+        select id from "user" where lower(email) = ${OWNER_EMAIL.toLowerCase()} limit 1`;
+      if (conta) {
+        await tx`
+          insert into channel_members (id, user_id, channel_id, role)
+          values (${crypto.randomUUID()}, ${conta.id}, ${piloto.id}, 'owner')
+          on conflict (user_id, channel_id) do update set role = 'owner', updated_at = now()`;
+        console.info(`✓ ${OWNER_EMAIL} é agora owner da ${SMOKINGBARS.name}.`);
+      } else {
+        // Não é erro: numa base onde essa conta não exista (um ambiente de
+        // ensaio, por exemplo), o canal fica sem dono e continua gerível pelo
+        // platform_admin. Mas tem de se ver, não de passar em silêncio.
+        console.warn(
+          `⚠️  ${OWNER_EMAIL} não existe nesta base — a ${SMOKINGBARS.name} fica SEM DONO. ` +
+            "Cria a conta e volta a correr, ou acrescenta o membro à mão.",
+        );
+      }
+    }
+
+    /*
+     * 8. Prova de consentimento por compra (docs/legal/CONTEUDO-PAGINAS.md §6).
+     *
+     * Nenhuma FK em cascade, de propósito: a política guarda faturação e
+     * histórico de compras 10 anos, MESMO depois de a conta ser fechada. Uma
+     * prova que morresse com a conta, com o evento ou com a compra não servia
+     * — bastava apagar a conta para o registo desaparecer quando é preciso.
+     * Por isso as ligações são `set null` e o que prova está copiado na linha.
+     */
+    await tx`
+      create table if not exists purchase_consents (
+        id                text primary key,
+        user_id           text constraint purchase_consents_user_id_user_id_fk
+                            references "user"(id) on delete set null,
+        event_id          text constraint purchase_consents_event_id_events_id_fk
+                            references events(id) on delete set null,
+        entitlement_id    text constraint purchase_consents_entitlement_id_entitlements_id_fk
+                            references entitlements(id) on delete set null,
+        ticket_id         text constraint purchase_consents_ticket_id_tickets_id_fk
+                            references tickets(id) on delete set null,
+        user_email        text not null,
+        event_title       text not null,
+        kind              text not null,
+        consent_text      text not null,
+        text_version      text not null,
+        checkbox_accepted boolean,
+        ip_address        text,
+        user_agent        text,
+        created_at        timestamp not null default now()
+      )`;
+    await tx`
+      create index if not exists purchase_consents_user_idx on purchase_consents (user_id)`;
+    await tx`
+      create index if not exists purchase_consents_entitlement_idx
+        on purchase_consents (entitlement_id)`;
+    await tx`
+      create index if not exists purchase_consents_ticket_idx on purchase_consents (ticket_id)`;
+    console.info("✓ tabela purchase_consents garantida (prova de consentimento).");
   });
 
   // 7. Invariantes. Se alguma falhar, o dado está errado e é preciso saber já.
@@ -286,6 +371,28 @@ async function reverter() {
     await tx`drop table if exists channel_members`;
     await tx`drop table if exists channels`;
     console.info("✓ tabelas de canais e coluna events.channel_id removidas.");
+
+    /*
+     * `purchase_consents` só cai se estiver VAZIA.
+     *
+     * É a prova de consentimento de compras reais, com 10 anos de retenção
+     * legal. Um rollback é para desfazer uma migração, não para apagar
+     * evidência — e a tabela é aditiva, não incomoda ninguém se ficar. Se
+     * tiver linhas, fica, e diz-se porquê.
+     */
+    const [consentimentos] = await tx<{ n: number }[]>`
+      select count(*)::int as n from purchase_consents`.catch(() => [{ n: 0 }]);
+
+    if (consentimentos.n > 0) {
+      console.warn(
+        `⚠️  purchase_consents tem ${consentimentos.n} registo(s) e NÃO foi removida — ` +
+          "é prova de consentimento de compras (retenção legal de 10 anos). " +
+          "Se a quiseres mesmo fora, apaga-a à mão e assume a decisão.",
+      );
+    } else {
+      await tx`drop table if exists purchase_consents`;
+      console.info("✓ purchase_consents removida (estava vazia).");
+    }
   });
 }
 

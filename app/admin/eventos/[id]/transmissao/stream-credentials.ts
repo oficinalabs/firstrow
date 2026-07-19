@@ -1,4 +1,21 @@
+import "server-only";
 import { requireEnv } from "@/lib/server-env";
+
+/*
+ * Guarda de build (ver lib/server-env.ts). Este é o ficheiro mais perigoso do
+ * repositório: devolve a CHAVE DE STREAM RTMPS do evento.
+ *
+ * Uma chave de reprodução que fuja deixa uma pessoa VER de graça. Esta deixa
+ * EMITIR: quem a tiver transmite para dentro do evento, e o que aparece no
+ * ecrã de toda a gente que pagou passa a ser dele. Não é acesso indevido, é
+ * sequestro da emissão em direto.
+ *
+ * O `masked` no <CopyField> da página é conforto visual, não proteção — o
+ * valor vai à mesma no payload RSC para o browser de quem abrir a página. Por
+ * isso o que protege isto a sério é o gate do servidor (`canManageEvents` no
+ * layout do backoffice), e este import garante que o valor nunca é arrastado
+ * para um bundle de cliente por acidente.
+ */
 
 export type StreamCredentials = { rtmpsUrl: string; streamKey: string };
 

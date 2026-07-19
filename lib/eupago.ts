@@ -1,5 +1,10 @@
+import "server-only";
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { requireEnv } from "@/lib/server-env";
+
+// Guarda de build (ver lib/server-env.ts): chave da API da Eupago e segredo
+// do webhook. Com o segredo do webhook, qualquer pessoa consegue forjar uma
+// confirmação de pagamento e emitir bilhetes sem pagar.
 
 function baseUrl(): string {
   return process.env.EUPAGO_ENV === "production"

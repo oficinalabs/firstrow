@@ -3,8 +3,8 @@ import { EventCard } from "@/components/eventos/event-card";
 import { splitProgram } from "@/components/eventos/program";
 import { WatchPlayer } from "@/components/player/watch-player";
 import { ViewerShell } from "@/components/ui/viewer-shell";
+import { defaultChannel } from "@/lib/channels";
 import { formatDateTime } from "@/lib/format";
-import { tenant } from "@/lib/tenant";
 import { requireUser } from "@/server/auth-helper";
 import { hasActiveEntitlement } from "@/server/entitlements";
 import { getEvent, listEvents } from "@/server/events";
@@ -27,8 +27,8 @@ export default async function WatchPage({ params }: { params: Promise<{ eventId:
     : [];
 
   const meta = isVod
-    ? `Gravado a ${formatDateTime(event.startsAt)} · ${tenant.name}`
-    : `${formatDateTime(event.startsAt)} · Em direto · ${tenant.name}`;
+    ? `Gravado a ${formatDateTime(event.startsAt)} · ${defaultChannel.name}`
+    : `${formatDateTime(event.startsAt)} · Em direto · ${defaultChannel.name}`;
 
   const info = (
     <div className="border-b pb-4">

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { validateEventForm } from "@/lib/event-rules";
-import { canManageEvents, getCurrentUser } from "@/server/authz";
+import { requireApi } from "@/server/api-guard";
+import { canManageEvents } from "@/server/authz";
 import { createEvent } from "@/server/events";
 
 /*
@@ -11,6 +12,8 @@ import { createEvent } from "@/server/events";
  * (lib/event-rules.ts) e pela mesma guarda de duplicados (server/events.ts) —
  * não há uma porta com validação mais fraca do que a outra.
  *
+ * Criar eventos é gerir a liga (e o dinheiro dela) → canManageEvents.
+ *
  * Corpo: { title, date: "2026-07-26", time: "21:00", price: "7,50" }.
  * A hora é de Lisboa, como no formulário.
  *
@@ -18,11 +21,8 @@ import { createEvent } from "@/server/events";
  * vão-se buscar à página de transmissão, por quem tem papel para as ver.
  */
 export async function POST(req: Request) {
-  const user = await getCurrentUser();
-  if (!user) return NextResponse.json({ error: "Sem sessão" }, { status: 401 });
-  if (!canManageEvents(user)) {
-    return NextResponse.json({ error: "Sem permissão" }, { status: 403 });
-  }
+  const gate = await requireApi(canManageEvents);
+  if (!gate.ok) return gate.response;
 
   let body: unknown;
   try {

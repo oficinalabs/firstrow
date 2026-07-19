@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
+import { defaultChannel } from "@/lib/channels";
 import { sendReceiptEmail } from "@/lib/email";
 import { type EupagoWebhookPayload, verifyWebhookSignature } from "@/lib/eupago";
-import { tenant } from "@/lib/tenant";
 import { activateEntitlement } from "@/server/entitlements";
 import { issueTicket, refundTicket } from "@/server/tickets";
 
@@ -29,7 +29,7 @@ export async function POST(req: Request) {
       await sendReceiptEmail({
         nome: receipt.nome ?? undefined,
         eventoTitulo: receipt.eventoTitulo,
-        canalNome: tenant.name,
+        canalNome: defaultChannel.name,
         eventoData: receipt.eventoData,
         valorCents: receipt.valorCents,
         numeroRecibo: ref || undefined,

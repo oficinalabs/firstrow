@@ -7,14 +7,14 @@ import { buttonVariants } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { SectionHeader } from "@/components/ui/section-header";
 import { ViewerShell } from "@/components/ui/viewer-shell";
-import { tenant } from "@/lib/tenant";
+import { channelPath, defaultChannel } from "@/lib/channels";
 import { listEvents } from "@/server/events";
 
 export const dynamic = "force-dynamic";
 
 export const metadata: Metadata = {
   title: "Arquivo",
-  description: `Todos os replays do canal ${tenant.name} na FirstRow.`,
+  description: `Todos os replays do canal ${defaultChannel.name} na FirstRow.`,
 };
 
 export default async function VodPage() {
@@ -26,13 +26,16 @@ export default async function VodPage() {
   }
 
   return (
-    <ViewerShell active="canal">
+    <ViewerShell active="inicio" channel={defaultChannel}>
       <div className="mx-auto flex w-full max-w-6xl flex-1 flex-col px-4 pt-5 md:px-8 md:pt-6">
         <SectionHeader
-          eyebrow={tenant.name}
+          eyebrow={defaultChannel.name}
           title="Arquivo do canal"
           action={
-            <Link href="/" className={buttonVariants({ variant: "ghost", size: "sm" })}>
+            <Link
+              href={channelPath(defaultChannel)}
+              className={buttonVariants({ variant: "ghost", size: "sm" })}
+            >
               ‹ Voltar ao canal
             </Link>
           }
@@ -55,7 +58,7 @@ export default async function VodPage() {
             title="O arquivo estreia depois da primeira live"
             description="Cada evento fica disponível aqui como replay depois do direto. Volta ao canal para veres a próxima."
             action={
-              <Link href="/" className={buttonVariants()}>
+              <Link href={channelPath(defaultChannel)} className={buttonVariants()}>
                 Ver o canal
               </Link>
             }

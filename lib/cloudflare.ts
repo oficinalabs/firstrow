@@ -1,5 +1,14 @@
+import "server-only";
 import { importJWK, SignJWT } from "jose";
 import { requireEnv } from "@/lib/server-env";
+
+/*
+ * Guarda de build (ver lib/server-env.ts): aqui vivem o token da API da
+ * Cloudflare e a chave privada que assina os tokens de reprodução. A chave
+ * assina QUALQUER vídeo da conta — se sair daqui, todo o catálogo pago fica
+ * aberto e nem sequer se dá por isso, porque a validação acontece no edge da
+ * Cloudflare e nunca passa pelos nossos logs.
+ */
 
 const API_BASE = "https://api.cloudflare.com/client/v4";
 

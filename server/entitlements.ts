@@ -19,6 +19,31 @@ export async function hasActiveEntitlement(userId: string, eventId: string): Pro
   return rows.length > 0;
 }
 
+/**
+ * O id da compra pendente desta pessoa neste evento, se existir.
+ *
+ * Serve a reconciliação de quem está à espera: o ecrã de compra sabe o evento,
+ * não sabe o id da compra. O índice único (utilizador, evento) garante que a
+ * resposta é uma só.
+ */
+export async function pendingEntitlementId(
+  userId: string,
+  eventId: string,
+): Promise<string | null> {
+  const rows = await db
+    .select({ id: entitlements.id })
+    .from(entitlements)
+    .where(
+      and(
+        eq(entitlements.userId, userId),
+        eq(entitlements.eventId, eventId),
+        eq(entitlements.status, "pending"),
+      ),
+    )
+    .limit(1);
+  return rows[0]?.id ?? null;
+}
+
 // Cria (ou devolve) um entitlement pendente. O id serve de `identifier` na Eupago.
 export async function createPendingEntitlement(userId: string, eventId: string) {
   await db

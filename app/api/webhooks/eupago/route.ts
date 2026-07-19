@@ -1,15 +1,13 @@
 import { NextResponse } from "next/server";
-import { sendReceiptEmail } from "@/lib/email";
 import {
-  confirmPaid,
   type PaymentNotification,
   parseWebhook1,
   parseWebhook2,
   verifyWebhook1Key,
   verifyWebhookSignature,
 } from "@/lib/eupago";
-import { activateEntitlement } from "@/server/entitlements";
-import { issueTicket, refundTicket } from "@/server/tickets";
+import { purchaseKindOf, settlePurchase } from "@/server/fulfilment";
+import { refundTicket } from "@/server/tickets";
 
 /*
  * Webhook de pagamento da Eupago. Aceita as duas gerações (ver lib/eupago.ts):
@@ -27,11 +25,22 @@ import { issueTicket, refundTicket } from "@/server/tickets";
  * fim. Só um problema nosso é que devolve erro, e aí queremos mesmo a repetição.
  */
 
+/*
+ * O que fazer com uma notificação já autenticada.
+ *
+ * Repare-se no que NÃO está aqui: confirmar o pagamento, transitar o estado e
+ * enviar o recibo. Isso vive em `server/fulfilment.ts` porque a reconciliação
+ * (`server/reconcile.ts`) faz exatamente o mesmo quando o webhook se perde — e
+ * dois caminhos a fazer "quase" o mesmo divergem sem ninguém dar por isso.
+ * Daqui para baixo só fica o que é próprio do webhook: os estados que ele traz
+ * e que a reconciliação nunca vê.
+ */
 async function fulfil(payment: PaymentNotification): Promise<void> {
-  const eBilhete = payment.identifier.startsWith("tkt_");
-
   if (payment.status === "Refund") {
-    if (eBilhete) await refundTicket(payment.identifier);
+    // Só bilhetes: um acesso PPV reembolsado ainda não tem caminho definido.
+    if (purchaseKindOf(payment.identifier) === "ticket") {
+      await refundTicket(payment.identifier);
+    }
     return;
   }
 
@@ -39,32 +48,10 @@ async function fulfil(payment: PaymentNotification): Promise<void> {
 
   // A notificação diz que pagaram; quem confirma é a API da Eupago. Sem isto,
   // o 1.0 (que não é assinado) dava acesso a quem descobrisse o URL.
-  if (!(await confirmPaid(payment.reference))) {
+  const resultado = await settlePurchase(payment.identifier, payment.reference);
+  if (resultado === "por-pagar") {
     console.warn(`[eupago] ${payment.identifier} não confirmado — nada emitido.`);
-    return;
   }
-
-  // O prefixo do identifier distingue bilhetes físicos ("tkt_") de acessos PPV
-  // (uuid puro). Ambos devolvem o recibo só na 1ª confirmação (a transição de
-  // estado é que devolve os dados), por isso uma repetição não reenvia email.
-  const receipt = eBilhete
-    ? await issueTicket(payment.identifier, payment.reference)
-    : await activateEntitlement(payment.identifier, payment.reference);
-  if (!receipt) return;
-
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? "";
-  await sendReceiptEmail({
-    nome: receipt.nome ?? undefined,
-    eventoTitulo: receipt.eventoTitulo,
-    // O canal vem do evento pago (server/receipts.ts), não de uma constante:
-    // o recibo tem de nomear a liga a quem se pagou.
-    canalNome: receipt.canalNome,
-    eventoData: receipt.eventoData,
-    valorCents: receipt.valorCents,
-    numeroRecibo: payment.reference || undefined,
-    emailConta: receipt.emailConta,
-    urlEvento: `${appUrl}/eventos/${receipt.eventId}`,
-  });
 }
 
 /**

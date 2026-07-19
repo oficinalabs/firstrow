@@ -16,12 +16,17 @@ import type { Channel } from "@/lib/channels";
  *
  * Fica depois de "Eventos" de propósito: o trabalho do dia-a-dia é o evento;
  * o canal mexe-se uma vez e volta-se lá raramente.
+ *
+ * "Pagamentos" fica encostado a "Ganhos" porque são a mesma pergunta em dois
+ * tempos: os Ganhos são o dinheiro que entrou, os Pagamentos são o que ficou a
+ * meio. Vem primeiro porque é o que precisa de alguém — o extrato só se lê.
  */
 const NAV: BackofficeNavItem[] = [
   { label: "Dashboard", href: "/admin" },
   { label: "Eventos", href: "/admin/eventos" },
   { label: "Canais", href: "/admin/canais" },
   { label: "Subscritores", href: "/admin/subscritores" },
+  { label: "Pagamentos", href: "/admin/pagamentos" },
   { label: "Ganhos", href: "/admin/ganhos" },
   { label: "Scanner", href: "/admin/scanner" },
 ];

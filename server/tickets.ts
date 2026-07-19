@@ -9,10 +9,24 @@ import { buildReceipt, type ReceiptData } from "@/server/receipts";
 // 5 min); depois deixa de contar para a lotação e o retry reutiliza-a.
 const HOLD_MINUTES = 15;
 
-// O prefixo "tkt_" no id permite ao webhook Eupago distinguir bilhetes de
-// entitlements (uuid puro) pelo `identifier`.
+/**
+ * O prefixo no id permite distinguir bilhetes de entitlements (uuid puro) pelo
+ * `identifier` que viaja até à Eupago e volta.
+ *
+ * Está exportado e não escrito à mão em cada sítio de propósito: quem lê o
+ * identifier de volta (o webhook, a reconciliação) tem de usar EXATAMENTE o
+ * mesmo prefixo de quem o escreve. Duas cópias da mesma string são duas
+ * oportunidades de as separar — e separá-las era emitir um bilhete como se
+ * fosse um acesso, ou não emitir nada.
+ */
+export const TICKET_ID_PREFIX = "tkt_";
+
+export function isTicketId(id: string): boolean {
+  return id.startsWith(TICKET_ID_PREFIX);
+}
+
 function newTicketId(): string {
-  return `tkt_${crypto.randomUUID()}`;
+  return `${TICKET_ID_PREFIX}${crypto.randomUUID()}`;
 }
 
 // Token do QR: opaco, 192 bits — impossível de adivinhar ou enumerar.

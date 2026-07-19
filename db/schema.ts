@@ -141,9 +141,25 @@ export const entitlements = pgTable(
      * ela podia aceitar os dois: pagava duas vezes o mesmo acesso.
      */
     chargeRequestedAt: timestamp("charge_requested_at"),
+    /**
+     * Quando perguntámos à Eupago, pela última vez, se esta compra já foi paga.
+     *
+     * NULL = nunca perguntámos. É o travão partilhado da reconciliação: quem
+     * está à espera faz polling de 3 em 3 segundos e cada verificação é uma
+     * chamada à Eupago. Um contador em memória não servia — na Vercel cada
+     * instância tem o seu e elas morrem entre pedidos (ver a nota em
+     * `docs/SEGURANCA-APP.md` sobre `lib/rate-limit.ts`). A base de dados é o
+     * único sítio onde o travão é o mesmo para todas as instâncias.
+     */
+    reconciledAt: timestamp("reconciled_at"),
     createdAt: timestamp("created_at").notNull().defaultNow(),
   },
-  (t) => [uniqueIndex("entitlements_user_event_uq").on(t.userId, t.eventId)],
+  (t) => [
+    uniqueIndex("entitlements_user_event_uq").on(t.userId, t.eventId),
+    // O varrimento da reconciliação procura sempre por estado + carimbo da
+    // cobrança. Sem índice, ele lia a tabela toda de 5 em 5 minutos.
+    index("entitlements_pending_idx").on(t.status, t.chargeRequestedAt),
+  ],
 );
 
 // Bilhete físico: comprado por MB WAY, validado à porta por QR (1 bilhete = 1 QR único).
@@ -174,10 +190,16 @@ export const tickets = pgTable(
      * ela podia aceitar os dois: pagava duas vezes o mesmo acesso.
      */
     chargeRequestedAt: timestamp("charge_requested_at"),
+    /** Ver a nota homónima em `entitlements` — é o mesmo travão. */
+    reconciledAt: timestamp("reconciled_at"),
     createdAt: timestamp("created_at").notNull().defaultNow(),
     updatedAt: timestamp("updated_at").notNull().defaultNow(),
   },
-  (t) => [index("tickets_event_idx").on(t.eventId), index("tickets_user_idx").on(t.userId)],
+  (t) => [
+    index("tickets_event_idx").on(t.eventId),
+    index("tickets_user_idx").on(t.userId),
+    index("tickets_pending_idx").on(t.status, t.chargeRequestedAt),
+  ],
 );
 
 // Concorrência: 1 sessão a ver por conta. O player faz heartbeat; 2a sessão é recusada.

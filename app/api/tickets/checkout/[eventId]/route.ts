@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { createSplitMbwayPayment } from "@/lib/eupago";
+import { createMbwayCharge } from "@/lib/eupago";
 import { limitByIp } from "@/lib/rate-limit";
 import { buildSplit } from "@/lib/split";
 import { requireApi } from "@/server/api-guard";
@@ -41,7 +41,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ eventId
   const amountEur = result.ticket.priceCents / 100;
   const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? "";
 
-  await createSplitMbwayPayment({
+  await createMbwayCharge({
     amountEur,
     phone: parsed.data.phone,
     identifier: result.ticket.id,

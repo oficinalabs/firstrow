@@ -1,4 +1,5 @@
-import { and, eq, ne } from "drizzle-orm";
+import { and, eq, inArray, ne, type SQL, sql } from "drizzle-orm";
+import type { AnyPgColumn } from "drizzle-orm/pg-core";
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { db } from "@/db";
@@ -215,6 +216,23 @@ export function manageScope(user: Subject): ChannelScope {
 export function operateScope(user: Subject): ChannelScope {
   if (isPlatformAdmin(user)) return { all: true };
   return { all: false, channelIds: operatedChannelIds(user) };
+}
+
+/**
+ * Traduz um âmbito para o `where` de uma query, sobre a coluna que guarda o
+ * canal — `events.channel_id` numa tabela de eventos, `channels.id` na própria
+ * tabela de canais.
+ *
+ * Está aqui, e não em cada ficheiro de queries, porque a linha que interessa é
+ * a do meio e ela tem de ser escrita **uma vez só**: lista vazia devolve `false`
+ * explícito, ou seja ZERO linhas. Uma segunda cópia deste `if` era uma segunda
+ * oportunidade de o trocar por `undefined` — que o Postgres lê como "sem
+ * filtro", e aí quem não gere canal nenhum passava a ver tudo.
+ */
+export function inScope(column: AnyPgColumn, scope: ChannelScope): SQL | undefined {
+  if (scope.all) return undefined;
+  if (scope.channelIds.length === 0) return sql`false`;
+  return inArray(column, [...scope.channelIds]);
 }
 
 // ── Filiações ───────────────────────────────────────────────────────────────

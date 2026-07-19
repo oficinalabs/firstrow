@@ -4,11 +4,23 @@ import { usePathname } from "next/navigation";
 import { type BackofficeNavItem, BackofficeShell } from "@/components/ui/backoffice-shell";
 import type { Channel } from "@/lib/channels";
 
-// Navegação completa do backoffice (Frente E). Scanner e Bilhetes são páginas
-// da Frente D — o item fica na sidebar desde já, como no design.
+/*
+ * Navegação completa do backoffice. Scanner e Bilhetes são páginas da Frente D
+ * — o item fica na sidebar desde já, como no design.
+ *
+ * "Canais" aparece a toda a gente que entra aqui, e não só à FirstRow: o gate
+ * do `/admin` já exige ser `owner` de algum canal (`canEnterBackoffice`), por
+ * isso quem chega tem sempre pelo menos um canal para gerir. O que muda com o
+ * papel é o que a página mostra lá dentro — a FirstRow vê todos, um dono vê o
+ * seu (`manageScope`) — e quem pode CRIAR canais, que é só a FirstRow.
+ *
+ * Fica depois de "Eventos" de propósito: o trabalho do dia-a-dia é o evento;
+ * o canal mexe-se uma vez e volta-se lá raramente.
+ */
 const NAV: BackofficeNavItem[] = [
   { label: "Dashboard", href: "/admin" },
   { label: "Eventos", href: "/admin/eventos" },
+  { label: "Canais", href: "/admin/canais" },
   { label: "Subscritores", href: "/admin/subscritores" },
   { label: "Ganhos", href: "/admin/ganhos" },
   { label: "Scanner", href: "/admin/scanner" },

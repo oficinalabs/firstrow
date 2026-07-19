@@ -27,6 +27,12 @@ export const channels = pgTable("channels", {
   tagline: text("tagline").notNull(),
   /** Cor do canal (dados de configuração, não token de design). */
   accentColor: text("accent_color").notNull(),
+  /**
+   * Segunda cor da liga. NULL quando ela escolheu só uma — e é diferente de
+   * ter uma cor errada: sem segunda cor, `lib/colors.ts` faz `--tenant-2*` cair
+   * na principal e quem consome nunca precisa de saber quantas foram escolhidas.
+   */
+  accentColorSecondary: text("accent_color_secondary"),
   /** Caminho público do logo; NULL → placeholder com as iniciais. */
   logoUrl: text("logo_url"),
   /** Imagem de banner; NULL → sem banner. */

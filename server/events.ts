@@ -34,6 +34,15 @@ export type CreatedEvent = {
  *
  * Calculada aqui e não com o `hashtext()` do Postgres de propósito: essa função
  * é interna, não documentada, e o valor dela pode mudar entre versões.
+ *
+ * O separador entre os campos é preciso: sem ele, título "ab" + hora "c" dava a
+ * mesma chave que título "a" + hora "bc", e dois eventos diferentes ficavam à
+ * espera um do outro sem razão.
+ *
+ * E é escrito como ESCAPE, não como o byte cru. O byte cru corre exatamente
+ * igual, mas torna este ficheiro binário aos olhos do git: deixa de haver diff,
+ * e um conflito de merge aqui passa a ser irresolúvel sem ferramentas à parte.
+ * Aconteceu — não voltes a trocá-lo pelo carácter literal.
  */
 function duplicateLockKey(draft: EventDraft, channelId: string): string {
   const digest = createHash("sha256")

@@ -3,7 +3,9 @@
 > Estado: verificado a **19 de julho de 2026** contra o build de **produção**
 > (`pnpm build && pnpm start`) e a base de dados **Neon real**.
 > Frente B (autorização, blindagem de rotas e segredos) +
-> Frente E (isolamento entre canais — ver a secção própria).
+> Frente E (isolamento entre canais — ver a secção própria) +
+> Frente H (escolha de canal ao criar, e o isolamento medido ponta a ponta com
+> dois canais a sério).
 
 Este documento é o mapa de quem pode o quê e, mais importante, **como é que
 isso é garantido** — porque em Next 16 o sítio onde se põe o gate muda o
@@ -105,7 +107,7 @@ papel noutro canal conta como `viewer` para estas rotas.
 
 | Rota                                        | Regra                          | Anónimo | `viewer` | `owner` |
 | ------------------------------------------- | ------------------------------ | ------- | -------- | -------------- |
-| `POST /api/admin/events`                    | canal alvo + `canManageEvents` | 401     | 403      | ✅             |
+| `POST /api/admin/events`                    | canal alvo + `canManageEvents` | 401     | 403      | ✅ · **400**⁶  |
 | `POST /api/tickets/validate`                | `canOperateEvents` no canal do evento + limite | 401 | **404**⁵ | ✅   |
 | `GET /admin/eventos/[id]/bilhetes/export`   | `canManageEvents` no canal do evento | 307¹ | 307¹  | ✅             |
 | `GET /admin/eventos/[id]/transmissao/live`  | `canOperateEvents` no canal do evento | 307¹ | 307¹ | ✅             |
@@ -130,6 +132,10 @@ devolve informação nenhuma.
 comparação em tempo constante (`timingSafeEqual`), feita **antes** do `JSON.parse`.
 ⁵ **404 e não 403**, pela mesma razão do ³: um evento de outro canal tem de ser
 indistinguível de um id inventado. Ver [Isolamento entre canais](#isolamento-entre-canais).
+⁶ **400** quando gere mais do que um canal e não indica `canal` no corpo: é um
+pedido incompleto, que o cliente corrige sozinho, e não uma falta de permissão.
+Canal alheio e canal inexistente dão **403 com a mesma mensagem**. Ver
+[Escolher o canal ao criar um evento](#escolher-o-canal-ao-criar-um-evento).
 
 ---
 
@@ -184,6 +190,47 @@ Mais dois, fora do `server/stats.ts`:
   o papel, não o canal. Quem soubesse (ou adivinhasse) um id descarregava os
   contactos de qualquer evento da plataforma.
 
+### Escolher o canal ao criar um evento
+
+> Frente H. Medido a **19 de julho de 2026** contra o build de produção e a base
+> **`firstrow_teste`** com **dois canais e um dono para cada**.
+
+Criar é a única operação sem evento de onde tirar o canal, por isso é a única
+que o tem de escolher. `resolveChannelForNewEvent` recusava quando havia mais do
+que um — correto, mas deixava o backoffice sem forma de criar assim que
+entrasse a segunda liga. Agora há uma escolha, e a regra é:
+
+| Canais onde a pessoa pode criar | O que o formulário faz                     |
+| ------------------------------- | ------------------------------------------ |
+| 0                               | não mostra formulário nenhum — diz que falta criar um canal |
+| 1                               | **não pergunta**: preenche e mostra qual é  |
+| 2 ou mais                       | seletor, **sem canal pré-escolhido**        |
+
+Não pré-escolher com vários é deliberado: um valor por omissão é a forma mais
+barata de criar o evento — e o dinheiro dele — na liga errada.
+
+**A lista oferecida e a lista aceite são a mesma função** (`listCreatableChannels`).
+Se fossem calculadas em sítios diferentes, o formulário acabava por oferecer um
+canal que a gravação recusava.
+
+O seletor **não é a segurança**: o slug vem do cliente e é revalidado contra
+`canManageEvents` a cada pedido. Medido, com o dono da liga A a pedir a liga B:
+
+| Pedido a `POST /api/admin/events`            | Resposta |
+| -------------------------------------------- | -------- |
+| sem sessão                                    | **401**  |
+| `viewer` sem canais                           | **403** "Não tens nenhum canal onde criar eventos." |
+| dono de A com `canal: "<slug de B>"`          | **403**  |
+| dono de A com `canal: "<slug inexistente>"`   | **403**, **mensagem idêntica** à de cima |
+| `platform_admin` com 2 canais, sem `canal`    | **400** "Escolhe o canal onde o evento vai nascer." |
+| dono de um canal só, sem `canal`              | **201**, nasce no canal dele |
+| dados inválidos **+** canal alheio            | **403** (autorização antes de validação — um 400 já contava que o canal existe) |
+
+O 400 é o único status novo: não dizer qual dos teus canais é um pedido
+incompleto que o cliente corrige sozinho, não uma falta de permissão. A resposta
+continua a devolver **só o `id`** — a chave da stream vai-se buscar à página de
+transmissão.
+
 ### Uma consequência boa
 
 O âmbito também tapa a [fuga do render em paralelo](#a-fuga-que-isto-fechou):
@@ -191,9 +238,103 @@ as páginas do backoffice já correm as queries antes de o gate do layout as
 travar, mas agora essas queries levam os canais de quem pede. Quem não gere
 nenhum recebe **zeros**, não a receita de toda a gente.
 
+### ⚠️ O "404" das páginas é, na verdade, um 200 — e porque é que continua a servir
+
+> Achado da Frente H, ao medir. **Não é regressão de ninguém: é assim desde
+> sempre e é a mesma causa da [fuga do render em paralelo](#a-fuga-que-isto-fechou).**
+
+A matriz acima diz que `/admin/eventos/[id]/**` responde **404** a um evento de
+outro canal. Medido contra o build de produção, responde **200** com o ecrã de
+"não encontrado" no corpo. O mesmo acontece em qualquer página que chame
+`notFound()` em runtime (`/eventos/[id]`, `/canal/[slug]`) — só um caminho que
+não casa com rota nenhuma dá 404 a sério.
+
+A causa é a de sempre: estas páginas são dinâmicas e a resposta **já começou a
+ser enviada** quando o `notFound()` corre. O status já foi para o fio.
+
+**O que importa é que a propriedade que o 404 protegia continua de pé.** A regra
+nunca foi "o número tem de ser 404", foi *"um evento de outro canal tem de ser
+indistinguível de um id inventado"*. Medido com ids do mesmo comprimento
+(UUID vs UUID), a pedir o evento de outra liga e um id inventado:
+
+| Rota                              | Evento real de outro canal | UUID inventado | Iguais? |
+| --------------------------------- | -------------------------- | -------------- | ------- |
+| `/admin/eventos/<id>/transmissao` | 200 · 41 377 bytes         | 200 · 41 377 bytes | **byte a byte** |
+| `/admin/eventos/<id>/bilhetes`    | 200 · 37 784 bytes         | 200 · 37 784 bytes | **byte a byte** |
+
+Mesmo status, mesmo tamanho, mesmo hash do corpo depois de normalizar o id. Não
+há oráculo: nem pelo conteúdo, nem pelo tamanho da resposta. Varrer ids não
+devolve informação nenhuma sobre a liga do lado.
+
+**O que se perde**, e é real: quem contar 4xx no CDN para detetar alguém a bater
+a portas fechadas não vê estes. É a mesma troca já assumida em
+[O preço: o status do 403](#o-preço-o-status-do-403). As **rotas de API** não
+sofrem disto (não streamam) e continuam a dar 404 de verdade — confirmado no
+`GET /admin/eventos/[id]/bilhetes/export`, que devolveu **404** ao dono da
+outra liga.
+
+### ⚠️ A guarda de duplicados não aguentava pedidos em paralelo
+
+> Achado da Frente H, ao medir antes de mexer. Corrigido em `server/events.ts`.
+
+`createEvent` tinha uma guarda contra duplicados nascida de um incidente real
+(16 eventos "TESTE" em produção), e o comentário afirmava que pôr o INSERT antes
+da chamada à Cloudflare fechava a janela dos pedidos em paralelo, sobrando só a
+hipótese de dois coincidirem "nos poucos milissegundos entre a leitura e a
+escrita".
+
+**Foi medido e era falso.** 20 rondas × 8 pedidos em paralelo com o mesmo título
+e a mesma hora, contra o build de produção:
+
+| | Eventos criados (esperado: 20) | Rondas com duplicados |
+| --- | --- | --- |
+| **Antes** | **153** de 160 pedidos | **19 de 20** |
+| **Depois** | **20** | **0** |
+
+Um `SELECT` seguido de `INSERT` não é atómico: em READ COMMITTED nenhum dos oito
+vê as linhas por confirmar dos outros sete e todos concluem que são o primeiro.
+A única ronda que se safou foi a primeira, com o servidor frio — o arranque
+atrasou os outros o suficiente. É **a mesma lição** do invariante "um canal
+nunca fica sem dono": uma condição dentro do `where` não serializa nada.
+
+A correção é um `pg_advisory_xact_lock` com uma chave derivada de
+canal + título + hora, a envolver a leitura e a escrita. Serializa só os pedidos
+do **mesmo** evento, larga sozinho no commit ou rollback, e **não precisa de
+migração**. A chamada à Cloudflare fica de fora da transação — um lock à espera
+de uma HTTP de terceiros era trocar um problema por outro.
+
+Na prática o botão que desativa ao primeiro clique já tapava o caso humano; o
+que isto fecha é o cliente com retry automático, o script, e o duplo pedido que
+o HTTP/2 deixa sair ao mesmo tempo.
+
 ### Como foi verificado
 
-**Isolamento** — Postgres real (PGlite sobre socket) com o schema anterior à
+**Isolamento entre dois canais, ponta a ponta** (Frente H) — build de produção
+(`next build && next start`) contra a base **`firstrow_teste`** com dois canais,
+um `owner` para cada, eventos, compras e compradores com nomes e emails
+distintos. Sessões reais, obtidas pelo login normal. Procurou-se, no **corpo em
+bruto de cada resposta** (que inclui o payload RSC), cada marcador do outro
+canal — nome do canal, título do evento, nome e email do comprador:
+
+| Ecrã | Dono de A vê algo de B? | Dono de B vê algo de A? |
+| --- | --- | --- |
+| `/admin` | 0 marcadores | 0 |
+| `/admin/eventos` | 0 | 0 |
+| `/admin/ganhos` | 0 | 0 |
+| `/admin/subscritores` | 0 | 0 |
+| `/admin/scanner` | 0 | 0 |
+
+**16 asserções, 0 falhas.** Inclui os dois controlos que impedem um falso
+positivo: cada dono **vê mesmo** o seu evento (o filtro não é "não mostra
+nada"), e o `platform_admin` vê os dois.
+
+**Extrato por canal** — o `getMonthlyStatement` passou a agrupar por mês **e**
+canal. As taxas somam-se por transação (`sum(round(x))`, não `round(sum(x))`),
+por isso reagrupar não podia mexer nos totais; confirmado contra o agrupamento
+antigo: bruto, compras, taxa FirstRow, taxa Eupago e líquido **iguais ao
+cêntimo** (41,00 € / 4 compras / 36,34 € líquido).
+
+**Isolamento (Frente E)** — Postgres real (PGlite sobre socket) com o schema anterior à
 migração, dados com a forma dos de produção, e depois uma segunda liga semeada.
 As funções testadas são as **de produção**, importadas diretamente:
 
@@ -616,16 +757,19 @@ decisão do dono:
     A tabela e o schema são desta frente; o fluxo, os textos legais e o esquema
     de versões (`text_version`) não. Enquanto ninguém escrever lá, a obrigação
     legal continua por cumprir — a tabela sozinha não prova nada.
-12. **O backoffice não tem seletor de canal.** Quem gere **um** canal vê-o na
-    sidebar; o `platform_admin` (que gere todos) não vê canal nenhum, porque a
-    pergunta "qual é o canal ativo?" não tem resposta única para ele — e
-    mostrar um à sorte era repetir o bug que esta frente fechou.
-    `app/admin/layout.tsx` já passa o canal por prop; falta o seletor (Frente F).
-13. **`resolveChannelForNewEvent` recusa quando há mais do que um canal.** É
-    deliberado — criar o evento na liga errada põe o dinheiro no sítio errado —
-    mas quer dizer que, sem o seletor da Frente F, um `platform_admin` deixa de
-    conseguir criar eventos assim que existirem dois canais. O `POST
-    /api/admin/events` já aceita `canal: "<slug>"` como saída.
+12. **A sidebar do backoffice não tem seletor de canal.** Quem gere **um** canal
+    vê-o na sidebar; o `platform_admin` (que gere todos) não vê canal nenhum,
+    porque a pergunta "qual é o canal ativo?" não tem resposta única para ele —
+    e mostrar um à sorte era repetir o bug que esta frente fechou.
+    `app/admin/layout.tsx` já passa o canal por prop. ⚠️ Note-se que **um
+    seletor de canal ATIVO na sidebar seria outra coisa** do que o seletor de
+    criação: este escolhe onde nasce UM evento; esse filtraria o backoffice
+    inteiro. Se algum dia existir, o filtro continua a ter de ser o
+    `ChannelScope` do servidor — um seletor de UI nunca pode ser o que decide o
+    que se vê.
+13. ~~**`resolveChannelForNewEvent` recusa quando há mais do que um canal.**~~
+    ✅ Resolvido: ver [Escolher o canal ao criar um
+    evento](#escolher-o-canal-ao-criar-um-evento).
 14. **`/admin/eventos/[id]/bilhetes` monta um `BackofficeShell` dentro do
     `BackofficeChrome` do layout** — duas sidebars encavalitadas. É anterior a
     esta frente e é só UI, por isso não foi mexido; nota-se mais agora, porque

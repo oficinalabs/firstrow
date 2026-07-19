@@ -218,3 +218,47 @@ export async function updateChannel(id: string, draft: ChannelDraft): Promise<Ch
     throw error;
   }
 }
+
+/**
+ * Os canais de um âmbito, com a resposta a "preciso de falar de canais?" já
+ * tirada.
+ *
+ * `many` é a regra de UX do backoffice escrita UMA vez: **só se pergunta (ou se
+ * diz) o canal quando há mais do que um em jogo**. Quem gere uma liga só nunca
+ * vê a palavra "canal" — o backoffice inteiro é dela e repeti-lo em cada linha
+ * era ruído. Assim que entra a segunda, o seletor de criação aparece e as
+ * listas passam a nomear a quem pertence cada coisa.
+ *
+ * Sem isto, cada ecrã inventava a sua versão do `> 1` e mais tarde ou mais cedo
+ * um deles ficava para trás.
+ */
+export type ChannelsInScope = {
+  /** Os canais do âmbito, pela ordem da visão geral (o mais antigo à cabeça). */
+  list: Channel[];
+  /** Canal a partir do `channelId` de uma linha — para nomear o dono de cada coisa. */
+  byId: Map<string, Channel>;
+  /** Há mais do que um canal em jogo? Ver a nota acima. */
+  many: boolean;
+};
+
+/**
+ * Os canais sobre que este âmbito pode falar.
+ *
+ * O caso da lista vazia é o que importa acertar, e não é tratado aqui de
+ * propósito: quem o trata é o `inScope`, que devolve `false` e faz a query não
+ * dar linha nenhuma. Ter a regra num sítio só é o que impede que um dia uma
+ * destas funções fique para trás e passe a mostrar tudo a quem não tem nada.
+ */
+export async function channelsInScope(scope: ChannelScope): Promise<ChannelsInScope> {
+  const list = await db
+    .select(PUBLIC_COLUMNS)
+    .from(channels)
+    .where(inScope(channels.id, scope))
+    .orderBy(asc(channels.createdAt));
+
+  return {
+    list,
+    byId: new Map(list.map((channel) => [channel.id, channel])),
+    many: list.length > 1,
+  };
+}

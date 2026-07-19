@@ -14,7 +14,7 @@ import {
 } from "drizzle-orm";
 import { db } from "@/db";
 import { user } from "@/db/auth-schema";
-import { entitlements, events, playbackSessions } from "@/db/schema";
+import { channels, entitlements, events, playbackSessions } from "@/db/schema";
 import type { ChannelScope } from "@/server/authz";
 import { inChannelScope } from "@/server/events";
 
@@ -69,6 +69,8 @@ export type RecentPayment = {
   createdAt: Date;
   buyerName: string;
   eventTitle: string;
+  /** De que canal entrou este dinheiro — o dashboard nomeia-o quando há vários. */
+  channelId: string;
   amountCents: number;
   /** Só PPV na Fase 0; bilhetes físicos chegam com a Frente D. */
   kind: "ppv";
@@ -90,6 +92,8 @@ export type BlockedSession = { id: string; email: string; revokedAt: Date };
 export type MonthlyStatementRow = {
   monthKey: string;
   monthLabel: string;
+  /** De que canal é este dinheiro. Ver a nota em `getMonthlyStatement`. */
+  channelId: string;
   grossCents: number;
   purchases: number;
   firstrowFeeCents: number;
@@ -221,6 +225,7 @@ export async function listRecentPayments(scope: ChannelScope, limit = 6): Promis
       createdAt: entitlements.createdAt,
       buyerName: user.name,
       eventTitle: events.title,
+      channelId: events.channelId,
       amountCents: events.priceCents,
     })
     .from(entitlements)
@@ -329,6 +334,21 @@ export async function listBuyers(scope: ChannelScope): Promise<BuyerRow[]> {
   return rows.map((r) => ({ ...r, lastPurchaseAt: r.lastPurchaseAt ?? new Date(0) }));
 }
 
+/**
+ * O extrato, mês a mês **e canal a canal**.
+ *
+ * Agrupar também por canal não é um detalhe de apresentação: o dinheiro
+ * paga-se a cada liga, e um total somado de duas ligas não serve para pagar
+ * nenhuma delas. Filtrar já garantia que ninguém via o dinheiro alheio; isto
+ * garante que quem tem duas ligas consegue dizer quanto é de cada uma.
+ *
+ * Com um canal só — hoje, e sempre para o dono de uma liga — o agrupamento dá
+ * exatamente as mesmas linhas de antes, e o ecrã nem mostra a coluna.
+ *
+ * As taxas continuam somadas POR TRANSAÇÃO (`sum(round(...))`, não
+ * `round(sum(...))`), por isso a mudança de agrupamento não mexe um cêntimo no
+ * total: mudar de sítio a soma de valores já arredondados dá o mesmo.
+ */
 export async function getMonthlyStatement(scope: ChannelScope): Promise<{
   commissionPct: number;
   rows: MonthlyStatementRow[];
@@ -341,6 +361,7 @@ export async function getMonthlyStatement(scope: ChannelScope): Promise<{
   const rows = await db
     .select({
       monthKey,
+      channelId: events.channelId,
       grossCents,
       purchases: count(),
       firstrowFeeCents:
@@ -352,9 +373,13 @@ export async function getMonthlyStatement(scope: ChannelScope): Promise<{
     })
     .from(entitlements)
     .innerJoin(events, eq(entitlements.eventId, events.id))
+    // O join a `channels` é só para a ordem: dentro do mesmo mês os canais saem
+    // pela ordem que valem no resto da app (o mais antigo à cabeça), e não pela
+    // ordem arbitrária dos ids.
+    .innerJoin(channels, eq(events.channelId, channels.id))
     .where(and(activeEntitlement, inChannelScope(scope)))
-    .groupBy(monthKey)
-    .orderBy(desc(monthKey));
+    .groupBy(monthKey, events.channelId, channels.createdAt)
+    .orderBy(desc(monthKey), asc(channels.createdAt));
 
   return {
     commissionPct: pct,

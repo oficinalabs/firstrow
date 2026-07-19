@@ -37,13 +37,33 @@ export const eventFormSchema = z.object({
     .regex(/^\d+([.,]\d{1,2})?$/, "Preço em euros — por exemplo, 7,50."),
 });
 
-export type EventFormValues = z.infer<typeof eventFormSchema>;
+/**
+ * O que o formulário tem escrito — o schema mais o `canal`.
+ *
+ * O canal viaja com os outros campos (para não se perder numa submissão
+ * falhada) mas **não é validado aqui**, e isso é deliberado: "este canal
+ * existe e é teu?" é uma pergunta de PERMISSÃO, não de formato. Quem lhe
+ * responde é `resolveChannelForNewEvent`, no servidor, a cada pedido. Pô-lo no
+ * schema dava a ideia errada de que passar na validação basta para o evento
+ * nascer no sítio certo.
+ */
+export type EventFormValues = z.infer<typeof eventFormSchema> & { canal: string };
 
 /**
  * Erros por campo. `startsAt` é a data e a hora vistas em conjunto — "já
  * passou" não é culpa de nenhuma das duas sozinha, e aparece uma vez só.
  */
 export type EventFieldErrors = Partial<Record<keyof EventFormValues | "startsAt", string>>;
+
+/**
+ * Falta escolher o canal.
+ *
+ * A mesma frase dos dois lados: o formulário di-la sem ir ao servidor, e o
+ * servidor repete-a exatamente para quem submeta sem JS ou fale com a API à
+ * mão. Duas redações da mesma recusa era o mesmo problema descrito de duas
+ * maneiras — e a segunda parecia sempre um erro diferente.
+ */
+export const CHANNEL_REQUIRED_MESSAGE = "Escolhe o canal onde o evento vai nascer.";
 
 /** Um evento pronto a gravar: já validado, já em cêntimos, já em instante UTC. */
 export type EventDraft = { title: string; startsAt: Date; priceCents: number };
@@ -112,7 +132,13 @@ export function isInThePast(startsAt: Date, now: Date = new Date()): boolean {
 export function readEventFormValues(input: unknown): EventFormValues {
   const raw = (input ?? {}) as Record<string, unknown>;
   const text = (key: keyof EventFormValues) => (typeof raw[key] === "string" ? raw[key] : "");
-  return { title: text("title"), date: text("date"), time: text("time"), price: text("price") };
+  return {
+    title: text("title"),
+    date: text("date"),
+    time: text("time"),
+    price: text("price"),
+    canal: text("canal"),
+  };
 }
 
 export type EventValidation =
@@ -134,7 +160,7 @@ export type EventFormState = {
 export const EMPTY_EVENT_FORM: EventFormState = {
   errors: {},
   message: "",
-  values: { title: "", date: "", time: "", price: "" },
+  values: { title: "", date: "", time: "", price: "", canal: "" },
 };
 
 /**

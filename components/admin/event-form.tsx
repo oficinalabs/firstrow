@@ -6,7 +6,10 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Field, FieldError, FieldHint, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
+import { Select } from "@/components/ui/select";
+import type { Channel } from "@/lib/channels";
 import {
+  CHANNEL_REQUIRED_MESSAGE,
   EMPTY_EVENT_FORM,
   type EventFieldErrors,
   type EventFormValues,
@@ -33,12 +36,32 @@ const NO_ERRORS: EventFieldErrors = {};
  *    O servidor tem a sua própria guarda de duplicados — ver server/events.ts.
  *  - **Não se marca um evento para trás.** Avisa mal a hora escolhida já tenha
  *    passado, e o servidor volta a verificar antes de gravar.
+ *
+ * ────────────────────────────────────────────────────────────────────────────
+ *  O CANAL: pergunta-se quando há escolha, diz-se quando não há
+ * ────────────────────────────────────────────────────────────────────────────
+ *
+ * `channels` são os canais onde quem está a criar pode mesmo criar — vem de
+ * `listCreatableChannels`, a mesma função que o servidor consulta para aceitar
+ * ou recusar. Com **um**, não há decisão nenhuma a tomar: o canal entra
+ * preenchido e aparece como contexto, porque transformar um caso único numa
+ * pergunta é fazer toda a gente pagar o preço do caso raro. Com **vários**,
+ * aparece o seletor — e sem valor por omissão, de propósito: pré-escolher uma
+ * liga é a forma mais barata de criar o evento (e o dinheiro dele) na errada.
+ *
+ * O seletor não é a segurança: o slug é revalidado no servidor a cada pedido.
  */
-export function EventForm() {
+export function EventForm({ channels }: { channels: Channel[] }) {
   const [state, submit, isSubmitting] = useActionState(createEventAction, EMPTY_EVENT_FORM);
+  // Um canal só → não há nada a perguntar. Vários → há uma escolha a fazer.
+  const onlyChannel = channels.length === 1 ? channels[0] : null;
+  const mustChoose = channels.length > 1;
   // Valores do servidor à cabeça: sem JS, é assim que a submissão anterior
   // volta preenchida. Com JS, quem manda a partir daqui é o que se escreve.
-  const [values, setValues] = useState<EventFormValues>(state.values);
+  const [values, setValues] = useState<EventFormValues>(() => ({
+    ...state.values,
+    canal: onlyChannel?.slug ?? state.values.canal,
+  }));
   // `null` = o último veredito veio do servidor.
   const [clientErrors, setClientErrors] = useState<EventFieldErrors | null>(null);
   // Campos mexidos desde o último veredito: a queixa sobre eles cala-se até
@@ -81,12 +104,20 @@ export function EventForm() {
         // responder na hora e poupar a ida ao servidor.
         setEdited(new Set());
         const checked = validateEventForm(values);
-        if (checked.ok) {
+        // O canal fica de fora do `validateEventForm` porque não é um campo de
+        // dados: é uma pergunta de permissão, e a resposta é do servidor (ver
+        // lib/event-rules.ts). Aqui só se apanha o esquecimento, com a mesma
+        // frase que ele devolveria.
+        const missingChannel = mustChoose && !values.canal;
+        if (checked.ok && !missingChannel) {
           setClientErrors(null);
           return;
         }
         event.preventDefault();
-        setClientErrors(checked.errors);
+        setClientErrors({
+          ...(checked.ok ? {} : checked.errors),
+          ...(missingChannel ? { canal: CHANNEL_REQUIRED_MESSAGE } : {}),
+        });
       }}
       className="grid items-start gap-5 lg:grid-cols-[1fr_380px]"
       noValidate
@@ -96,6 +127,46 @@ export function EventForm() {
           <CardTitle>Detalhes do evento</CardTitle>
         </CardHeader>
         <CardContent className="flex flex-col gap-4">
+          {onlyChannel ? (
+            /*
+             * Um canal só: isto é contexto, não um campo. De propósito não leva
+             * `<label>` nem borda de input — um campo desativado que ninguém
+             * pode mexer lê-se como avariado, e a pergunta aqui nem existe.
+             */
+            <div className="flex items-center gap-2.5 rounded-sm bg-muted px-3 py-2.5">
+              <input type="hidden" name="canal" value={values.canal} />
+              <span className="flex size-7 shrink-0 items-center justify-center rounded-xs bg-background font-mono text-2xs text-muted-foreground">
+                {onlyChannel.initials}
+              </span>
+              <span className="flex min-w-0 flex-col">
+                <span className="truncate text-2sm font-semibold">{onlyChannel.name}</span>
+                <span className="font-mono text-2xs text-muted-foreground">canal deste evento</span>
+              </span>
+            </div>
+          ) : null}
+          {mustChoose ? (
+            <Field>
+              <FieldLabel htmlFor="event-canal">Canal</FieldLabel>
+              <Select
+                id="event-canal"
+                name="canal"
+                value={values.canal}
+                onChange={(e) => set("canal", e.target.value)}
+                aria-invalid={errors.canal ? true : undefined}
+                // Sem escolha feita, o texto é um convite e não um valor.
+                className={values.canal ? undefined : "text-muted-foreground/70"}
+              >
+                <option value="">Escolhe o canal…</option>
+                {channels.map((channel) => (
+                  <option key={channel.id} value={channel.slug}>
+                    {channel.name}
+                  </option>
+                ))}
+              </Select>
+              <FieldError>{errors.canal}</FieldError>
+              <FieldHint>O evento e o dinheiro dele ficam neste canal.</FieldHint>
+            </Field>
+          ) : null}
           <Field>
             <FieldLabel htmlFor="event-title">Título</FieldLabel>
             <Input

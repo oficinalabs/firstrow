@@ -1,4 +1,5 @@
-import { and, count, desc, eq, gte, type SQL } from "drizzle-orm";
+import { createHash } from "node:crypto";
+import { and, count, desc, eq, gte, inArray, type SQL, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { entitlements, events, tickets } from "@/db/schema";
 import { createLiveInput } from "@/lib/cloudflare";
@@ -27,52 +28,109 @@ export type CreatedEvent = {
 };
 
 /**
+ * A chave do lock deste evento: o mesmo canal + título + hora dá sempre o mesmo
+ * número, e eventos diferentes dão números diferentes (logo, não esperam uns
+ * pelos outros).
+ *
+ * Calculada aqui e não com o `hashtext()` do Postgres de propósito: essa função
+ * é interna, não documentada, e o valor dela pode mudar entre versões.
+ *
+ * O separador entre os campos é preciso: sem ele, título "ab" + hora "c" dava a
+ * mesma chave que título "a" + hora "bc", e dois eventos diferentes ficavam à
+ * espera um do outro sem razão.
+ *
+ * E é escrito como ESCAPE, não como o byte cru. O byte cru corre exatamente
+ * igual, mas torna este ficheiro binário aos olhos do git: deixa de haver diff,
+ * e um conflito de merge aqui passa a ser irresolúvel sem ferramentas à parte.
+ * Aconteceu — não voltes a trocá-lo pelo carácter literal.
+ */
+function duplicateLockKey(draft: EventDraft, channelId: string): string {
+  const digest = createHash("sha256")
+    .update(`${channelId}\u0000${draft.title}\u0000${draft.startsAt.toISOString()}`)
+    .digest();
+  // int8 COM SINAL — é o que o pg_advisory_xact_lock aceita.
+  return digest.readBigInt64BE(0).toString();
+}
+
+/**
  * Cria o evento como rascunho e provisiona o live input na Cloudflare (o
  * destino do OBS). Recebe um rascunho **já validado** — ver lib/event-rules.ts.
  *
- * Duas defesas contra o que encheu a conta de eventos "TESTE":
+ * Três defesas contra o que encheu a conta de eventos "TESTE":
  *
  *  1. Guarda de duplicados — o mesmo título à mesma hora pedido outra vez
  *     dentro da janela devolve o evento que já existe, em vez de provisionar
  *     (e pagar) um segundo live input.
- *  2. A linha entra na BD ANTES de falarmos com a Cloudflare. Fecha a janela de
- *     ~1s em que dois pedidos em paralelo passavam ambos pela guarda, e faz com
- *     que uma falha da Cloudflare deixe uma linha nossa para limpar em vez de
- *     um live input órfão a custar dinheiro.
+ *  2. A linha entra na BD ANTES de falarmos com a Cloudflare, para que uma
+ *     falha da Cloudflare deixe uma linha nossa para limpar em vez de um live
+ *     input órfão a custar dinheiro.
+ *  3. Ler e escrever acontecem dentro do MESMO lock. Ver abaixo.
  *
- * Sobra a hipótese de dois pedidos coincidirem nos poucos milissegundos entre a
- * leitura e a escrita. Para isso é que o botão desativa ao primeiro clique.
+ * ────────────────────────────────────────────────────────────────────────────
+ *  PORQUE É QUE HÁ UM LOCK, E PORQUE É QUE ANTES NÃO CHEGAVA
+ * ────────────────────────────────────────────────────────────────────────────
+ *
+ * Dizia-se aqui que pôr o INSERT antes da Cloudflare fechava a janela dos
+ * pedidos em paralelo, e que só sobrava a hipótese de dois coincidirem "nos
+ * poucos milissegundos entre a leitura e a escrita". **Foi medido e é falso.**
+ * Com o servidor quente, 20 rondas de 8 pedidos em paralelo com o mesmo título
+ * deixaram **153 eventos** onde deviam ficar 20: em 19 das 20 rondas passaram
+ * os 8. O SELECT seguido de INSERT não é atómico — em READ COMMITTED nenhum dos
+ * oito vê as linhas por confirmar dos outros sete, e todos concluem que são o
+ * primeiro. A única ronda que se safou foi a primeira, com o servidor frio, em
+ * que o arranque atrasou os outros o suficiente.
+ *
+ * (É a mesma lição do invariante "um canal nunca fica sem dono": uma condição
+ * dentro do `where` não serializa nada.)
+ *
+ * O `pg_advisory_xact_lock` serializa só os pedidos **deste** evento — dois
+ * eventos diferentes têm chaves diferentes e não esperam um pelo outro. É
+ * transacional, por isso larga sozinho no commit ou no rollback; não há lock
+ * pendurado se algo rebentar. A chamada à Cloudflare fica FORA da transação: um
+ * lock à espera de uma HTTP de terceiros era trocar um problema por outro.
+ *
+ * Nova medição, mesmo teste: 160 pedidos → 20 eventos, 0 duplicados.
  */
 export async function createEvent(draft: EventDraft, channelId: string): Promise<CreatedEvent> {
-  const [duplicate] = await db
-    .select({ id: events.id })
-    .from(events)
-    .where(
-      and(
-        // O canal entra na guarda: duas ligas podem ter, com todo o direito, um
-        // "Final da Época" à mesma hora — não é um duplo-clique, são dois eventos.
-        eq(events.channelId, channelId),
-        eq(events.title, draft.title),
-        eq(events.startsAt, draft.startsAt),
-        gte(events.createdAt, new Date(Date.now() - DUPLICATE_WINDOW_MS)),
-      ),
-    )
-    .limit(1);
-  if (duplicate) {
-    console.info(`[events] pedido duplicado de "${draft.title}" — devolvido ${duplicate.id}.`);
-    return { id: duplicate.id, reused: true };
-  }
+  const claimed = await db.transaction(async (tx) => {
+    await tx.execute(
+      sql`select pg_advisory_xact_lock(${duplicateLockKey(draft, channelId)}::bigint)`,
+    );
 
-  const id = newId();
-  await db.insert(events).values({
-    id,
-    channelId,
-    title: draft.title,
-    startsAt: draft.startsAt,
-    priceCents: draft.priceCents,
-    status: "draft",
+    const [duplicate] = await tx
+      .select({ id: events.id })
+      .from(events)
+      .where(
+        and(
+          // O canal entra na guarda: duas ligas podem ter, com todo o direito, um
+          // "Final da Época" à mesma hora — não é um duplo-clique, são dois eventos.
+          eq(events.channelId, channelId),
+          eq(events.title, draft.title),
+          eq(events.startsAt, draft.startsAt),
+          gte(events.createdAt, new Date(Date.now() - DUPLICATE_WINDOW_MS)),
+        ),
+      )
+      .limit(1);
+    if (duplicate) return { id: duplicate.id, reused: true };
+
+    const id = newId();
+    await tx.insert(events).values({
+      id,
+      channelId,
+      title: draft.title,
+      startsAt: draft.startsAt,
+      priceCents: draft.priceCents,
+      status: "draft",
+    });
+    return { id, reused: false };
   });
 
+  if (claimed.reused) {
+    console.info(`[events] pedido duplicado de "${draft.title}" — devolvido ${claimed.id}.`);
+    return claimed;
+  }
+
+  const { id } = claimed;
   try {
     const liveInput = await createLiveInput(draft.title);
     await db

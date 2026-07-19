@@ -1,5 +1,6 @@
 import Image from "next/image";
 import Link from "next/link";
+import { tenantStyle } from "@/components/ui/tenant-scope";
 import { defaultChannel } from "@/lib/channels";
 import { cn } from "@/lib/utils";
 
@@ -16,6 +17,12 @@ const DEFAULT_NAV: BackofficeNavItem[] = [
  * Moldura do backoffice: ferramenta de trabalho, desktop-first, só light.
  * Sidebar tinta (moldura FirstRow) com o canal no topo; conteúdo em papel.
  * `activeHref` marca o item ativo (borda limão à esquerda).
+ *
+ * A cor do canal é derivada DUAS vezes, e não é desperdício: a página é papel
+ * mas a barra da FirstRow é escura nos dois temas (--bar, ver globals.css). Uma
+ * cor que se leia em papel não se lê na barra e vice-versa — não há meio-termo,
+ * porque cumprir 4,5:1 contra papel e contra quase-preto ao mesmo tempo é
+ * aritmeticamente impossível. Cada superfície deriva a sua.
  */
 export function BackofficeShell({
   nav = DEFAULT_NAV,
@@ -30,14 +37,17 @@ export function BackofficeShell({
     <div
       data-theme="light"
       className="flex min-h-dvh w-full flex-col bg-background text-foreground md:flex-row"
-      style={{ "--tenant": defaultChannel.accentColor } as React.CSSProperties}
+      style={tenantStyle(defaultChannel, "light")}
     >
       {/* topo mobile (o backoffice é desktop-first; isto é o mínimo digno) */}
       <header className="flex h-13 items-center justify-between bg-bar px-4 text-bar-foreground md:hidden">
         <BrandRow />
       </header>
 
-      <aside className="hidden w-54 shrink-0 flex-col bg-bar py-4 text-bar-foreground md:flex">
+      <aside
+        className="hidden w-54 shrink-0 flex-col bg-bar py-4 text-bar-foreground md:flex"
+        style={tenantStyle(defaultChannel, "dark")}
+      >
         <div className="flex items-center border-b border-bar-border px-4.5 pt-1 pb-3.5">
           <BrandRow />
         </div>
@@ -47,9 +57,8 @@ export function BackofficeShell({
           </span>
           <span className="flex flex-col">
             <span className="text-2sm font-bold">{defaultChannel.name}</span>
-            <span className="font-mono text-2xs" style={{ color: "var(--tenant)" }}>
-              ● canal ativo
-            </span>
+            {/* text-(--tenant) como no resto do projeto, em vez de style inline. */}
+            <span className="font-mono text-2xs text-(--tenant)">● canal ativo</span>
           </span>
         </div>
         <nav aria-label="Backoffice" className="mt-1.5 flex flex-col">

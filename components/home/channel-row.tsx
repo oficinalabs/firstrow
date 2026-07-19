@@ -2,6 +2,7 @@ import Image from "next/image";
 import Link from "next/link";
 import type { ChannelSummary } from "@/components/home/overview";
 import { LiveBadge } from "@/components/ui/live-badge";
+import { tenantStyle } from "@/components/ui/tenant-scope";
 import { channelPath } from "@/lib/channels";
 
 /*
@@ -13,7 +14,10 @@ export function ChannelRow({ channel, liveNow, upcomingCount, archiveCount }: Ch
   return (
     <Link
       href={channelPath(channel)}
-      style={{ "--tenant": channel.accentColor } as React.CSSProperties}
+      // A visão geral é do espectador, logo fundo escuro. As iniciais são
+      // escritas na cor da liga sobre bg-muted — é por causa deste sítio que o
+      // --muted entra no cálculo de contraste (ver backdrops() em lib/colors.ts).
+      style={tenantStyle(channel, "dark")}
       className="group flex items-center gap-4 border-b py-4 last:border-b-0 md:gap-5"
     >
       <span

@@ -1,4 +1,4 @@
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, gt } from "drizzle-orm";
 import { db } from "@/db";
 import { entitlements, events, tickets } from "@/db/schema";
 
@@ -43,6 +43,10 @@ export async function listUserPurchases(userId: string): Promise<Purchase[]> {
  * webhook se perdeu, e dá o número que se dita ao suporte da Eupago. O webhook
  * escreve por cima com o mesmo valor — é a mesma referência.
  *
+ * Carimba SEMPRE a hora, mesmo quando a Eupago não devolve referência: a hora é
+ * o que fecha a janela contra cobranças repetidas (ver `hasLiveCharge`), e essa
+ * guarda não pode depender de um campo opcional da resposta deles.
+ *
  * Nunca deixa a compra cair por causa disto: sem referência a compra continua
  * de pé (o `identifier` chega para o webhook a activar), só fica mais difícil
  * de investigar. Falhar aqui seria pior do que o problema que resolve.
@@ -52,11 +56,47 @@ export async function recordChargeReference(
   id: string,
   reference: string | null,
 ): Promise<void> {
-  if (!reference) return;
   const table = kind === "entitlement" ? entitlements : tickets;
   try {
-    await db.update(table).set({ providerRef: reference }).where(eq(table.id, id));
+    await db
+      .update(table)
+      .set({
+        chargeRequestedAt: new Date(),
+        ...(reference ? { providerRef: reference } : {}),
+      })
+      .where(eq(table.id, id));
   } catch (error) {
-    console.error(`[compras] não guardei a referência ${reference} em ${kind} ${id}:`, error);
+    console.error(`[compras] não carimbei a cobrança de ${kind} ${id}:`, error);
   }
+}
+
+/**
+ * Janela em que uma cobrança MB WAY já pedida ainda conta como viva.
+ *
+ * São os 5 minutos que a Eupago dá ao cliente para aceitar na app, mais uma
+ * folga curta para o relógio dos dois lados não discordar na fronteira.
+ */
+const CHARGE_WINDOW_MS = 5.5 * 60 * 1000;
+
+/**
+ * Já pedimos uma cobrança para esta compra há pouco tempo?
+ *
+ * A compra pendente é reutilizada a cada tentativa — e bem, senão acumulavam-se
+ * linhas e, nos bilhetes, lugares presos. Mas a COBRANÇA não pode ser
+ * reutilizada às cegas: viu-se em sandbox três pedidos MB WAY de 7,50 € com o
+ * mesmo identificador, um por clique. Em produção isso é o cliente a receber
+ * três notificações, aceitar duas, e pagar duas vezes o mesmo acesso.
+ *
+ * Passada a janela, pedir de novo é legítimo: a anterior expirou do lado deles.
+ */
+export async function hasLiveCharge(kind: "entitlement" | "ticket", id: string): Promise<boolean> {
+  const table = kind === "entitlement" ? entitlements : tickets;
+  const rows = await db
+    .select({ id: table.id })
+    .from(table)
+    .where(
+      and(eq(table.id, id), gt(table.chargeRequestedAt, new Date(Date.now() - CHARGE_WINDOW_MS))),
+    )
+    .limit(1);
+  return rows.length > 0;
 }

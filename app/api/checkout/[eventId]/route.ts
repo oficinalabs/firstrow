@@ -5,7 +5,7 @@ import { buildSplit } from "@/lib/split";
 import { requireApi } from "@/server/api-guard";
 import { createPendingEntitlement } from "@/server/entitlements";
 import { getEvent } from "@/server/events";
-import { recordChargeReference } from "@/server/purchases";
+import { hasLiveCharge, recordChargeReference } from "@/server/purchases";
 
 /*
  * Compra do acesso à live. Autorização = ter sessão; o dono do recurso é
@@ -33,6 +33,16 @@ export async function POST(req: Request, { params }: { params: Promise<{ eventId
   const entitlement = await createPendingEntitlement(gate.user.id, eventId);
   const amountEur = event.priceCents / 100;
   const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? "";
+
+  // Dois cliques não podem virar dois pedidos ao telemóvel da pessoa: ela podia
+  // aceitar os dois e pagar duas vezes o mesmo acesso. A compra é reutilizada,
+  // a cobrança não. Passada a janela, o pedido anterior expirou e pode repetir.
+  if (await hasLiveCharge("entitlement", entitlement.id)) {
+    return NextResponse.json(
+      { error: "Já enviámos um pedido para o teu telemóvel. Confirma na app MB WAY." },
+      { status: 409 },
+    );
+  }
 
   const charge = await createMbwayCharge({
     amountEur,

@@ -18,6 +18,32 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm lint
       - run: pnpm typecheck
+      # Testes SEM base de dados. Sem `TEST_DATABASE_URL`, os testes de
+      # integração e concorrência SALTAM sozinhos (`describe.skipIf`) e correm só
+      # os puros — regras do split, assinatura e leitura do webhook, confirmPaid,
+      # e o código curto do QR. É a parte da suite que não precisa de infra e não
+      # pode piscar: determinística, sem rede, ~5 s.
+      #
+      # PARA CORRER A SUITE TODA EM CI (dinheiro, concorrência, isolamento, QR à
+      # porta): juntar um serviço Postgres a este job e apontar-lhe
+      # `TEST_DATABASE_URL` (o nome da base TEM de conter "test" — é a guarda de
+      # `tests/apoio/base-de-dados.ts`). Esboço pronto a ligar:
+      #
+      #   services:
+      #     postgres:
+      #       image: postgres:16
+      #       env: { POSTGRES_PASSWORD: postgres, POSTGRES_DB: firstrow_test }
+      #       ports: ["5432:5432"]
+      #       options: >-
+      #         --health-cmd pg_isready --health-interval 5s
+      #         --health-timeout 5s --health-retries 5
+      #
+      #   depois, antes do `pnpm test`:
+      #     - run: pnpm drizzle-kit push --force
+      #       env: { DATABASE_URL: postgres://postgres:postgres@localhost:5432/firstrow_test }
+      #     - run: pnpm test
+      #       env: { TEST_DATABASE_URL: postgres://postgres:postgres@localhost:5432/firstrow_test }
+      - run: pnpm test
       - run: pnpm build
         env:
           NEXT_PUBLIC_APP_URL: http://localhost:3000

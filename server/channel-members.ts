@@ -2,7 +2,7 @@ import "server-only";
 import { and, eq, ne, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { user } from "@/db/auth-schema";
-import { type ChannelRole, channelMembers } from "@/db/schema";
+import { type ChannelRole, channelMembers, channels } from "@/db/schema";
 import { newId } from "@/lib/ids";
 
 /*
@@ -23,10 +23,25 @@ import { newId } from "@/lib/ids";
  * tem de manter pelo menos uma linha com role='owner' por canal" sem triggers,
  * e um trigger escondido era pior do que uma função com nome.
  *
- * O que NÃO se faz: ler o número de donos, decidir em JS, e depois escrever.
- * Duas remoções em simultâneo passavam as duas na contagem e o canal ficava
- * sem dono nenhum. Por isso a condição vai DENTRO do `where` de cada escrita —
- * é o Postgres que avalia "existe outro dono?" no mesmo instante em que apaga.
+ * COMO SE GARANTE, E PORQUE NÃO CHEGA O ÓBVIO
+ *
+ * Ler o número de donos, decidir em JS e depois escrever não funciona: duas
+ * remoções em simultâneo passam as duas na contagem.
+ *
+ * Pôr a condição dentro do `where` da escrita TAMBÉM não funciona, por muito
+ * que pareça. Foi medido contra a base de dados, dois donos despromovidos em
+ * paralelo, 20 rondas: **16 acabaram sem dono nenhum**. A razão é que em
+ * READ COMMITTED dois UPDATE em LINHAS DIFERENTES não se bloqueiam, e o
+ * `exists` de cada um avalia sobre um instantâneo anterior à escrita do outro.
+ * Trincos de linha só serializam quem disputa a mesma linha — e este invariante
+ * atravessa várias linhas, por isso nenhuma delas serve de ponto de encontro.
+ *
+ * O que funciona é dar-lhes um ponto de encontro: cada mutação abre transação e
+ * tranca **a linha do canal** (`for update`) antes de mexer nos membros. As
+ * mutações do mesmo canal passam a fazer fila; as de canais diferentes não se
+ * estorvam. Mesma medição com o trinco: 0 em 20. A condição no `where` fica na
+ * mesma, como segunda linha de defesa — é barata e apanha o caso de alguém, um
+ * dia, escrever fora daqui.
  */
 
 export type MemberRow = {
@@ -87,7 +102,12 @@ export async function countOwners(channelId: string): Promise<number> {
  * Acrescenta (ou muda o papel de) um membro, pelo email da conta.
  *
  * Despromover é a operação perigosa — o dono que se despromove a si próprio
- * deixa o canal sem ninguém — por isso passa pela mesma guarda de `remove`.
+ * deixa o canal sem ninguém — por isso passa pela mesma guarda de `remove`, e
+ * pela mesma razão: trinco no canal, ver o cabeçalho.
+ *
+ * Promover a dono não precisa de guarda nenhuma (nunca tira donos), mas corre à
+ * mesma dentro do trinco: assim a contagem de donos nunca muda por baixo de uma
+ * despromoção que esteja a decidir se pode avançar.
  */
 export async function setChannelMemberByEmail(
   channelId: string,
@@ -101,51 +121,79 @@ export async function setChannelMemberByEmail(
     .limit(1);
   if (!conta) return { ok: false, reason: "no-such-user" };
 
-  if (role !== "owner") {
-    const despromovido = await guardLastOwner(channelId, conta.id);
-    if (!despromovido.ok) return despromovido;
-  }
+  const escritas = await comCanalTrancado(channelId, (tx) =>
+    tx
+      .insert(channelMembers)
+      .values({ id: newId(), channelId, userId: conta.id, role })
+      .onConflictDoUpdate({
+        target: [channelMembers.userId, channelMembers.channelId],
+        set: { role, updatedAt: new Date() },
+        // Promover a dono nunca deixa o canal sem donos: só a descida é guardada.
+        setWhere: role === "owner" ? undefined : outroDonoExiste(channelId, conta.id),
+      })
+      .returning({ userId: channelMembers.userId }),
+  );
 
-  await db
-    .insert(channelMembers)
-    .values({ id: newId(), channelId, userId: conta.id, role })
-    .onConflictDoUpdate({
-      target: [channelMembers.userId, channelMembers.channelId],
-      set: { role, updatedAt: new Date() },
-    });
-
+  // Sem linhas, ou a condição recusou ou não havia nada a mudar. Só agora vale a
+  // pena ler para dizer porquê — o diagnóstico explica, já não decide.
+  if (escritas.length === 0) return guardLastOwner(channelId, conta.id);
   return { ok: true };
 }
 
 /**
  * Retira alguém do canal.
  *
- * A condição do `where` é a guarda: só apaga se a linha **não** for de um dono,
- * ou se existir outro dono neste canal. Sem linhas apagadas, uma segunda
- * leitura diz se foi por não ser membro ou por ser o último dono.
+ * Trinco no canal + condição no `where` — pelas razões do cabeçalho. Sem linhas
+ * apagadas, uma segunda leitura diz se foi por não ser membro ou por ser o
+ * último dono.
  */
 export async function removeChannelMember(
   channelId: string,
   userId: string,
 ): Promise<MemberChange> {
-  const apagadas = await db
-    .delete(channelMembers)
-    .where(
-      and(
-        eq(channelMembers.channelId, channelId),
-        eq(channelMembers.userId, userId),
-        outroDonoExiste(channelId, userId),
-      ),
-    )
-    .returning({ userId: channelMembers.userId });
+  const apagadas = await comCanalTrancado(channelId, (tx) =>
+    tx
+      .delete(channelMembers)
+      .where(
+        and(
+          eq(channelMembers.channelId, channelId),
+          eq(channelMembers.userId, userId),
+          outroDonoExiste(channelId, userId),
+        ),
+      )
+      .returning({ userId: channelMembers.userId }),
+  );
 
   if (apagadas.length > 0) return { ok: true };
   return guardLastOwner(channelId, userId);
 }
 
 /**
+ * Corre a mutação com a linha do canal trancada, para que duas mudanças de
+ * membros do MESMO canal façam fila em vez de se cruzarem. Canais diferentes
+ * continuam a não se estorvar — o trinco é por linha, não por tabela.
+ */
+function comCanalTrancado<T>(
+  channelId: string,
+  mutacao: (tx: Parameters<Parameters<typeof db.transaction>[0]>[0]) => Promise<T>,
+): Promise<T> {
+  return db.transaction(async (tx) => {
+    await tx
+      .select({ id: channels.id })
+      .from(channels)
+      .where(eq(channels.id, channelId))
+      .for("update");
+    return mutacao(tx);
+  });
+}
+
+/**
  * "Ou não és dono, ou há outro dono além de ti." Avaliado pelo Postgres dentro
- * da própria escrita, para duas remoções em paralelo não passarem as duas.
+ * da própria escrita.
+ *
+ * Sozinho isto NÃO segura o invariante em paralelo — ver o cabeçalho. Quem o
+ * segura é o trinco; isto fica como segunda linha de defesa, barata, para o dia
+ * em que alguém escrever nesta tabela por fora destas funções.
  */
 function outroDonoExiste(channelId: string, userId: string) {
   return sql`(

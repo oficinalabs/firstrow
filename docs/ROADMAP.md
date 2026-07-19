@@ -55,9 +55,13 @@ Na criação do canal, escolher **1 ou 2 cores** da marca e a página `/canal/[s
 - **Quando:** encaixa naturalmente com a criação de canais em BD (Fase 2, multi-tenant), porque é aí
   que deixa de ser config e passa a ser dado do canal.
 
-### Gates por página no backoffice (para o `league_staff` poder usar o scanner)
-Hoje o layout do `/admin` corta em `canManageEvents`, logo um `league_staff` — que existe
-precisamente para validar bilhetes à porta — não chega ao scanner. Para aliviar o layout para
-`canOperateEvents` é preciso **primeiro** pôr gate próprio nas páginas de dinheiro/dados
-(`/admin`, `/admin/ganhos`, `/admin/subscritores`, `/admin/plataforma`), senão o staff passava a
-ver a contabilidade. Ordem obrigatória: gates nas páginas → só depois relaxar o layout.
+### Gates por página no backoffice (para o `staff` do canal poder usar o scanner)
+O layout do `/admin` corta em `canEnterBackoffice`, que exige ser **`owner` de algum canal**, logo
+o `staff` — que existe precisamente para validar bilhetes à porta — não chega ao scanner. Para
+aliviar o layout é preciso **primeiro** pôr gate próprio nas páginas de dinheiro/dados
+(`/admin`, `/admin/ganhos`, `/admin/subscritores`), senão o staff passava a ver a contabilidade.
+Ordem obrigatória: gates nas páginas → só depois relaxar o layout.
+
+Parte disto já está feita pela Frente E: essas páginas passaram a levar um `ChannelScope` às
+queries e o `/admin/plataforma` já tem gate próprio (`isPlatformAdmin`). Falta o gate de **papel**
+por página — o âmbito limita *que canais* se veem, não *quem* pode abrir o ecrã.

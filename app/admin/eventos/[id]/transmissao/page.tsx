@@ -1,5 +1,4 @@
 import type { Metadata } from "next";
-import { notFound } from "next/navigation";
 import { CopyField } from "@/components/admin/copy-field";
 import { DataTable } from "@/components/admin/data-table";
 import { EventStatusActions } from "@/components/admin/event-status-actions";
@@ -10,7 +9,6 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { formatEuro, formatNumber, formatTime } from "@/lib/format";
 import { getStreamCredentials } from "@/server/cloudflare-stream";
 import { requireEventOperator } from "@/server/event-access";
-import { getEvent } from "@/server/events";
 import {
   type BlockedSession,
   countActiveViewers,
@@ -33,11 +31,9 @@ const STATUS_HELP: Record<string, string> = {
 export default async function TransmissionPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   // Antes de ir buscar seja o que for: a chave da stream é a chave de casa da
-  // transmissão e só sai daqui para quem opera o evento.
-  await requireEventOperator(`/admin/eventos/${id}/transmissao`);
-
-  const event = await getEvent(id);
-  if (!event) notFound();
+  // transmissão e só sai daqui para quem opera o evento — deste canal. O
+  // portão devolve o evento já carregado, por isso não há segunda query.
+  const { event } = await requireEventOperator(id, `/admin/eventos/${id}/transmissao`);
 
   const [sales, viewers, blocked, credentials] = await Promise.all([
     getEventSales(id),

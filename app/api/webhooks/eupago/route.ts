@@ -1,5 +1,4 @@
 import { NextResponse } from "next/server";
-import { defaultChannel } from "@/lib/channels";
 import { sendReceiptEmail } from "@/lib/email";
 import {
   confirmPaid,
@@ -57,7 +56,9 @@ async function fulfil(payment: PaymentNotification): Promise<void> {
   await sendReceiptEmail({
     nome: receipt.nome ?? undefined,
     eventoTitulo: receipt.eventoTitulo,
-    canalNome: defaultChannel.name,
+    // O canal vem do evento pago (server/receipts.ts), não de uma constante:
+    // o recibo tem de nomear a liga a quem se pagou.
+    canalNome: receipt.canalNome,
     eventoData: receipt.eventoData,
     valorCents: receipt.valorCents,
     numeroRecibo: payment.reference || undefined,

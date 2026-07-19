@@ -9,13 +9,14 @@
  * (o utilizador tem de existir — regista-te primeiro na app)
  */
 import "dotenv/config";
-import { eq } from "drizzle-orm";
+import { asc, eq } from "drizzle-orm";
 import { db } from "@/db";
 import { user } from "@/db/auth-schema";
-import { events, tickets } from "@/db/schema";
+import { channels, events, tickets } from "@/db/schema";
 import { issueTicket, shortCode } from "@/server/tickets";
 
 async function findOrCreateEvent(input: {
+  channelId: string;
   title: string;
   startsAt: Date;
   priceCents: number;
@@ -67,7 +68,16 @@ async function main() {
     process.exit(1);
   }
 
+  // Todo o evento pertence a um canal. O seed usa o primeiro (o piloto).
+  const [canal] = await db.select().from(channels).orderBy(asc(channels.createdAt)).limit(1);
+  if (!canal) {
+    console.error("Não há canais na base de dados — corre primeiro:");
+    console.error("  pnpm dlx tsx scripts/migrate-channels.ts");
+    process.exit(1);
+  }
+
   const futuro = await findOrCreateEvent({
+    channelId: canal.id,
     title: "SB Clash #14 — Final de Verão",
     startsAt: new Date("2026-07-26T20:00:00Z"), // 21:00 Lisboa
     priceCents: 750,
@@ -76,6 +86,7 @@ async function main() {
   });
 
   const passado = await findOrCreateEvent({
+    channelId: canal.id,
     title: "SB Clash #13 — Meias-finais",
     startsAt: new Date("2026-06-28T19:00:00Z"), // 20:00 Lisboa
     priceCents: 750,

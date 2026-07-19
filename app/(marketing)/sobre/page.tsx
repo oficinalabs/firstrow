@@ -6,7 +6,20 @@ import { Badge } from "@/components/ui/badge";
 import { buttonVariants } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { SectionHeader } from "@/components/ui/section-header";
-import { channelPath, defaultChannel } from "@/lib/channels";
+import { channelPath } from "@/lib/channels";
+import { listChannels } from "@/server/channels";
+
+/*
+ * Esta página passou a ler os canais da base de dados, e por isso não pode
+ * continuar a ser estática pura: ficava presa aos canais que existiam no
+ * momento do BUILD, e um canal novo só aparecia no deploy seguinte. Pior — se
+ * o build correr sem base de dados, o `catch` abaixo devolve lista vazia e a
+ * página ficava para sempre sem o cartão.
+ *
+ * Uma hora de ISR resolve as duas coisas sem pagar SSR a cada visita: os canais
+ * mudam raramente e isto é uma página de marketing.
+ */
+export const revalidate = 3600;
 
 const HERO_SUB =
   "Lives, arquivo e bilhetes dos canais que valem a pena pagar — comédia, música, " +
@@ -25,7 +38,15 @@ export const metadata: Metadata = {
   },
 };
 
-export default function SobrePage() {
+export default async function SobrePage() {
+  /*
+   * O cartão diz "O primeiro canal na FirstRow" — e agora é mesmo o primeiro:
+   * `listChannels()` vem ordenado por data de criação. Não é um canal por
+   * defeito disfarçado, é o que a frase promete. Se um dia não houver canais,
+   * o cartão não aparece em vez de inventar um.
+   */
+  const [primeiroCanal] = await listChannels().catch(() => []);
+
   return (
     <>
       {/* Hero — espectador primeiro, com o canal piloto ao lado (honesto). */}
@@ -48,43 +69,49 @@ export default function SobrePage() {
           </div>
         </div>
 
-        <Card
-          className="overflow-hidden"
-          style={{ "--tenant": defaultChannel.accentColor } as React.CSSProperties}
-        >
-          <div className="flex items-center justify-between border-b border-border px-4 py-3">
-            <span className="font-display text-2sm font-bold">O primeiro canal na FirstRow</span>
-            <Badge variant="accent">Piloto</Badge>
-          </div>
-          <div className="flex items-center gap-3 px-4 py-4">
-            <div
-              aria-hidden
-              className="flex size-11 shrink-0 items-center justify-center rounded-sm bg-muted font-display text-base font-bold text-foreground"
-            >
-              {defaultChannel.initials}
+        {primeiroCanal ? (
+          <Card
+            className="overflow-hidden"
+            style={{ "--tenant": primeiroCanal.accentColor } as React.CSSProperties}
+          >
+            <div className="flex items-center justify-between border-b border-border px-4 py-3">
+              <span className="font-display text-2sm font-bold">O primeiro canal na FirstRow</span>
+              <Badge variant="accent">Piloto</Badge>
             </div>
-            <div className="min-w-0">
-              <div className="truncate text-sm font-semibold">{defaultChannel.name}</div>
-              <div className="truncate text-2sm text-muted-foreground">
-                {defaultChannel.tagline}
+            <div className="flex items-center gap-3 px-4 py-4">
+              <div
+                aria-hidden
+                className="flex size-11 shrink-0 items-center justify-center rounded-sm bg-muted font-display text-base font-bold text-foreground"
+              >
+                {primeiroCanal.initials}
+              </div>
+              <div className="min-w-0">
+                <div className="truncate text-sm font-semibold">{primeiroCanal.name}</div>
+                <div className="truncate text-2sm text-muted-foreground">
+                  {primeiroCanal.tagline}
+                </div>
               </div>
             </div>
-          </div>
-          <div className="flex items-center gap-2 border-t border-border px-4 py-3">
-            <span aria-hidden className="size-1.5 shrink-0 rounded-full bg-(--tenant)" />
-            <span className="text-2sm text-muted-foreground">
-              Lives, arquivo e bilhetes à porta
-            </span>
-          </div>
-          <div className="border-t border-border p-3">
-            <Link
-              href={channelPath(defaultChannel)}
-              className={buttonVariants({ variant: "secondary", size: "sm", className: "w-full" })}
-            >
-              Ver o canal
-            </Link>
-          </div>
-        </Card>
+            <div className="flex items-center gap-2 border-t border-border px-4 py-3">
+              <span aria-hidden className="size-1.5 shrink-0 rounded-full bg-(--tenant)" />
+              <span className="text-2sm text-muted-foreground">
+                Lives, arquivo e bilhetes à porta
+              </span>
+            </div>
+            <div className="border-t border-border p-3">
+              <Link
+                href={channelPath(primeiroCanal)}
+                className={buttonVariants({
+                  variant: "secondary",
+                  size: "sm",
+                  className: "w-full",
+                })}
+              >
+                Ver o canal
+              </Link>
+            </div>
+          </Card>
+        ) : null}
       </section>
 
       {/* Como funciona — 3 passos do design (borda-esquerda tinta, editorial). */}

@@ -4,13 +4,19 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { type EventFormState, validateEventForm } from "@/lib/event-rules";
 import { formatNumber } from "@/lib/format";
-import { canManageEvents, getCurrentUser } from "@/server/authz";
+import { getCurrentUser } from "@/server/authz";
+import { permitEventManagement, resolveChannelForNewEvent } from "@/server/event-access";
 import { createEvent, type DeleteEventResult, deleteEvent } from "@/server/events";
 
 /*
  * Ações de eventos do backoffice. Uma server action é um endpoint como
  * qualquer outro: valida os papéis e os dados aqui, sempre — o formulário do
  * outro lado é conveniência, não segurança.
+ *
+ * Com o multi-canal, "que papel tens?" deixou de chegar: a pergunta é "podes
+ * mexer NESTE canal?". Para apagar, o canal vem do evento
+ * (`permitEventManagement`); para criar, é escolhido em
+ * `resolveChannelForNewEvent` — que recusa em vez de adivinhar.
  */
 
 function refreshEventScreens(eventId?: string) {
@@ -32,9 +38,22 @@ export async function createEventAction(
   const submitted = Object.fromEntries(formData);
 
   const user = await getCurrentUser();
-  if (!canManageEvents(user)) {
+  if (!user) {
     const { values } = validateEventForm(submitted);
-    return { errors: {}, message: "Não tens permissão para criar eventos.", values };
+    return { errors: {}, message: "A tua sessão expirou — volta a entrar.", values };
+  }
+
+  /*
+   * Em que canal nasce este evento. O campo `canal` ainda não existe no
+   * formulário — a UI de canais é da Frente F — e enquanto não existir, quem
+   * gere um canal só cai no caminho sem ambiguidade. Quando a Frente F o
+   * acrescentar, chega por aqui sem mais nada mudar deste lado.
+   */
+  const requested = typeof submitted.canal === "string" ? submitted.canal : undefined;
+  const channel = await resolveChannelForNewEvent(user, requested);
+  if (!channel.ok) {
+    const { values } = validateEventForm(submitted);
+    return { errors: {}, message: channel.error, values };
   }
 
   const checked = validateEventForm(submitted);
@@ -44,7 +63,7 @@ export async function createEventAction(
 
   let created: Awaited<ReturnType<typeof createEvent>>;
   try {
-    created = await createEvent(checked.draft);
+    created = await createEvent(checked.draft, channel.channelId);
   } catch (error) {
     console.error("[eventos] criar falhou:", error);
     return {
@@ -74,13 +93,16 @@ function refusalMessage(result: Extract<DeleteEventResult, { ok: false }>): stri
   }
 }
 
-/** Apaga um evento (e o live input na Cloudflare). Só quem gere eventos. */
+/** Apaga um evento (e o live input na Cloudflare). Só quem gere o canal DELE. */
 export async function deleteEventAction(eventId: unknown): Promise<{ error?: string }> {
-  const user = await getCurrentUser();
-  if (!canManageEvents(user)) return { error: "Não tens permissão para apagar eventos." };
   if (typeof eventId !== "string" || eventId.length === 0) {
     return { error: "Pedido inválido — recarrega a página." };
   }
+
+  // O canal vem do evento. Um evento de outra liga dá a mesma resposta que um
+  // id inventado — ver a nota do 404 em `server/event-access.ts`.
+  const permit = await permitEventManagement(eventId);
+  if (!permit.ok) return { error: permit.error };
 
   let result: DeleteEventResult;
   try {

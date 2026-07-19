@@ -3,11 +3,11 @@ import { EventCard } from "@/components/eventos/event-card";
 import { splitProgram } from "@/components/eventos/program";
 import { WatchPlayer } from "@/components/player/watch-player";
 import { ViewerShell } from "@/components/ui/viewer-shell";
-import { defaultChannel } from "@/lib/channels";
 import { formatDateTime } from "@/lib/format";
 import { requireUser } from "@/server/auth-helper";
+import { getChannelById } from "@/server/channels";
 import { hasActiveEntitlement } from "@/server/entitlements";
-import { getEvent, listEvents } from "@/server/events";
+import { getEvent, listEventsByChannel } from "@/server/events";
 
 export const dynamic = "force-dynamic";
 
@@ -22,13 +22,22 @@ export default async function WatchPage({ params }: { params: Promise<{ eventId:
   if (!(await hasActiveEntitlement(user.id, eventId))) redirect(`/eventos/${eventId}`);
 
   const isVod = event.status === "ended" && Boolean(event.cfVodUid);
-  const archive = isVod
-    ? splitProgram(await listEvents()).archive.filter((e) => e.id !== eventId)
-    : [];
 
+  // A barra ao lado chama-se "Arquivo do canal" e tem agora de o ser mesmo:
+  // vinha de `listEvents()` e misturava os replays de todos os canais.
+  const [channel, archive] = await Promise.all([
+    getChannelById(event.channelId),
+    isVod
+      ? listEventsByChannel(event.channelId).then((rows) =>
+          splitProgram(rows).archive.filter((e) => e.id !== eventId),
+        )
+      : Promise.resolve([]),
+  ]);
+
+  const canal = channel ? ` · ${channel.name}` : "";
   const meta = isVod
-    ? `Gravado a ${formatDateTime(event.startsAt)} · ${defaultChannel.name}`
-    : `${formatDateTime(event.startsAt)} · Em direto · ${defaultChannel.name}`;
+    ? `Gravado a ${formatDateTime(event.startsAt)}${canal}`
+    : `${formatDateTime(event.startsAt)} · Em direto${canal}`;
 
   const info = (
     <div className="border-b pb-4">

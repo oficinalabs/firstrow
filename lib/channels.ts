@@ -1,11 +1,14 @@
+import type { channels } from "@/db/schema";
+
 /*
- * Canais da plataforma. Fase 0: a lista vive em código (um só canal real,
- * SmokingBars) mas a ESTRUTURA já é multi-canal — a visão geral em "/" e as
- * páginas "/canal/[slug]" leem daqui, nunca de uma config solta.
+ * Canais da plataforma — a parte PURA, que corre dos dois lados.
  *
- * A BD continua sem coluna de canal: multi-tenant em BD é fase posterior e
- * NÃO se mexe em db/schema.ts agora. Enquanto isso, todos os eventos são do
- * canal por defeito — o único sítio que assume isso é groupEventsByChannel().
+ * A lista deixou de viver aqui: os canais são linhas da tabela `channels` e
+ * quem as lê é `server/channels.ts`. Este ficheiro fica com o que não toca na
+ * base de dados — o tipo, a rota pública e o agrupamento — porque é importado
+ * por componentes que também correm no browser. Meter uma query aqui arrastava
+ * o driver do Postgres para o bundle do cliente; é a mesma divisão que já
+ * separa `lib/event-rules.ts` de `server/events.ts`.
  *
  * Co-branding: o CANAL pinta a linha de topo, o botão Seguir e realces de
  * agenda com `accentColor`; a FIRSTROW pinta barra, ações/dinheiro, checkout,
@@ -13,43 +16,19 @@
  * de pagamento nem em estados AO VIVO.
  */
 
-export type Channel = {
-  slug: string;
-  name: string;
-  tagline: string;
-  /** Cor do canal (dados de configuração, não token de design). */
-  accentColor: string;
-  /** Caminho público do logo do canal; null → placeholder com iniciais. */
-  logoUrl: string | null;
-  /** Imagem de banner do canal; null → sem banner. */
-  bannerUrl: string | null;
-  initials: string;
-};
-
-const smokingbars: Channel = {
-  slug: "smokingbars",
-  name: "SmokingBars",
-  tagline: "Batalhas de rap · Lisboa",
-  accentColor: "#6CC24A",
-  logoUrl: null,
-  bannerUrl: null,
-  initials: "SB",
-};
-
-/** Todos os canais, pela ordem em que aparecem na visão geral. */
-const CHANNELS: readonly Channel[] = [smokingbars];
-
-/** Canal a que pertencem os eventos enquanto a BD não guardar o canal. */
-export const defaultChannel: Channel = smokingbars;
-
-export function listChannels(): readonly Channel[] {
-  return CHANNELS;
-}
-
-/** Canal pelo slug do URL; null se não existir (a página faz notFound()). */
-export function getChannel(slug: string): Channel | null {
-  return CHANNELS.find((channel) => channel.slug === slug) ?? null;
-}
+/**
+ * O canal tal como o resto da app o vê — e tal como viaja para o browser.
+ *
+ * É uma escolha EXPLÍCITA de colunas, e não a linha inteira, de propósito: no
+ * dia em que a tabela ganhar um campo interno (uma nota, um contacto, um IBAN),
+ * ele não vai parar ao payload de uma página pública só porque alguém
+ * acrescentou uma coluna. Quem quiser publicar um campo novo tem de o pôr aqui
+ * e em `server/channels.ts` — dois sítios, ambos deliberados.
+ */
+export type Channel = Pick<
+  typeof channels.$inferSelect,
+  "id" | "slug" | "name" | "tagline" | "accentColor" | "logoUrl" | "bannerUrl" | "initials"
+>;
 
 /** Rota pública do canal — usar sempre isto em vez de escrever "/canal/…". */
 export function channelPath(channel: Channel | string): string {
@@ -58,11 +37,27 @@ export function channelPath(channel: Channel | string): string {
 
 /**
  * Eventos agrupados por slug de canal (canais sem eventos vêm com lista vazia).
- * ÚNICO ponto que sabe que a BD ainda não guarda o canal: quando existir a
- * coluna, muda-se só esta função e o resto da plataforma continua igual.
+ *
+ * Era AQUI que vivia a mentira: a função devolvia todos os eventos debaixo do
+ * canal por defeito, porque a base de dados não sabia a quem pertenciam. Agora
+ * sabe, e isto passou a ler `channelId` — que é o que faz a visão geral da
+ * página inicial mostrar cada evento no canal certo em vez de num só.
+ *
+ * Um evento cujo canal não esteja na lista dada fica DE FORA. É a escolha
+ * segura: mostrá-lo debaixo de outro canal seria voltar a inventar o dono, que
+ * é exatamente o bug que esta migração veio fechar.
  */
-export function groupEventsByChannel<T>(events: readonly T[]): Map<string, T[]> {
-  const byChannel = new Map<string, T[]>(CHANNELS.map((channel) => [channel.slug, []]));
-  byChannel.set(defaultChannel.slug, [...events]);
+export function groupEventsByChannel<T extends { channelId: string }>(
+  events: readonly T[],
+  channels: readonly Channel[],
+): Map<string, T[]> {
+  const slugById = new Map(channels.map((channel) => [channel.id, channel.slug]));
+  const byChannel = new Map<string, T[]>(channels.map((channel) => [channel.slug, []]));
+
+  for (const event of events) {
+    const slug = slugById.get(event.channelId);
+    if (slug) byChannel.get(slug)?.push(event);
+  }
+
   return byChannel;
 }

@@ -1,7 +1,13 @@
 import { getSessionCookie } from "better-auth/cookies";
 import { type NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
-import { canManageEvents, DEFAULT_ROLE, ROLES, type Role } from "@/server/authz";
+import {
+  canEnterBackoffice,
+  DEFAULT_ROLE,
+  loadMemberships,
+  ROLES,
+  type Role,
+} from "@/server/authz";
 
 /*
  * ============================================================================
@@ -122,7 +128,19 @@ export default async function proxy(req: NextRequest) {
     const bruto = (session.user as { role?: unknown }).role;
     const role: Role = isRole(bruto) ? bruto : DEFAULT_ROLE;
 
-    if (!canManageEvents({ role })) {
+    /*
+     * `canEnterBackoffice` e não `canManageEvents`: aqui não há canal nenhum de
+     * onde partir — `/admin` não o tem no URL. A pergunta que este sítio pode
+     * responder é "esta pessoa gere ALGUM canal?"; de que canal é que se fala
+     * decide-se lá dentro, ecrã a ecrã, a partir do evento ou do âmbito.
+     *
+     * Custa a leitura das filiações além da sessão. Continua a ser só em
+     * `/admin/**`, que é meia dúzia de pessoas — a mesma troca já explicada
+     * para a leitura da sessão.
+     */
+    const memberships = await loadMemberships(session.user.id);
+
+    if (!canEnterBackoffice({ role, memberships })) {
       return NextResponse.redirect(new URL("/sem-acesso", req.nextUrl));
     }
 

@@ -1,15 +1,25 @@
 import { boolean, pgTable, text, timestamp } from "drizzle-orm/pg-core";
 
 /*
- * Papéis. A BD é a verdade — `ADMIN_EMAILS` serve só para promover o primeiro
+ * Papéis GLOBAIS — os que valem na plataforma inteira, sem canal nenhum à
+ * frente. A BD é a verdade; `ADMIN_EMAILS` serve só para promover o primeiro
  * platform_admin (bootstrap). Ver `server/authz.ts` para os helpers de acesso.
  *
- *   platform_admin — nós; vê e gere tudo na plataforma
- *   league_owner   — dono de uma liga; gere os eventos e o dinheiro da liga
- *   league_staff   — equipa da liga; opera transmissão e porta (QR)
+ *   platform_admin — nós, a FirstRow; vê e gere tudo, em todos os canais
  *   viewer         — espectador; compra e vê (o papel de toda a gente)
+ *
+ * SÓ ESTES DOIS, e é deliberado. `league_owner` e `league_staff` viviam aqui e
+ * eram um bug à espera de acontecer: um papel global chamado "dono da liga"
+ * dava, ao entrar a segunda liga, os eventos e o dinheiro dela a quem só devia
+ * mandar na primeira. Gerir e operar são poderes DE UM CANAL e passaram para
+ * `channel_members` (`owner` / `staff`, em `db/schema.ts`).
+ *
+ * A regra que fica: aqui em cima só mora o que é mesmo global.
+ *
+ * (Este ficheiro é regenerável com `pnpm auth:generate` — se o correres,
+ * repõe este bloco à mão. O CLI do Better Auth não conhece o `ROLES`.)
  */
-export const ROLES = ["platform_admin", "league_owner", "league_staff", "viewer"] as const;
+export const ROLES = ["platform_admin", "viewer"] as const;
 
 export type Role = (typeof ROLES)[number];
 

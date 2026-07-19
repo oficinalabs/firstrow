@@ -2,8 +2,9 @@ import Link from "next/link";
 import { Scanner } from "@/components/tickets/scanner";
 import { EmptyState } from "@/components/ui/empty-state";
 import { formatDateTime } from "@/lib/format";
-import { requireEventOperator } from "@/server/event-access";
-import { getEvent, listEvents } from "@/server/events";
+import { operateScope, requireUser } from "@/server/authz";
+import { permitEventOperation } from "@/server/event-access";
+import { listEventsInScope } from "@/server/events";
 import { getEventTicketStats } from "@/server/tickets";
 
 export const dynamic = "force-dynamic";
@@ -15,21 +16,25 @@ export default async function AdminScannerPage({
 }: {
   searchParams: Promise<{ evento?: string }>;
 }) {
-  // Validar bilhetes à porta é operar o evento — o mesmo papel que a página de
-  // bilhetes exige. (O layout do /admin ainda corta em `canManageEvents`, por
-  // isso um `league_staff` não chega aqui — ver docs/SEGURANCA-APP.md.)
-  await requireEventOperator("/admin/scanner");
-
   const { evento } = await searchParams;
 
+  /*
+   * Validar bilhetes à porta é operar o evento — e é o canal DELE que decide.
+   * Um evento que não existe e um evento de outra liga caem os dois no seletor,
+   * de propósito: da porta não se distingue um do outro.
+   *
+   * (O layout do /admin ainda corta em `canEnterBackoffice`, que exige ser
+   * dono de um canal, por isso a equipa não chega aqui — ver
+   * docs/SEGURANCA-APP.md.)
+   */
   if (evento) {
-    const event = await getEvent(evento);
-    if (event) {
-      const stats = await getEventTicketStats(event.id);
+    const permit = await permitEventOperation(evento);
+    if (permit.ok) {
+      const stats = await getEventTicketStats(permit.event.id);
       return (
         <Scanner
-          eventoId={event.id}
-          eventoTitulo={event.title}
+          eventoId={permit.event.id}
+          eventoTitulo={permit.event.title}
           vendidos={stats.vendidos}
           entraram={stats.entraram}
         />
@@ -37,7 +42,8 @@ export default async function AdminScannerPage({
     }
   }
 
-  const events = await listEvents();
+  const user = await requireUser({ next: "/admin/scanner" });
+  const events = await listEventsInScope(operateScope(user));
   const comBilhetes = events.filter((e) => e.ticketPriceCents != null);
 
   return (

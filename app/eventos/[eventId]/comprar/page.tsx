@@ -2,8 +2,8 @@ import type { Metadata } from "next";
 import { notFound, redirect } from "next/navigation";
 import { BuyButton } from "@/components/checkout/buy-button";
 import { CheckoutFrame } from "@/components/checkout/checkout-frame";
-import { defaultChannel } from "@/lib/channels";
 import { requireUser } from "@/server/auth-helper";
+import { getChannelById } from "@/server/channels";
 import { hasActiveEntitlement } from "@/server/entitlements";
 import { getEvent } from "@/server/events";
 
@@ -26,6 +26,10 @@ export default async function CheckoutPage({ params }: { params: Promise<{ event
   // Já tem acesso — não faz sentido comprar outra vez.
   if (await hasActiveEntitlement(user.id, eventId)) redirect(`/eventos/${eventId}`);
 
+  // O ecrã de pagamento tem de dizer a quem se está a pagar. O nome vem do
+  // canal DO EVENTO: mostrar aqui o canal errado é o pior sítio para o fazer.
+  const channel = await getChannelById(event.channelId);
+
   return (
     <CheckoutFrame>
       <BuyButton
@@ -33,7 +37,7 @@ export default async function CheckoutPage({ params }: { params: Promise<{ event
         eventTitle={event.title}
         startsAt={event.startsAt.toISOString()}
         priceCents={event.priceCents}
-        channelName={defaultChannel.name}
+        channelName={channel?.name ?? ""}
       />
     </CheckoutFrame>
   );

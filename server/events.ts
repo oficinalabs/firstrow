@@ -1,10 +1,26 @@
-import { and, count, desc, eq, gte } from "drizzle-orm";
+import { and, count, desc, eq, gte, inArray, type SQL, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { entitlements, events, tickets } from "@/db/schema";
 import { createLiveInput } from "@/lib/cloudflare";
 import { DUPLICATE_WINDOW_MS, type EventDraft } from "@/lib/event-rules";
 import { newId } from "@/lib/ids";
+import type { ChannelScope } from "@/server/authz";
 import { deleteLiveInput } from "@/server/cloudflare-stream";
+
+/**
+ * Traduz um âmbito de canais para a condição SQL que TODAS as queries do
+ * backoffice têm de levar. Um sítio só: se a regra mudar, muda aqui.
+ *
+ * O caso da lista vazia é o que mais importa acertar. Alguém sem canal nenhum
+ * tem de ver ZERO — e não "sem filtro", que era o comportamento antigo e a
+ * fuga que esta frente veio fechar. Por isso o vazio devolve `false` explícito
+ * em vez de `undefined`.
+ */
+export function inChannelScope(scope: ChannelScope): SQL | undefined {
+  if (scope.all) return undefined;
+  if (scope.channelIds.length === 0) return sql`false`;
+  return inArray(events.channelId, [...scope.channelIds]);
+}
 
 export type CreatedEvent = {
   id: string;
@@ -29,12 +45,15 @@ export type CreatedEvent = {
  * Sobra a hipótese de dois pedidos coincidirem nos poucos milissegundos entre a
  * leitura e a escrita. Para isso é que o botão desativa ao primeiro clique.
  */
-export async function createEvent(draft: EventDraft): Promise<CreatedEvent> {
+export async function createEvent(draft: EventDraft, channelId: string): Promise<CreatedEvent> {
   const [duplicate] = await db
     .select({ id: events.id })
     .from(events)
     .where(
       and(
+        // O canal entra na guarda: duas ligas podem ter, com todo o direito, um
+        // "Final da Época" à mesma hora — não é um duplo-clique, são dois eventos.
+        eq(events.channelId, channelId),
         eq(events.title, draft.title),
         eq(events.startsAt, draft.startsAt),
         gte(events.createdAt, new Date(Date.now() - DUPLICATE_WINDOW_MS)),
@@ -49,6 +68,7 @@ export async function createEvent(draft: EventDraft): Promise<CreatedEvent> {
   const id = newId();
   await db.insert(events).values({
     id,
+    channelId,
     title: draft.title,
     startsAt: draft.startsAt,
     priceCents: draft.priceCents,
@@ -74,8 +94,29 @@ export async function getEvent(id: string) {
   return rows[0] ?? null;
 }
 
+/**
+ * Todos os eventos da plataforma, de todos os canais.
+ *
+ * É para as superfícies PÚBLICAS — a visão geral em "/" e o arquivo — onde
+ * mostrar tudo é o objetivo. O backoffice usa `listEventsInScope`: lá, ver
+ * tudo é a fuga.
+ */
 export async function listEvents() {
   return db.select().from(events).orderBy(desc(events.startsAt));
+}
+
+/** Os eventos de um canal — a página pública `/canal/[slug]`. */
+export async function listEventsByChannel(channelId: string) {
+  return db
+    .select()
+    .from(events)
+    .where(eq(events.channelId, channelId))
+    .orderBy(desc(events.startsAt));
+}
+
+/** Os eventos sobre os quais este utilizador tem alguma coisa a dizer. */
+export async function listEventsInScope(scope: ChannelScope) {
+  return db.select().from(events).where(inChannelScope(scope)).orderBy(desc(events.startsAt));
 }
 
 /**
@@ -83,13 +124,21 @@ export async function listEvents() {
  * porta), incluindo as reembolsadas: continuam a ser o registo de quem pagou.
  * É isto que decide se um evento ainda pode ser apagado.
  */
-export async function countSalesByEvent(): Promise<Map<string, number>> {
+export async function countSalesByEvent(scope: ChannelScope): Promise<Map<string, number>> {
+  const where = inChannelScope(scope);
   const [ppv, door] = await Promise.all([
     db
       .select({ eventId: entitlements.eventId, n: count() })
       .from(entitlements)
+      .innerJoin(events, eq(entitlements.eventId, events.id))
+      .where(where)
       .groupBy(entitlements.eventId),
-    db.select({ eventId: tickets.eventId, n: count() }).from(tickets).groupBy(tickets.eventId),
+    db
+      .select({ eventId: tickets.eventId, n: count() })
+      .from(tickets)
+      .innerJoin(events, eq(tickets.eventId, events.id))
+      .where(where)
+      .groupBy(tickets.eventId),
   ]);
 
   const sales = new Map<string, number>();
@@ -97,6 +146,15 @@ export async function countSalesByEvent(): Promise<Map<string, number>> {
     sales.set(row.eventId, (sales.get(row.eventId) ?? 0) + row.n);
   }
   return sales;
+}
+
+/** As compras de UM evento — a pergunta que `deleteEvent` faz antes de apagar. */
+export async function countSalesForEvent(eventId: string): Promise<number> {
+  const [[ppv], [door]] = await Promise.all([
+    db.select({ n: count() }).from(entitlements).where(eq(entitlements.eventId, eventId)),
+    db.select({ n: count() }).from(tickets).where(eq(tickets.eventId, eventId)),
+  ]);
+  return (ppv?.n ?? 0) + (door?.n ?? 0);
 }
 
 export type DeleteEventResult =
@@ -123,7 +181,7 @@ export async function deleteEvent(id: string): Promise<DeleteEventResult> {
   if (!event) return { ok: false, reason: "not-found", sales: 0 };
   if (event.status === "live") return { ok: false, reason: "live", sales: 0 };
 
-  const sales = (await countSalesByEvent()).get(id) ?? 0;
+  const sales = await countSalesForEvent(id);
   if (sales > 0) return { ok: false, reason: "has-sales", sales };
 
   if (event.cfLiveInputId && !(await deleteLiveInput(event.cfLiveInputId))) {

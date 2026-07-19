@@ -3,16 +3,35 @@ import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { db } from "@/db";
 import { DEFAULT_ROLE, ROLES, type Role, user as userTable } from "@/db/auth-schema";
+import { CHANNEL_ROLES, type ChannelRole, channelMembers } from "@/db/schema";
 import { auth, authCapabilities } from "@/lib/auth";
 
 /*
  * ============================================================================
- *  AUTORIZAÇÃO — ponto único de verdade sobre "quem pode o quê"
+ *  AUTORIZAÇÃO — ponto único de verdade sobre "quem pode o quê, ONDE"
  * ============================================================================
  *
  * A BASE DE DADOS manda. `ADMIN_EMAILS` só promove o PRIMEIRO platform_admin
  * (bootstrap) e deixa de ter efeito assim que exista um — não é uma porta das
  * traseiras permanente.
+ *
+ * ────────────────────────────────────────────────────────────────────────────
+ *  O PODER TEM DOIS ANDARES, E ISSO É O CERNE DESTE FICHEIRO
+ * ────────────────────────────────────────────────────────────────────────────
+ *
+ *   GLOBAL (coluna `user.role`)      platform_admin · viewer
+ *   POR CANAL (`channel_members`)    owner · staff
+ *
+ * Antes era tudo global: `league_owner` numa coluna do utilizador. Com um canal
+ * só, ninguém notava. Ao entrar a segunda liga, esse papel dava ao dono da
+ * primeira os eventos e o DINHEIRO da segunda — sem nunca lhe termos dado nada.
+ *
+ * Por isso os predicados de eventos passaram a EXIGIR um canal. Não há
+ * `canManageEvents(user)`: a pergunta sem canal não tem resposta certa, e uma
+ * assinatura que a aceitasse era um convite a assumir o canal por defeito. O
+ * compilador passa a apanhar quem se esqueça.
+ *
+ * `platform_admin` passa por cima de tudo, sem precisar de ser membro de nada.
  *
  * COMO USAR (a API que as outras frentes consomem):
  *
@@ -20,19 +39,40 @@ import { auth, authCapabilities } from "@/lib/auth";
  *     const user = await requireUser({ next: "/conta" });
  *     const user = await requireRole(["platform_admin"], { next: "/admin" });
  *
+ *   Ecrãs de um evento — o canal vem do evento, e a resposta é 404 se não for
+ *   teu (ver `server/event-access.ts`, que é onde isto deve ser feito):
+ *     const { user, event } = await requireEventManager(id, "/admin/...");
+ *
  *   Rotas de API — querem devolver status, não redirecionar:
- *     const user = await getCurrentUser();
- *     if (!user) return NextResponse.json({ erro: "..." }, { status: 401 });
- *     if (!canManageEvents(user)) return NextResponse.json({ erro: "..." }, { status: 403 });
+ *     const gate = await requireApiForEvent(id, canManageEvents);
  *
  *   Predicados puros (sem I/O, servem cliente e servidor):
- *     isPlatformAdmin(user) · canManageEvents(user) · canOperateEvents(user) · hasRole(user, ...)
+ *     isPlatformAdmin(user) · canManageEvents(user, channelId)
+ *     canOperateEvents(user, channelId) · channelRoleOf(user, channelId)
+ *
+ * PORQUE É QUE OS PREDICADOS CONTINUAM PUROS (e não `async`)
+ * Ler a base de dados dentro de um predicado obrigava a `await` em todo o lado,
+ * espalhava queries por ecrãs que já as fizeram, e tirava-lhes o uso no
+ * cliente. Em vez disso, `getCurrentUser()` traz as filiações UMA vez por
+ * pedido e os predicados continuam a ser aritmética sobre o que já está em mão.
+ *
+ * CUSTO, dito como é: `getCurrentUser()` faz agora uma query indexada a mais
+ * por pedido autenticado — inclusive nas rotas de posse (playback, checkout),
+ * que não olham para canais. É barato (índice por `user_id`, tabela minúscula)
+ * e paga-se em ter UM só modelo mental: o utilizador chega sempre completo.
+ * Se um dia pesar no heartbeat, o caminho é separar um `getCurrentUser()`
+ * barato de um `getChannelUser()` completo e deixar o compilador exigir o
+ * segundo nos predicados de canal — não é adivinhar aqui dentro.
  *
  * REGRA DE OURO: o `role` que chega ao browser serve para PINTAR ecrãs.
  * Autorizar é sempre aqui, no servidor, em cada pedido.
  */
 
 export { DEFAULT_ROLE, ROLES, type Role } from "@/db/auth-schema";
+export { CHANNEL_ROLES, type ChannelRole } from "@/db/schema";
+
+/** O papel de alguém num canal concreto. */
+export type ChannelMembership = { channelId: string; role: ChannelRole };
 
 /** O utilizador tal como o resto da app o vê. `role` vem sempre preenchido. */
 export type AuthUser = {
@@ -41,8 +81,17 @@ export type AuthUser = {
   email: string;
   emailVerified: boolean;
   image?: string | null;
+  /** Papel GLOBAL. Poder sobre eventos vem de `memberships`, nunca daqui. */
   role: Role;
+  /** Os canais onde esta pessoa manda, e com que papel. Vazio é o normal. */
+  memberships: readonly ChannelMembership[];
 };
+
+/**
+ * O mínimo que um predicado precisa de saber. Aceitar menos do que isto (só o
+ * `role`) era o que permitia perguntar "podes gerir eventos?" sem canal.
+ */
+type Subject = Pick<AuthUser, "role" | "memberships"> | null;
 
 /** Lançado por `requireRole` quando há sessão mas falta o papel. */
 export class ForbiddenError extends Error {
@@ -63,27 +112,126 @@ function isRole(value: unknown): value is Role {
   return typeof value === "string" && (ROLES as readonly string[]).includes(value);
 }
 
-/** Tem algum dos papéis dados? */
+/**
+ * Papel de canal vindo da BD. Um valor desconhecido (schema à frente do código,
+ * ou o contrário) NÃO é membro — nunca é acesso.
+ */
+function isChannelRole(value: unknown): value is ChannelRole {
+  return typeof value === "string" && (CHANNEL_ROLES as readonly string[]).includes(value);
+}
+
+/** Tem algum dos papéis GLOBAIS dados? */
 export function hasRole(user: Pick<AuthUser, "role"> | null, ...roles: Role[]): boolean {
   return user != null && roles.includes(user.role);
 }
 
-/** Nós. Vê e gere tudo — o papel que abre o backoffice todo. */
+/** Nós, a FirstRow. Vê e gere tudo, em todos os canais. */
 export function isPlatformAdmin(user: Pick<AuthUser, "role"> | null): boolean {
   return hasRole(user, "platform_admin");
 }
 
-/** Criar, editar e apagar eventos (e mexer no dinheiro da liga). */
-export function canManageEvents(user: Pick<AuthUser, "role"> | null): boolean {
-  return hasRole(user, "platform_admin", "league_owner");
+/**
+ * O papel desta pessoa NESTE canal, ou `null` se não for membro.
+ *
+ * Devolve `null` para o `platform_admin` que não seja membro: ele passa por
+ * cima dos predicados, mas não é dono do canal — e a UI que quiser mostrar
+ * "és owner de X" deve dizer a verdade.
+ */
+export function channelRoleOf(user: Subject, channelId: string): ChannelRole | null {
+  if (!user) return null;
+  const membership = user.memberships.find((m) => m.channelId === channelId);
+  return membership && isChannelRole(membership.role) ? membership.role : null;
+}
+
+/** Criar, editar e apagar eventos DESTE canal (e mexer no dinheiro dele). */
+export function canManageEvents(user: Subject, channelId: string): boolean {
+  if (isPlatformAdmin(user)) return true;
+  return channelRoleOf(user, channelId) === "owner";
 }
 
 /**
- * Operar um evento a decorrer: transmissão e validação de bilhetes à porta.
+ * Operar um evento DESTE canal a decorrer: transmissão e validação à porta.
  * Inclui a equipa da liga — que opera mas não gere (nem apaga eventos).
  */
-export function canOperateEvents(user: Pick<AuthUser, "role"> | null): boolean {
-  return hasRole(user, "platform_admin", "league_owner", "league_staff");
+export function canOperateEvents(user: Subject, channelId: string): boolean {
+  if (isPlatformAdmin(user)) return true;
+  const role = channelRoleOf(user, channelId);
+  return role === "owner" || role === "staff";
+}
+
+/**
+ * Abre a porta do backoffice — e só a porta.
+ *
+ * O `/admin` não tem canal no URL, por isso o corte do `proxy.ts` não pode ser
+ * por canal: a pergunta aqui é "esta pessoa gere ALGUM canal?". Quem passa
+ * ainda tem de passar no gate por canal de cada ecrã lá dentro, que é onde se
+ * decide de que eventos é que se fala.
+ *
+ * `owner` e não `staff`, de propósito: quase nenhuma página daqui para dentro
+ * tem gate próprio, por isso este é o gate efetivo de `/admin/ganhos` e
+ * `/admin/subscritores` — dinheiro e dados pessoais de compradores. Ver a nota
+ * em `app/admin/layout.tsx`.
+ */
+export function canEnterBackoffice(user: Subject): boolean {
+  if (isPlatformAdmin(user)) return true;
+  return user?.memberships.some((m) => m.role === "owner") ?? false;
+}
+
+/** Os canais onde esta pessoa gere eventos. Vazio para quem não gere nenhum. */
+export function managedChannelIds(user: Subject): string[] {
+  if (!user) return [];
+  return user.memberships.filter((m) => m.role === "owner").map((m) => m.channelId);
+}
+
+/** Os canais onde esta pessoa gere OU opera eventos. */
+export function operatedChannelIds(user: Subject): string[] {
+  if (!user) return [];
+  return user.memberships.filter((m) => isChannelRole(m.role)).map((m) => m.channelId);
+}
+
+// ── Âmbito: o que uma query agregada tem o direito de somar ─────────────────
+
+/*
+ * Os predicados acima respondem por UM evento. Os ecrãs de lista e as somas do
+ * backoffice — receita do mês, compradores, extrato, eventos — não têm um
+ * evento à frente: têm de saber sobre QUE canais podem falar.
+ *
+ * Sem isto, a resposta certa a "quanto faturei este mês?" era a soma de todos
+ * os canais, e o dono da liga A via o dinheiro e os emails dos compradores da
+ * liga B. É a mesma fuga do papel global, só que pela porta das estatísticas.
+ *
+ * `all: true` é o platform_admin. Para todos os outros vai a lista dos canais
+ * deles — e uma lista VAZIA quer dizer "não pode ver nada", nunca "não filtres".
+ */
+export type ChannelScope = { all: true } | { all: false; channelIds: readonly string[] };
+
+/** Canais cujo dinheiro e compradores esta pessoa pode ver (owner). */
+export function manageScope(user: Subject): ChannelScope {
+  if (isPlatformAdmin(user)) return { all: true };
+  return { all: false, channelIds: managedChannelIds(user) };
+}
+
+/** Canais cujos eventos esta pessoa pode ver e operar (owner + staff). */
+export function operateScope(user: Subject): ChannelScope {
+  if (isPlatformAdmin(user)) return { all: true };
+  return { all: false, channelIds: operatedChannelIds(user) };
+}
+
+// ── Filiações ───────────────────────────────────────────────────────────────
+
+/**
+ * Os canais de que esta pessoa é membro.
+ *
+ * Uma query indexada por `user_id`. Linhas com papel desconhecido são deixadas
+ * de fora aqui mesmo, para não haver um `ChannelRole` inválido a circular.
+ */
+export async function loadMemberships(userId: string): Promise<ChannelMembership[]> {
+  const rows = await db
+    .select({ channelId: channelMembers.channelId, role: channelMembers.role })
+    .from(channelMembers)
+    .where(eq(channelMembers.userId, userId));
+
+  return rows.filter((row): row is ChannelMembership => isChannelRole(row.role));
 }
 
 // ── Bootstrap do primeiro admin ─────────────────────────────────────────────
@@ -134,6 +282,9 @@ async function bootstrapPlatformAdmin(user: AuthUser): Promise<AuthUser> {
 /**
  * O utilizador do pedido atual, ou `null` se não houver sessão.
  * Não redireciona nem lança — é a base para as rotas de API.
+ *
+ * Traz as filiações de canal já resolvidas: a partir daqui, responder a
+ * "podes?" não volta a tocar na base de dados.
  */
 export async function getCurrentUser(): Promise<AuthUser | null> {
   const session = await auth.api.getSession({ headers: await headers() });
@@ -147,8 +298,10 @@ export async function getCurrentUser(): Promise<AuthUser | null> {
     emailVerified: sessionUser.emailVerified,
     image: sessionUser.image,
     // Defesa contra desalinhamento BD↔código: um valor desconhecido é tratado
-    // como o papel menos poderoso, nunca como acesso.
+    // como o papel menos poderoso, nunca como acesso. É também o que apanha as
+    // contas que ficaram com `league_owner` de antes da migração multi-canal.
     role: isRole(sessionUser.role) ? sessionUser.role : DEFAULT_ROLE,
+    memberships: await loadMemberships(sessionUser.id),
   };
 
   return bootstrapPlatformAdmin(user);
@@ -168,9 +321,12 @@ export async function requireUser(options: { next?: string } = {}): Promise<Auth
 }
 
 /**
- * Exige sessão E um dos papéis dados.
+ * Exige sessão E um dos papéis GLOBAIS dados.
  * Sem sessão → redirect para `/entrar`. Com sessão mas sem papel →
  * `ForbiddenError` (quem chama decide se mostra 403, se apanha, se re-lança).
+ *
+ * Para poder sobre eventos NÃO uses isto: usa `server/event-access.ts`, que
+ * decide pelo canal do evento.
  */
 export async function requireRole(
   roles: readonly Role[],

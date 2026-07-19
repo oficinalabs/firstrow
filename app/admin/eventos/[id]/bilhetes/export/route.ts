@@ -1,8 +1,7 @@
 import { NextResponse } from "next/server";
 import { formatDate, formatDateTime } from "@/lib/format";
-import { requireApi } from "@/server/api-guard";
+import { requireApiForEvent } from "@/server/api-guard";
 import { canManageEvents } from "@/server/authz";
-import { getEvent } from "@/server/events";
 import { listTicketsByEvent, shortCode } from "@/server/tickets";
 
 const ESTADO_PT: Record<string, string> = {
@@ -24,15 +23,18 @@ function csvField(value: string): string {
  * por isso fica em `canManageEvents` — o staff que valida à porta não precisa
  * de levar a base de dados de contactos para casa.
  *
+ * E em `canManageEvents` DO CANAL DESTE EVENTO: com o gate antigo, qualquer
+ * `league_owner` que soubesse (ou adivinhasse) um id descarregava os
+ * compradores de qualquer evento da plataforma num CSV. Agora um evento de
+ * outra liga responde 404, igual a um id inventado.
+ *
  * Gate próprio: um route handler NÃO herda a proteção do layout do /admin.
  */
 export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
-  const gate = await requireApi(canManageEvents);
-  if (!gate.ok) return gate.response;
-
   const { id } = await params;
-  const event = await getEvent(id);
-  if (!event) return NextResponse.json({ error: "Evento não encontrado" }, { status: 404 });
+
+  const gate = await requireApiForEvent(id, canManageEvents);
+  if (!gate.ok) return gate.response;
 
   const bilhetes = await listTicketsByEvent(id);
   const lines = [

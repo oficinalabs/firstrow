@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
-import { isAdmin } from "@/lib/admin";
 import { formatDate, formatDateTime } from "@/lib/format";
-import { requireUser } from "@/server/auth-helper";
+import { requireApi } from "@/server/api-guard";
+import { canManageEvents } from "@/server/authz";
 import { getEvent } from "@/server/events";
 import { listTicketsByEvent, shortCode } from "@/server/tickets";
 
@@ -18,11 +18,17 @@ function csvField(value: string): string {
   return `"${value.replace(/"/g, '""')}"`;
 }
 
+/*
+ * Exportação da lista de compradores: nomes e emails de toda a gente que
+ * comprou bilhete. É a resposta mais sensível do backoffice em dados pessoais,
+ * por isso fica em `canManageEvents` — o staff que valida à porta não precisa
+ * de levar a base de dados de contactos para casa.
+ *
+ * Gate próprio: um route handler NÃO herda a proteção do layout do /admin.
+ */
 export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
-  const user = await requireUser();
-  if (!user || !isAdmin(user.email)) {
-    return NextResponse.json({ error: "Sem acesso" }, { status: 403 });
-  }
+  const gate = await requireApi(canManageEvents);
+  if (!gate.ok) return gate.response;
 
   const { id } = await params;
   const event = await getEvent(id);

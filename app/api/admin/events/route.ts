@@ -1,13 +1,12 @@
 import { NextResponse } from "next/server";
-import { isAdmin } from "@/lib/admin";
-import { requireUser } from "@/server/auth-helper";
+import { requireApi } from "@/server/api-guard";
+import { canManageEvents } from "@/server/authz";
 import { createEvent } from "@/server/events";
 
+// Criar eventos é gerir a liga (e o dinheiro dela) → canManageEvents.
 export async function POST(req: Request) {
-  const user = await requireUser();
-  if (!user || !isAdmin(user.email)) {
-    return NextResponse.json({ error: "Sem permissão" }, { status: 403 });
-  }
+  const gate = await requireApi(canManageEvents);
+  if (!gate.ok) return gate.response;
 
   const body = (await req.json()) as {
     title?: string;

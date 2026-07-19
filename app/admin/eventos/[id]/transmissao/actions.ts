@@ -5,8 +5,7 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { db } from "@/db";
 import { events } from "@/db/schema";
-import { isAdmin } from "@/lib/admin";
-import { requireUser } from "@/server/auth-helper";
+import { canOperateEvents, getCurrentUser } from "@/server/authz";
 
 const inputSchema = z.object({
   eventId: z.string().min(1),
@@ -14,10 +13,11 @@ const inputSchema = z.object({
 });
 
 // Muda o estado da transmissão (events.status). Gate próprio: server actions
-// são endpoints — não herdam a proteção do layout.
+// são endpoints — não herdam a proteção do layout. Pôr no ar e terminar é
+// operar, não gerir: a equipa da liga também o faz.
 export async function setEventStatus(input: unknown): Promise<{ error?: string }> {
-  const user = await requireUser();
-  if (!user || !isAdmin(user.email)) return { error: "Sem permissão para mudar o estado." };
+  const user = await getCurrentUser();
+  if (!canOperateEvents(user)) return { error: "Sem permissão para mudar o estado." };
 
   const parsed = inputSchema.safeParse(input);
   if (!parsed.success) return { error: "Pedido inválido — recarrega a página." };

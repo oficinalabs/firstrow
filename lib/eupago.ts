@@ -34,14 +34,20 @@ export type CreateSplitMbwayInput = {
  * Aceita o que a pessoa escrever: "912345678", "+351 912 345 678",
  * "351#912345678". Assume Portugal quando não vem indicativo, que é o único
  * mercado da plataforma; no dia em que deixar de ser, isto tem de mudar.
+ *
+ * O `customerPhone` leva o número **sem indicativo** — o indicativo vai no
+ * `countryCode`, à parte. Isto foi medido contra o sandbox, não lido: o exemplo
+ * da documentação mostra `"+351912345678"` nesse campo e a API **rejeita-o**
+ * com CUSTOMERPHONE_INVALID. Só o número local passa.
  */
 function normalizePhone(raw: string): { alias: string; customerPhone: string; country: string } {
   const digits = raw.replace(/\D/g, "");
-  const [country, local] = digits.startsWith("351") ? ["351", digits.slice(3)] : ["351", digits];
+  const local = digits.startsWith("351") ? digits.slice(3) : digits;
   return {
-    alias: `${country}#${local}`,
-    customerPhone: `+${country}${local}`,
-    country: `+${country}`,
+    // O split usa outro formato ainda: indicativo, cardinal, número.
+    alias: `351#${local}`,
+    customerPhone: local,
+    country: "+351",
   };
 }
 

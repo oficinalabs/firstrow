@@ -44,16 +44,28 @@ export async function createEventAction(
   }
 
   /*
-   * Em que canal nasce este evento. O campo `canal` ainda não existe no
-   * formulário — a UI de canais é da Frente F — e enquanto não existir, quem
-   * gere um canal só cai no caminho sem ambiguidade. Quando a Frente F o
-   * acrescentar, chega por aqui sem mais nada mudar deste lado.
+   * Em que canal nasce este evento. O formulário manda o slug — escolhido no
+   * seletor quando há mais do que um canal, preenchido em silêncio quando só
+   * há um — mas isso é conveniência: o que decide é a revalidação aqui, que
+   * corre com ou sem formulário do outro lado.
+   *
+   * Um `canal` vazio conta como não indicado (é o que o `<select>` manda antes
+   * de alguém lhe tocar), e aí a decisão volta a ser de quem resolve: um canal
+   * só resolve-se sozinho, vários recusam.
    */
-  const requested = typeof submitted.canal === "string" ? submitted.canal : undefined;
-  const channel = await resolveChannelForNewEvent(user, requested);
+  const submittedChannel = typeof submitted.canal === "string" ? submitted.canal.trim() : "";
+  const channel = await resolveChannelForNewEvent(user, submittedChannel || undefined);
   if (!channel.ok) {
     const { values } = validateEventForm(submitted);
-    return { errors: {}, message: channel.error, values };
+    /*
+     * "Escolhe o canal" e "esse canal não é teu" são queixas sobre o SELETOR, e
+     * é para ele que a pessoa está a olhar — a mensagem tem de aparecer ao pé
+     * dele, não no fim do formulário. Só "não tens canal nenhum" é que não tem
+     * campo onde encostar.
+     */
+    return channel.reason === "none"
+      ? { errors: {}, message: channel.error, values }
+      : { errors: { canal: channel.error }, message: "", values };
   }
 
   const checked = validateEventForm(submitted);

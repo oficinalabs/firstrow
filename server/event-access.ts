@@ -1,15 +1,15 @@
 import { notFound } from "next/navigation";
 import type { events } from "@/db/schema";
+import { CHANNEL_REQUIRED_MESSAGE } from "@/lib/event-rules";
 import {
   type AuthUser,
   canManageEvents,
   canOperateEvents,
   getCurrentUser,
-  isPlatformAdmin,
-  managedChannelIds,
+  manageScope,
   requireUser,
 } from "@/server/authz";
-import { getChannel, listChannels } from "@/server/channels";
+import { channelsInScope, getChannel } from "@/server/channels";
 import { getEvent } from "@/server/events";
 
 /*
@@ -125,7 +125,35 @@ export function permitEventManagement(eventId: string) {
 
 // ── Criar: o único sítio onde o canal NÃO vem de um evento ──────────────────
 
-export type ChannelChoice = { ok: true; channelId: string } | { ok: false; error: string };
+/**
+ * Os canais onde este utilizador pode fazer nascer um evento.
+ *
+ * É a MESMA função que alimenta o seletor do formulário e a que
+ * `resolveChannelForNewEvent` consulta para decidir. De propósito: se a lista
+ * oferecida ao ecrã e a lista aceite pelo servidor fossem calculadas em sítios
+ * diferentes, mais tarde ou mais cedo o formulário passava a oferecer um canal
+ * que a gravação recusava — e o dono ficava a olhar para um erro sobre uma
+ * escolha que nós lhe demos.
+ */
+export function listCreatableChannels(user: AuthUser) {
+  return channelsInScope(manageScope(user));
+}
+
+/**
+ * Porque é que não dá para decidir o canal. Quem chama traduz para o seu meio:
+ * a rota de API para um status, o formulário para um erro ao lado do seletor.
+ */
+export type ChannelRefusal =
+  /** Pediu um canal que não existe, ou que não é dele. */
+  | "forbidden"
+  /** Gere mais do que um e não disse qual — falta a escolha. */
+  | "ambiguous"
+  /** Não gere canal nenhum: não há onde criar. */
+  | "none";
+
+export type ChannelChoice =
+  | { ok: true; channelId: string }
+  | { ok: false; reason: ChannelRefusal; error: string };
 
 /**
  * Em que canal é que este evento vai nascer?
@@ -140,9 +168,13 @@ export type ChannelChoice = { ok: true; channelId: string } | { ok: false; error
  *  - sem canal pedido e gere exatamente um → é esse, sem perguntar;
  *  - sem canal pedido e gere vários → recusa e pede que diga qual.
  *
- * Hoje, com um canal e um dono, cai sempre no caso do meio e ninguém dá por
- * ela. Quando entrar a segunda liga, o caso de baixo passa a ser o que impede
- * um engano caro — e é onde a UI da Frente F entra com o seletor.
+ * O caso do meio é o que faz o formulário não perguntar nada a quem tem uma
+ * liga só. O de baixo é o que impede o engano caro quando entrar a segunda — e
+ * é para ele que existe o seletor.
+ *
+ * ⚠️ O `requestedSlug` vem do cliente, por isso NÃO é uma escolha: é um pedido,
+ * e é revalidado contra `canManageEvents` a cada chamada. O formulário só
+ * oferece canais legítimos, mas quem falar com a API à mão não passa por ele.
  */
 export async function resolveChannelForNewEvent(
   user: AuthUser,
@@ -152,23 +184,22 @@ export async function resolveChannelForNewEvent(
     const channel = await getChannel(requestedSlug);
     // Canal inexistente e canal alheio dão o mesmo erro — ver a nota do 404.
     if (!channel || !canManageEvents(user, channel.id)) {
-      return { ok: false, error: "Canal desconhecido ou sem permissão para criar lá eventos." };
+      return {
+        ok: false,
+        reason: "forbidden",
+        error: "Canal desconhecido ou sem permissão para criar lá eventos.",
+      };
     }
     return { ok: true, channelId: channel.id };
   }
 
-  const candidates = isPlatformAdmin(user)
-    ? (await listChannels()).map((channel) => channel.id)
-    : managedChannelIds(user);
+  const { list } = await listCreatableChannels(user);
 
-  if (candidates.length === 0) {
-    return { ok: false, error: "Não tens nenhum canal onde criar eventos." };
+  if (list.length === 0) {
+    return { ok: false, reason: "none", error: "Não tens nenhum canal onde criar eventos." };
   }
-  if (candidates.length > 1) {
-    return {
-      ok: false,
-      error: "Tens mais do que um canal — indica em qual queres criar o evento.",
-    };
+  if (list.length > 1) {
+    return { ok: false, reason: "ambiguous", error: CHANNEL_REQUIRED_MESSAGE };
   }
-  return { ok: true, channelId: candidates[0] };
+  return { ok: true, channelId: list[0].id };
 }

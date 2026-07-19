@@ -7,6 +7,8 @@ import { LiveViewers } from "@/components/admin/live-viewers";
 import { PageHeader } from "@/components/admin/page-header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { formatEuro, formatNumber, formatTime } from "@/lib/format";
+import { operateScope } from "@/server/authz";
+import { channelsInScope } from "@/server/channels";
 import { getStreamCredentials } from "@/server/cloudflare-stream";
 import { requireEventOperator } from "@/server/event-access";
 import {
@@ -33,20 +35,31 @@ export default async function TransmissionPage({ params }: { params: Promise<{ i
   // Antes de ir buscar seja o que for: a chave da stream é a chave de casa da
   // transmissão e só sai daqui para quem opera o evento — deste canal. O
   // portão devolve o evento já carregado, por isso não há segunda query.
-  const { event } = await requireEventOperator(id, `/admin/eventos/${id}/transmissao`);
+  const { user, event } = await requireEventOperator(id, `/admin/eventos/${id}/transmissao`);
 
-  const [sales, viewers, blocked, credentials] = await Promise.all([
+  const [sales, viewers, blocked, credentials, channels] = await Promise.all([
     getEventSales(id),
     countActiveViewers(id),
     listBlockedSessionsToday(id),
     event.cfLiveInputId ? getStreamCredentials(event.cfLiveInputId) : Promise.resolve(null),
+    channelsInScope(operateScope(user)),
   ]);
+
+  /*
+   * Que liga vai para o ar. Quem opera duas tem duas régies e dois OBS abertos
+   * ao mesmo tempo — e a chave que está aqui em baixo emite para DENTRO deste
+   * evento. Enganar-se de separador é pôr uma liga no canal da outra.
+   *
+   * Com um canal só, isto não aparece: não há engano possível.
+   */
+  const channel = channels.many ? channels.byId.get(event.channelId) : undefined;
 
   return (
     <div className="mx-auto flex w-full max-w-5xl flex-col gap-5">
       <PageHeader
         title={event.title}
         badge={<EventStatusBadge status={event.status} />}
+        meta={channel?.name}
         backHref="/admin/eventos"
         backLabel="Eventos"
       />

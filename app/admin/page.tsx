@@ -8,6 +8,7 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { StatCard } from "@/components/ui/stat-card";
 import { formatDate, formatDateTime, formatEuro, formatNumber, formatTime } from "@/lib/format";
 import { manageScope, requireUser } from "@/server/authz";
+import { channelsInScope } from "@/server/channels";
 import { getDashboardStats, listRecentPayments, type RecentPayment } from "@/server/stats";
 
 export const dynamic = "force-dynamic";
@@ -33,15 +34,25 @@ export default async function AdminDashboardPage() {
   const user = await requireUser({ next: "/admin" });
   const scope = manageScope(user);
 
-  const [stats, payments] = await Promise.all([
+  const [stats, payments, channels] = await Promise.all([
     getDashboardStats(scope),
     listRecentPayments(scope, 6),
+    channelsInScope(scope),
   ]);
   const monthName = stats.monthLabel.split(" ")[0];
 
   return (
     <div className="mx-auto flex w-full max-w-5xl flex-col gap-5">
-      <PageHeader title="Dashboard" meta={`${stats.monthLabel} · atualizado agora`} />
+      {/* Com vários canais, a receita do mês é uma SOMA — o cabeçalho diz de
+          quantos, senão o número não se sabe ler. */}
+      <PageHeader
+        title="Dashboard"
+        meta={
+          channels.many
+            ? `${stats.monthLabel} · ${formatNumber(channels.list.length)} canais`
+            : `${stats.monthLabel} · atualizado agora`
+        }
+      />
 
       {stats.hasEvents ? (
         <>
@@ -96,6 +107,20 @@ export default async function AdminDashboardPage() {
                     ),
                   },
                   { header: "Comprador", cell: (p) => p.buyerName },
+                  // Em que liga entrou este dinheiro. Com uma só, o título do
+                  // evento já o diz — e a coluna era palha.
+                  ...(channels.many
+                    ? [
+                        {
+                          header: "Canal",
+                          cell: (p: RecentPayment) => (
+                            <span className="text-xs text-muted-foreground">
+                              {channels.byId.get(p.channelId)?.name ?? "—"}
+                            </span>
+                          ),
+                        },
+                      ]
+                    : []),
                   {
                     header: "Tipo",
                     cell: () => <span className="text-muted-foreground">Acesso à live</span>,

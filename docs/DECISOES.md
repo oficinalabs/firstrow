@@ -2,6 +2,35 @@
 
 Formato: decisão · porquê · estado. Datas em absoluto.
 
+## ADR-014 · A guarda de duplicados serializa com lock, não com esperança (2026-07-19)
+`createEvent` lia (há um igual nos últimos 30 s?) e depois escrevia. Dizia-se que pôr o INSERT antes da chamada à Cloudflare fechava a janela dos pedidos em paralelo. **Medido: 20 rondas × 8 pedidos em paralelo deixaram 153 eventos onde deviam ficar 20 — falharam 19 das 20 rondas.** Um SELECT seguido de INSERT não é atómico: em READ COMMITTED nenhum dos oito vê as linhas por confirmar dos outros sete.
+
+**Decisão.** A leitura e a escrita passam a correr dentro da mesma transação, atrás de um `pg_advisory_xact_lock` cuja chave é derivada de canal + título + hora de início.
+
+**Porquê assim e não de outra maneira:**
+- **Não é um índice único** porque a guarda é uma *janela de 30 s*, não uma regra permanente: recriar um evento com o mesmo nome e hora meses depois é legítimo, e uma constraint proibia-o para sempre.
+- **É um lock por evento, não global**: dois eventos diferentes têm chaves diferentes e não esperam um pelo outro.
+- **A chave é calculada em Node** (SHA-256 → int8 com sinal) e não com o `hashtext()` do Postgres, que é interno, não documentado, e pode mudar de valor entre versões.
+- **Não precisa de migração**, o que interessa numa app já em produção.
+- **A Cloudflare fica fora da transação** — um lock à espera de uma HTTP de terceiros era trocar um problema por outro.
+
+Nova medição, mesmo teste: 160 pedidos → **20 eventos, 0 duplicados**.
+
+**Estado:** 🟢 decidido e implementado (Frente H). Ver [SEGURANCA-APP.md](SEGURANCA-APP.md#️-a-guarda-de-duplicados-não-aguentava-pedidos-em-paralelo).
+
+## ADR-013 · O canal pergunta-se só quando há mesmo uma escolha (2026-07-19)
+Com os papéis por canal (ADR-010), criar um evento passou a precisar de saber **em que canal** ele nasce — e é a única operação sem evento de onde tirar essa resposta. `resolveChannelForNewEvent` recusava quando havia mais do que um canal, o que era certo mas deixava o backoffice sem forma de criar assim que entrasse a segunda liga.
+
+**Decisão.** O formulário adapta-se a quantos canais a pessoa gere: **zero** → não há formulário, falta criar um canal; **um** → não se pergunta nada, o canal é escolhido e mostrado como contexto; **dois ou mais** → seletor, **sem valor por omissão**.
+
+**O que decidiu o desenho:**
+- **Não transformar um caso único numa decisão.** Hoje há uma liga e um dono; obrigá-lo a escolher "SmokingBars" de uma lista de um era fazer toda a gente pagar o preço do caso raro. A mesma regra vale para os ecrãs: a coluna "Canal" nas listas e no extrato **só aparece com mais do que um canal** — com um só era a mesma palavra em todas as linhas.
+- **Nada de pré-seleção com vários.** Um valor por omissão é a forma mais barata de criar o evento — e o dinheiro dele — na liga errada. Prefere-se um passo a mais a um engano silencioso.
+- **A lista oferecida e a lista aceite são a mesma função** (`listCreatableChannels`). Calculadas em sítios diferentes, acabavam por divergir e o formulário oferecia o que a gravação recusava.
+- **O seletor não é a segurança.** O slug vem do cliente e é revalidado contra `canManageEvents` a cada pedido; a API recusa canal alheio e canal inexistente com **a mesma mensagem**, para não se poder varrer slugs.
+
+**Estado:** 🟢 decidido e implementado (Frente H). Ver [SEGURANCA-APP.md](SEGURANCA-APP.md#escolher-o-canal-ao-criar-um-evento).
+
 ## ADR-001 · Nome: FirstRow (2026-07-16)
 Marca **generalista** e em EN, domínio `joinfirstrow.com` (a comprar). Preferido a nomes rap-específicos (Barras, Ringue) para permitir expansão a outros nichos. **Estado:** fixo (domínio por comprar).
 

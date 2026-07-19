@@ -8,17 +8,29 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { TableCell, TableRow } from "@/components/ui/table";
 import { formatEuro, formatNumber } from "@/lib/format";
 import { manageScope, requireUser } from "@/server/authz";
+import { channelsInScope } from "@/server/channels";
 import { getMonthlyStatement, type MonthlyStatementRow } from "@/server/stats";
 
 export const dynamic = "force-dynamic";
 
 export const metadata: Metadata = { title: "Ganhos" };
 
-// O extrato é do dinheiro DOS CANAIS desta pessoa. Sem âmbito, esta era a
-// página que somava a faturação de todas as ligas na mesma tabela.
+/*
+ * O extrato é do dinheiro DOS CANAIS desta pessoa. Sem âmbito, esta era a
+ * página que somava a faturação de todas as ligas na mesma tabela.
+ *
+ * Com mais do que um canal, filtrar deixa de chegar: uma linha por mês seria
+ * um total que não se pode pagar a ninguém, porque cada liga recebe o seu.
+ * Aí a tabela ganha a coluna do canal e passa a haver uma linha por mês E por
+ * canal — o total no fundo continua a ser o mesmo dinheiro.
+ */
 export default async function EarningsPage() {
   const user = await requireUser({ next: "/admin/ganhos" });
-  const { commissionPct, rows } = await getMonthlyStatement(manageScope(user));
+  const scope = manageScope(user);
+  const [{ commissionPct, rows }, channels] = await Promise.all([
+    getMonthlyStatement(scope),
+    channelsInScope(scope),
+  ]);
 
   const totals = rows.reduce(
     (acc, r) => ({
@@ -33,7 +45,14 @@ export default async function EarningsPage() {
 
   return (
     <div className="mx-auto flex w-full max-w-5xl flex-col gap-5">
-      <PageHeader title="Ganhos" meta="bruto → taxas → líquido, sempre ao cêntimo" />
+      <PageHeader
+        title="Ganhos"
+        meta={
+          channels.many
+            ? `${formatNumber(channels.list.length)} canais · bruto → taxas → líquido`
+            : "bruto → taxas → líquido, sempre ao cêntimo"
+        }
+      />
 
       {rows.length > 0 ? (
         <Card>
@@ -44,6 +63,20 @@ export default async function EarningsPage() {
                   header: "Mês",
                   cell: (r) => <span className="font-semibold">{r.monthLabel}</span>,
                 },
+                // A quem se paga esta linha. Só com mais do que um canal — com
+                // um só, é a mesma liga em todas as linhas.
+                ...(channels.many
+                  ? [
+                      {
+                        header: "Canal",
+                        cell: (r: MonthlyStatementRow) => (
+                          <span className="text-xs text-muted-foreground">
+                            {channels.byId.get(r.channelId)?.name ?? "—"}
+                          </span>
+                        ),
+                      },
+                    ]
+                  : []),
                 { header: "Compras", numeric: true, cell: (r) => formatNumber(r.purchases) },
                 { header: "Bruto", numeric: true, cell: (r) => formatEuro(r.grossCents) },
                 {
@@ -66,10 +99,12 @@ export default async function EarningsPage() {
                 },
               ]}
               rows={rows}
-              rowKey={(r) => r.monthKey}
+              // Uma linha é um mês DE UM canal — o mês sozinho deixou de ser único.
+              rowKey={(r) => `${r.monthKey}·${r.channelId}`}
               footer={
                 <TableRow className="border-t-2 border-border font-semibold hover:bg-transparent">
                   <TableCell>Total</TableCell>
+                  {channels.many ? <TableCell /> : null}
                   <TableCell numeric>{formatNumber(totals.purchases)}</TableCell>
                   <TableCell numeric>{formatEuro(totals.grossCents)}</TableCell>
                   <TableCell numeric className="text-destructive">

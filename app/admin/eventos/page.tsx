@@ -10,6 +10,7 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { formatDate, formatEuro, formatNumber, formatTime } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { canEnterBackoffice, canManageEvents, operateScope, requireUser } from "@/server/authz";
+import { type ChannelsInScope, channelsInScope } from "@/server/channels";
 import { countSalesByEvent } from "@/server/events";
 import { type EventWithSales, listEventsWithSales } from "@/server/stats";
 
@@ -38,10 +39,12 @@ function EventsTable({
   rows,
   sales,
   canManage,
+  channels,
 }: {
   rows: EventWithSales[];
   sales: Map<string, number>;
   canManage: (event: EventWithSales) => boolean;
+  channels: ChannelsInScope;
 }) {
   return (
     <DataTable<EventWithSales>
@@ -55,6 +58,26 @@ function EventsTable({
             </span>
           ),
         },
+        /*
+         * De quem é este evento. A coluna só existe quando há mais do que um
+         * canal em jogo: com uma liga só era a mesma palavra em todas as
+         * linhas, a roubar espaço à data e à receita.
+         *
+         * Com duas, é o contrário — sem ela, "Final da Época" de uma liga e o
+         * da outra são a mesma linha, e o botão de apagar está mesmo ao lado.
+         */
+        ...(channels.many
+          ? [
+              {
+                header: "Canal",
+                cell: (e: EventWithSales) => (
+                  <span className="text-xs text-muted-foreground">
+                    {channels.byId.get(e.channelId)?.name ?? "—"}
+                  </span>
+                ),
+              },
+            ]
+          : []),
         {
           header: "Data",
           cell: (e) => (
@@ -99,7 +122,13 @@ export default async function AdminEventsPage() {
   const user = await requireUser({ next: "/admin/eventos" });
   const scope = operateScope(user);
 
-  const [events, sales] = await Promise.all([listEventsWithSales(scope), countSalesByEvent(scope)]);
+  const [events, sales, channels] = await Promise.all([
+    listEventsWithSales(scope),
+    countSalesByEvent(scope),
+    // O MESMO âmbito das outras duas: a lista de canais que dá nome às linhas
+    // não pode ser mais larga do que a lista de eventos que se mostra.
+    channelsInScope(scope),
+  ]);
 
   // Com muitos eventos o que interessa é o que ainda está para vir: os que já
   // passaram descem, em vez de empurrarem o próximo para fora do ecrã.
@@ -152,7 +181,7 @@ export default async function AdminEventsPage() {
             </span>
           </CardHeader>
           <CardContent>
-            <EventsTable rows={upcoming} sales={sales} canManage={canManage} />
+            <EventsTable rows={upcoming} sales={sales} canManage={canManage} channels={channels} />
           </CardContent>
         </Card>
       ) : null}
@@ -166,7 +195,7 @@ export default async function AdminEventsPage() {
             </span>
           </CardHeader>
           <CardContent>
-            <EventsTable rows={past} sales={sales} canManage={canManage} />
+            <EventsTable rows={past} sales={sales} canManage={canManage} channels={channels} />
           </CardContent>
         </Card>
       ) : null}

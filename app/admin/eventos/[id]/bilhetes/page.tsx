@@ -5,6 +5,8 @@ import { Card } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
 import { StatCard } from "@/components/ui/stat-card";
 import { formatDate, formatEuro, formatNumber, formatTime } from "@/lib/format";
+import { operateScope } from "@/server/authz";
+import { channelsInScope } from "@/server/channels";
 import { requireEventOperator } from "@/server/event-access";
 import { getEventTicketStats, listTicketsByEvent, shortCode } from "@/server/tickets";
 
@@ -18,10 +20,17 @@ export default async function AdminEventoBilhetesPage({
   const { id } = await params;
   // Quem opera a porta valida bilhetes, por isso também vê esta lista — mas só
   // a dos eventos do seu canal. Esta página traz nomes e emails de compradores.
-  const { event } = await requireEventOperator(id, `/admin/eventos/${id}/bilhetes`);
+  const { user, event } = await requireEventOperator(id, `/admin/eventos/${id}/bilhetes`);
 
-  const [stats, bilhetes] = await Promise.all([getEventTicketStats(id), listTicketsByEvent(id)]);
+  const [stats, bilhetes, channels] = await Promise.all([
+    getEventTicketStats(id),
+    listTicketsByEvent(id),
+    channelsInScope(operateScope(user)),
+  ]);
   const porUsar = stats.vendidos - stats.entraram;
+  // De que liga são estes compradores — só quando há mais do que uma (a lista
+  // leva nomes e emails, e exporta-se para CSV logo ali ao lado).
+  const channel = channels.many ? channels.byId.get(event.channelId) : undefined;
 
   return (
     <div className="mx-auto flex w-full max-w-5xl flex-col gap-5">
@@ -33,7 +42,12 @@ export default async function AdminEventoBilhetesPage({
           ‹ Eventos
         </Link>
         <div className="mt-1 flex flex-wrap items-center justify-between gap-3">
-          <h1 className="font-display text-xl font-extrabold tracking-display">{event.title}</h1>
+          <div className="flex items-center gap-3.5">
+            <h1 className="font-display text-xl font-extrabold tracking-display">{event.title}</h1>
+            {channel ? (
+              <span className="font-mono text-xs text-muted-foreground">{channel.name}</span>
+            ) : null}
+          </div>
           <div className="flex gap-2.5">
             <a
               href={`/admin/eventos/${id}/bilhetes/export`}

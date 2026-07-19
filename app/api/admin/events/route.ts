@@ -21,6 +21,16 @@ import { createEvent } from "@/server/events";
  * A hora é de Lisboa, como no formulário. `canal` é o slug do canal e só é
  * obrigatório para quem gere mais do que um.
  *
+ * PORQUE É QUE A RECUSA DO CANAL TEM DOIS STATUS
+ * Não dizer qual dos teus canais é um pedido incompleto (**400**) — o cliente
+ * corrige-o sozinho acrescentando `canal`. Pedir um canal que não existe ou que
+ * não é dele é uma recusa de permissão (**403**), e as duas dão a MESMA
+ * mensagem de propósito: se o "não existe" fosse distinguível do "não é teu",
+ * bastava varrer slugs para ficar a saber que ligas há na plataforma.
+ *
+ * 403 e não 404 (ao contrário dos eventos): o slug de um canal é público — está
+ * no URL de /canal/[slug] — por isso recusar não conta nada que já não se saiba.
+ *
  * A resposta devolve só o id: as credenciais RTMPS (a chave da stream incluída)
  * vão-se buscar à página de transmissão, por quem tem papel para as ver.
  */
@@ -38,13 +48,14 @@ export async function POST(req: Request) {
   }
 
   const requested = (body as { canal?: unknown })?.canal;
-  const channel = await resolveChannelForNewEvent(
-    gate.user,
-    typeof requested === "string" ? requested : undefined,
-  );
-  // 403 e não 404: ao contrário de um evento, o slug de um canal é público (está
-  // no URL de /canal/[slug]), por isso recusar não conta nada que já não se saiba.
-  if (!channel.ok) return NextResponse.json({ error: channel.error }, { status: 403 });
+  const slug = typeof requested === "string" ? requested.trim() : "";
+  const channel = await resolveChannelForNewEvent(gate.user, slug || undefined);
+  if (!channel.ok) {
+    return NextResponse.json(
+      { error: channel.error, campo: "canal" },
+      { status: channel.reason === "ambiguous" ? 400 : 403 },
+    );
+  }
 
   const checked = validateEventForm(body);
   if (!checked.ok) {

@@ -1,7 +1,9 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 import { notFound } from "next/navigation";
 import { EventForm } from "@/components/admin/event-form";
 import { PageHeader } from "@/components/admin/page-header";
+import { buttonVariants } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { canEnterBackoffice, requireUser } from "@/server/authz";
 import { listCreatableChannels } from "@/server/event-access";
@@ -37,11 +39,19 @@ export default async function NewEventPage() {
          * cai aqui — ser dono de um canal é o que lhe abre esta porta. Mostrar
          * o formulário seria deixá-lo escrever tudo para levar com uma recusa
          * no fim, por uma razão que não é dele.
+         *
+         * O caminho de saída é `/admin/canais`, o ecrã da Frente G: daqui só se
+         * aponta para lá, não se cria canal nenhum.
          */
         <EmptyState
           className="mt-4"
           title="Ainda não há canais"
           description="Um evento pertence sempre a um canal — é dele a marca da página, o dinheiro das vendas e quem o pode gerir. Cria primeiro o canal e o evento nasce lá dentro."
+          action={
+            <Link href="/admin/canais" className={buttonVariants({ size: "lg" })}>
+              Criar canal
+            </Link>
+          }
         />
       ) : (
         <EventForm channels={channels} />

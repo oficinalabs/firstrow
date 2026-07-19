@@ -9,8 +9,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
 import { formatDate, formatEuro, formatNumber, formatTime } from "@/lib/format";
 import { cn } from "@/lib/utils";
-import { canManageEvents } from "@/server/authz";
-import { requireEventOperator } from "@/server/event-access";
+import { canEnterBackoffice, canManageEvents, operateScope, requireUser } from "@/server/authz";
 import { countSalesByEvent } from "@/server/events";
 import { type EventWithSales, listEventsWithSales } from "@/server/stats";
 
@@ -30,6 +29,11 @@ function deleteBlock(event: EventWithSales, sales: number): DeleteBlock | undefi
   return undefined;
 }
 
+/*
+ * `canManage` é uma FUNÇÃO e não um booleano porque a resposta passou a ser por
+ * linha: quem opera dois canais pode ser dono de um e só equipa no outro, e o
+ * botão de apagar tem de seguir o canal do evento, não o papel da pessoa.
+ */
 function EventsTable({
   rows,
   sales,
@@ -37,7 +41,7 @@ function EventsTable({
 }: {
   rows: EventWithSales[];
   sales: Map<string, number>;
-  canManage: boolean;
+  canManage: (event: EventWithSales) => boolean;
 }) {
   return (
     <DataTable<EventWithSales>
@@ -71,7 +75,7 @@ function EventsTable({
               >
                 {e.status === "ended" ? "Ver" : "Abrir"}
               </Link>
-              {canManage ? (
+              {canManage(e) ? (
                 <DeleteEventDialog
                   eventId={e.id}
                   title={e.title}
@@ -90,8 +94,12 @@ function EventsTable({
 
 export default async function AdminEventsPage() {
   // Defesa em profundidade: o layout do backoffice já filtra, a página confirma.
-  const user = await requireEventOperator("/admin/eventos");
-  const [events, sales] = await Promise.all([listEventsWithSales(), countSalesByEvent()]);
+  // Aqui não há um evento de onde tirar o canal — é uma lista — por isso o que
+  // limita é o ÂMBITO: só entram os eventos dos canais desta pessoa.
+  const user = await requireUser({ next: "/admin/eventos" });
+  const scope = operateScope(user);
+
+  const [events, sales] = await Promise.all([listEventsWithSales(scope), countSalesByEvent(scope)]);
 
   // Com muitos eventos o que interessa é o que ainda está para vir: os que já
   // passaram descem, em vez de empurrarem o próximo para fora do ecrã.
@@ -100,14 +108,17 @@ export default async function AdminEventsPage() {
     .filter((e) => e.status === "live" || e.startsAt.getTime() >= now)
     .sort((a, b) => a.startsAt.getTime() - b.startsAt.getTime());
   const past = events.filter((e) => e.status !== "live" && e.startsAt.getTime() < now);
-  const canManage = canManageEvents(user);
+  const canManage = (event: EventWithSales) => canManageEvents(user, event.channelId);
+  // Criar exige ser dono de algum canal — em qual é que ele nasce decide-se em
+  // `resolveChannelForNewEvent`, e não aqui.
+  const canCreate = canEnterBackoffice(user);
 
   return (
     <div className="mx-auto flex w-full max-w-5xl flex-col gap-5">
       <PageHeader
         title="Eventos"
         action={
-          canManage ? (
+          canCreate ? (
             <Link href="/admin/eventos/novo" className={buttonVariants()}>
               Criar evento
             </Link>
@@ -121,7 +132,7 @@ export default async function AdminEventsPage() {
           title="Cria o primeiro evento"
           description="A lista de eventos, os compradores e a receita de cada um vivem aqui."
           action={
-            canManage ? (
+            canCreate ? (
               <Link href="/admin/eventos/novo" className={buttonVariants({ size: "lg" })}>
                 Criar evento
               </Link>

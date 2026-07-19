@@ -142,8 +142,27 @@ export type ValidateTicketResult =
     }
   | { resultado: "invalido" };
 
-// Aceita o token completo (leitura da câmara) ou o código curto escrito à mão.
-async function resolveQrToken(code: string, eventId: string): Promise<string | null> {
+/*
+ * Aceita o token completo (leitura da câmara) ou o código curto escrito à mão.
+ *
+ * O ALCANCE DA BUSCA É O CANAL, E ISSO FECHA UMA FUGA
+ *
+ * A busca alargada existe para o caso útil: alguém aparece com o bilhete da
+ * semana passada e a porta quer poder dizer "isto é de outro evento", em vez de
+ * um "inválido" seco que parece fraude. Só que ela varria a tabela INTEIRA — e
+ * a resposta `evento_errado` leva o nome do comprador e o título do evento.
+ * Com duas ligas na plataforma, o porteiro de uma podia ler um código e ficar a
+ * saber quem comprou o quê na outra.
+ *
+ * Agora só sai do evento para dentro do MESMO canal, que é onde o caso útil
+ * vive. Um bilhete de outra liga fica indistinguível de um código inventado —
+ * a mesma regra do 404 em `server/event-access.ts`.
+ */
+async function resolveQrToken(
+  code: string,
+  eventId: string,
+  channelId: string,
+): Promise<string | null> {
   const raw = code.trim();
   if (raw.startsWith("frt_")) return raw;
 
@@ -152,8 +171,9 @@ async function resolveQrToken(code: string, eventId: string): Promise<string | n
   if (norm.length !== 6) return null;
   const formatted = `FR-${norm.slice(0, 4)}-${norm.slice(4)}`;
 
-  // Primeiro os bilhetes da porta; depois global (apanha "outro evento").
-  // Volume Fase 0 (centenas por evento) torna o varrimento aceitável.
+  // Primeiro os bilhetes desta porta; depois os do resto do canal (apanha
+  // "outro evento"). Volume Fase 0 (centenas por evento) torna o varrimento
+  // aceitável.
   const local = await db
     .select({ qrToken: tickets.qrToken })
     .from(tickets)
@@ -161,18 +181,27 @@ async function resolveQrToken(code: string, eventId: string): Promise<string | n
   const hit = local.find((t) => t.qrToken && shortCode(t.qrToken) === formatted);
   if (hit?.qrToken) return hit.qrToken;
 
-  const global = await db
+  const sameChannel = await db
     .select({ qrToken: tickets.qrToken })
     .from(tickets)
-    .where(isNotNull(tickets.qrToken));
-  const globalHit = global.find((t) => t.qrToken && shortCode(t.qrToken) === formatted);
-  return globalHit?.qrToken ?? null;
+    .innerJoin(events, eq(events.id, tickets.eventId))
+    .where(and(eq(events.channelId, channelId), isNotNull(tickets.qrToken)));
+  const channelHit = sameChannel.find((t) => t.qrToken && shortCode(t.qrToken) === formatted);
+  return channelHit?.qrToken ?? null;
 }
 
 // Validação à porta. O UPDATE condicional é atómico — dois scanners a ler o
 // mesmo QR ao mesmo tempo dão exatamente 1 "valido" e 1 "ja_usado".
-export async function validateTicket(code: string, eventId: string): Promise<ValidateTicketResult> {
-  const qrToken = await resolveQrToken(code, eventId);
+//
+// `channelId` é o do evento desta porta, e vem já verificado pelo portão da
+// rota (`requireApiForEvent`) — nunca do corpo do pedido. É ele que limita até
+// onde a busca do código curto pode ir; ver `resolveQrToken`.
+export async function validateTicket(
+  code: string,
+  eventId: string,
+  channelId: string,
+): Promise<ValidateTicketResult> {
+  const qrToken = await resolveQrToken(code, eventId, channelId);
   if (!qrToken) return { resultado: "invalido" };
 
   const now = new Date();
@@ -198,7 +227,17 @@ export async function validateTicket(code: string, eventId: string): Promise<Val
     };
   }
 
-  // Não entrou — perceber porquê, com os dados que o porteiro precisa de ver.
+  /*
+   * Não entrou — perceber porquê, com os dados que o porteiro precisa de ver.
+   *
+   * O filtro pelo canal tem de estar AQUI TAMBÉM, e não só em `resolveQrToken`:
+   * um token completo lido da câmara (`frt_…`) não passa pela busca do código
+   * curto, vai direto a esta query. Sem o filtro, apontar a câmara a um QR de
+   * outra liga devolvia o título do evento e o nome de quem o comprou.
+   *
+   * Com ele, um bilhete de fora do canal não dá linha nenhuma e a resposta é
+   * "invalido" — igual à de um código inventado.
+   */
   const rows = await db
     .select({
       eventId: tickets.eventId,
@@ -211,7 +250,7 @@ export async function validateTicket(code: string, eventId: string): Promise<Val
     .from(tickets)
     .innerJoin(user, eq(user.id, tickets.userId))
     .innerJoin(events, eq(events.id, tickets.eventId))
-    .where(eq(tickets.qrToken, qrToken))
+    .where(and(eq(tickets.qrToken, qrToken), eq(events.channelId, channelId)))
     .limit(1);
   const ticket = rows[0];
   if (!ticket) return { resultado: "invalido" };

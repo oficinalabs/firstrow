@@ -26,5 +26,19 @@ Polar (default do template) não faz MB WAY. Spike IfthenPay vs Eupago → **Eup
 ## ADR-008 · Piloto: SmokingBars (2026-07-16)
 Melhor relação do dono do projeto; 131 patronos; 71% no tier de stream. **Estado:** fixo.
 
+## ADR-010 · Papéis em dois andares: global vs. por canal (2026-07-19)
+Os papéis eram todos globais (`user.role`: `platform_admin`, `league_owner`, `league_staff`, `viewer`). Com um canal só — SmokingBars, *hardcoded* em `lib/channels.ts` — não fazia diferença; com a **Liga Knockout** (ADR-009) a entrar, um `league_owner` passava a ser dono dos eventos e do **dinheiro** da outra liga. Era a dívida que bloqueava o multi-tenant.
+
+**Decisão.** Global fica só o que é mesmo global — `platform_admin` (a FirstRow) e `viewer` (toda a gente). Gerir e operar são poderes **de um canal** e passam para `channel_members` (`owner`, `staff`), com `events.channel_id` a dizer de quem é cada evento. `platform_admin` passa por cima de tudo sem ser membro de nada.
+
+**Consequências assumidas:**
+- Os predicados de eventos passam a **exigir** o canal (`canManageEvents(user, channelId)`). Não há versão sem canal: seria um convite a assumir o canal por defeito, e o compilador deixaria passar.
+- Um evento de outro canal responde **404**, não 403 — a mesma regra que já valia para bilhetes de outra pessoa.
+- Toda a query que soma mais do que um evento leva um `ChannelScope`. **Lista de canais vazia = zero linhas**, nunca "sem filtro".
+- `getCurrentUser()` faz uma query indexada a mais por pedido autenticado, para os predicados continuarem **puros**. Troca consciente: um só modelo mental em vez de I/O escondido dentro de um `if`.
+- A migração converte os papéis que existiam (`league_owner` → `owner` da SmokingBars, `league_staff` → `staff`) e **não promove ninguém**. Um canal sem dono continua gerível pelo `platform_admin`; inventar um dono seria dar acesso a quem não o tinha.
+
+**Estado:** 🟢 decidido e implementado (Frente E). Ver [SEGURANCA-APP.md](SEGURANCA-APP.md#isolamento-entre-canais) e `scripts/migrate-channels.ts`.
+
 ## ADR-009 · Construir primeiro, apresentar produto pronto; cadeia de alvos (2026-07-16)
 Não esperar pelo "sim" de uma liga para construir — apresenta-se o produto **pronto**. Cadeia de prospects: **SmokingBars → Liga Knockout → PALOPs** (comunidade de escrita relevante). Nota: os PALOPs exigem **cartão** (MB WAY é só PT). Revoga o "gate" anterior do roadmap. **Estado:** fixo.

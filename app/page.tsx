@@ -12,6 +12,7 @@ import { buttonVariants } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { SectionHeader } from "@/components/ui/section-header";
 import { ViewerShell } from "@/components/ui/viewer-shell";
+import { listChannels } from "@/server/channels";
 import { listEvents } from "@/server/events";
 
 export const dynamic = "force-dynamic";
@@ -43,7 +44,8 @@ const SECTION_RULE = "border-b-2 border-foreground pb-3";
 export default async function HomePage() {
   let overview: PlatformOverview | null = null;
   try {
-    overview = buildOverview(await listEvents());
+    const [events, channels] = await Promise.all([listEvents(), listChannels()]);
+    overview = buildOverview(events, channels);
   } catch {
     overview = null;
   }

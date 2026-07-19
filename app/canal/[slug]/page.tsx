@@ -15,8 +15,9 @@ import { buttonVariants } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { SectionHeader } from "@/components/ui/section-header";
 import { ViewerShell } from "@/components/ui/viewer-shell";
-import { type Channel, channelPath, getChannel, groupEventsByChannel } from "@/lib/channels";
-import { listEvents } from "@/server/events";
+import { type Channel, channelPath } from "@/lib/channels";
+import { getChannel } from "@/server/channels";
+import { listEventsByChannel } from "@/server/events";
 
 export const dynamic = "force-dynamic";
 
@@ -24,7 +25,7 @@ type ChannelParams = { params: Promise<{ slug: string }> };
 
 export async function generateMetadata({ params }: ChannelParams): Promise<Metadata> {
   const { slug } = await params;
-  const channel = getChannel(slug);
+  const channel = await getChannel(slug);
   if (!channel) return { title: "Canal não encontrado" };
 
   return {
@@ -36,13 +37,14 @@ export async function generateMetadata({ params }: ChannelParams): Promise<Metad
 
 export default async function ChannelPage({ params }: ChannelParams) {
   const { slug } = await params;
-  const channel = getChannel(slug);
+  const channel = await getChannel(slug);
   if (!channel) notFound();
 
-  // Sem canal na BD (Fase 0), o agrupamento é que decide o que é deste canal.
+  // A BD já sabe de quem é cada evento, por isso a query pede só os deste canal
+  // em vez de trazer os de toda a plataforma para depois os agrupar.
   let rows: EventRow[] | null = null;
   try {
-    rows = groupEventsByChannel(await listEvents()).get(channel.slug) ?? [];
+    rows = await listEventsByChannel(channel.id);
   } catch {
     rows = null;
   }
@@ -116,8 +118,10 @@ function ChannelContent({ channel, program }: { channel: Channel; program: Chann
           title="Arquivo"
           action={
             archive.length > 0 ? (
+              // Com o canal no query: o arquivo "ver tudo" de um canal tem de
+              // mostrar os replays DELE, não os da plataforma toda.
               <Link
-                href="/vod"
+                href={`/vod?canal=${channel.slug}`}
                 className="text-2sm font-medium text-accent decoration-2 underline-offset-4 hover:underline"
               >
                 Ver tudo ({archive.length}) ›

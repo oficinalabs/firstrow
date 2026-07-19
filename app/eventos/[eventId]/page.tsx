@@ -10,9 +10,10 @@ import { Badge } from "@/components/ui/badge";
 import { buttonVariants } from "@/components/ui/button";
 import { LiveBadge } from "@/components/ui/live-badge";
 import { ViewerShell } from "@/components/ui/viewer-shell";
-import { channelPath, defaultChannel } from "@/lib/channels";
+import { channelPath } from "@/lib/channels";
 import { formatDateTime, formatEuro } from "@/lib/format";
 import { requireUser } from "@/server/auth-helper";
+import { getChannelById } from "@/server/channels";
 import { hasActiveEntitlement } from "@/server/entitlements";
 import { getEvent } from "@/server/events";
 
@@ -39,19 +40,24 @@ export default async function EventPage({ params }: { params: Promise<{ eventId:
   const event = await getEvent(eventId);
   if (!event) notFound();
 
-  const user = await requireUser();
+  // A marca desta página é a do canal DO EVENTO — antes era sempre a do canal
+  // por defeito, o que com duas ligas punha a batalha de uma debaixo do nome
+  // e da cor da outra.
+  const [user, channel] = await Promise.all([requireUser(), getChannelById(event.channelId)]);
   const entitled = user ? await hasActiveEntitlement(user.id, eventId) : false;
   const isLive = event.status === "live";
 
   return (
-    <ViewerShell active="inicio" channel={defaultChannel}>
+    <ViewerShell active="inicio" channel={channel ?? undefined}>
       <div className="mx-auto flex w-full max-w-xl flex-1 flex-col px-4 pt-4 md:pt-6">
-        <Link
-          href={channelPath(defaultChannel)}
-          className="w-fit text-2sm font-medium text-muted-foreground hover:text-foreground"
-        >
-          ‹ {defaultChannel.name}
-        </Link>
+        {channel ? (
+          <Link
+            href={channelPath(channel)}
+            className="w-fit text-2sm font-medium text-muted-foreground hover:text-foreground"
+          >
+            ‹ {channel.name}
+          </Link>
+        ) : null}
 
         <PosterPlaceholder className="mt-3 aspect-video rounded-sm" />
 

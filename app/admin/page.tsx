@@ -7,6 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
 import { StatCard } from "@/components/ui/stat-card";
 import { formatDate, formatDateTime, formatEuro, formatNumber, formatTime } from "@/lib/format";
+import { manageScope, requireUser } from "@/server/authz";
 import { getDashboardStats, listRecentPayments, type RecentPayment } from "@/server/stats";
 
 export const dynamic = "force-dynamic";
@@ -20,8 +21,22 @@ function paymentWhen(createdAt: Date): string {
     : formatDate(createdAt);
 }
 
+/*
+ * O âmbito é o que esta página tem de defesa própria, e vale a pena dizer
+ * porquê: o layout corre EM PARALELO com a página (ver a nota em
+ * `app/admin/layout.tsx`), por isso as queries daqui já correram quando o gate
+ * do layout decide. Antes, isso queria dizer que os números da liga iam para o
+ * payload de quem não os devia ver. Agora as queries levam os canais desta
+ * pessoa: quem não gere nenhum recebe zeros, não a receita de toda a gente.
+ */
 export default async function AdminDashboardPage() {
-  const [stats, payments] = await Promise.all([getDashboardStats(), listRecentPayments(6)]);
+  const user = await requireUser({ next: "/admin" });
+  const scope = manageScope(user);
+
+  const [stats, payments] = await Promise.all([
+    getDashboardStats(scope),
+    listRecentPayments(scope, 6),
+  ]);
   const monthName = stats.monthLabel.split(" ")[0];
 
   return (

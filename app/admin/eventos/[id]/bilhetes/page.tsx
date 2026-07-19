@@ -1,5 +1,4 @@
 import Link from "next/link";
-import { notFound } from "next/navigation";
 import { BuyersTable } from "@/components/tickets/buyers-table";
 import { BackofficeShell } from "@/components/ui/backoffice-shell";
 import { buttonVariants } from "@/components/ui/button";
@@ -8,7 +7,6 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { StatCard } from "@/components/ui/stat-card";
 import { formatDate, formatEuro, formatNumber, formatTime } from "@/lib/format";
 import { requireEventOperator } from "@/server/event-access";
-import { getEvent } from "@/server/events";
 import { getEventTicketStats, listTicketsByEvent, shortCode } from "@/server/tickets";
 
 export const dynamic = "force-dynamic";
@@ -19,11 +17,9 @@ export default async function AdminEventoBilhetesPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  // Quem opera a porta valida bilhetes, por isso também vê esta lista.
-  await requireEventOperator(`/admin/eventos/${id}/bilhetes`);
-
-  const event = await getEvent(id);
-  if (!event) notFound();
+  // Quem opera a porta valida bilhetes, por isso também vê esta lista — mas só
+  // a dos eventos do seu canal. Esta página traz nomes e emails de compradores.
+  const { event } = await requireEventOperator(id, `/admin/eventos/${id}/bilhetes`);
 
   const [stats, bilhetes] = await Promise.all([getEventTicketStats(id), listTicketsByEvent(id)]);
   const porUsar = stats.vendidos - stats.entraram;

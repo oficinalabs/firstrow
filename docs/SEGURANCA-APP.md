@@ -2,7 +2,8 @@
 
 > Estado: verificado a **19 de julho de 2026** contra o build de **produção**
 > (`pnpm build && pnpm start`) e a base de dados **Neon real**.
-> Frente B (autorização, blindagem de rotas e segredos).
+> Frente B (autorização, blindagem de rotas e segredos) +
+> Frente E (isolamento entre canais — ver a secção própria).
 
 Este documento é o mapa de quem pode o quê e, mais importante, **como é que
 isso é garantido** — porque em Next 16 o sítio onde se põe o gate muda o
@@ -32,18 +33,38 @@ leres uma coisa.
 
 ## Papéis
 
-| Papel            | O que abre                                                       |
-| ---------------- | ---------------------------------------------------------------- |
-| `platform_admin` | Tudo. Somos nós.                                                  |
-| `league_owner`   | Gere a liga: eventos, dinheiro, compradores.                      |
-| `league_staff`   | **Opera** um evento a decorrer: transmissão e validação à porta.  |
-| `viewer`         | Compra e vê. É o valor por omissão de qualquer conta nova.        |
+O poder tem **dois andares**. É a mudança mais importante desde a Frente B e
+está explicada em [Isolamento entre canais](#isolamento-entre-canais).
+
+**Global** — coluna `user.role`, vale na plataforma inteira:
+
+| Papel            | O que abre                                                 |
+| ---------------- | ---------------------------------------------------------- |
+| `platform_admin` | Tudo, em todos os canais. Somos nós.                       |
+| `viewer`         | Compra e vê. É o valor por omissão de qualquer conta nova. |
+
+**Por canal** — tabela `channel_members`, vale só no canal onde está:
+
+| Papel   | O que abre                                                              |
+| ------- | ----------------------------------------------------------------------- |
+| `owner` | Gere **este** canal: eventos, dinheiro, compradores.                     |
+| `staff` | **Opera** um evento **deste** canal: transmissão e validação à porta.    |
 
 Predicados (`server/authz.ts`, puros, sem I/O):
 
-- `isPlatformAdmin` → `platform_admin`
-- `canManageEvents` → `platform_admin` + `league_owner`
-- `canOperateEvents` → `platform_admin` + `league_owner` + `league_staff`
+- `isPlatformAdmin(user)` → global, `platform_admin`
+- `canManageEvents(user, channelId)` → `platform_admin` ou `owner` **do canal**
+- `canOperateEvents(user, channelId)` → `platform_admin`, `owner` ou `staff` **do canal**
+- `canEnterBackoffice(user)` → gere **algum** canal; é só a porta do `/admin`
+- `manageScope(user)` / `operateScope(user)` → os canais que as queries agregadas
+  podem somar
+
+Não existe `canManageEvents(user)` sem canal: a pergunta sem canal não tem
+resposta certa, e uma assinatura que a aceitasse era um convite a assumir o
+canal por defeito. O compilador apanha quem se esqueça.
+
+`platform_admin` passa por cima de tudo sem ser membro de nada. Um papel de
+canal desconhecido **não é membro** — nunca é acesso.
 
 ---
 
@@ -51,17 +72,22 @@ Predicados (`server/authz.ts`, puros, sem I/O):
 
 ### Páginas
 
-| Rota            | Anónimo                | `viewer`               | `league_staff`         | `league_owner` / `platform_admin` | Onde é decidido                     |
+Nas colunas de canal, `owner`/`staff` querem dizer **deste canal**. Quem tem o
+papel noutro canal conta como `viewer` para estas rotas.
+
+| Rota            | Anónimo                | `viewer`               | `staff`                | `owner` / `platform_admin`        | Onde é decidido                     |
 | --------------- | ---------------------- | ---------------------- | ---------------------- | --------------------------------- | ----------------------------------- |
 | `/`, `/sobre`, `/criadores`, `/canal/**` | ✅ | ✅ | ✅ | ✅ | público |
 | `/eventos/[id]` | ✅                     | ✅                     | ✅                     | ✅                                | público (a compra é que fecha)      |
 | `/eventos/[id]/ver` | → `/eventos/[id]`  | só com direito ativo   | idem                   | idem                              | página + `hasActiveEntitlement`     |
 | `/conta`        | → `/entrar?next=`      | ✅ (só os seus dados)  | ✅                     | ✅                                | `proxy.ts` + página                 |
 | `/bilhetes`     | → `/entrar?next=`      | ✅ (só os seus)        | ✅                     | ✅                                | `proxy.ts` + página                 |
-| `/admin/**`     | → `/entrar?next=`      | → `/sem-acesso` (403)  | → `/sem-acesso` (403)  | ✅                                | **`proxy.ts`** + `app/admin/layout.tsx` |
+| `/admin/**`     | → `/entrar?next=`      | → `/sem-acesso` (403)  | → `/sem-acesso` (403)  | ✅ (só os SEUS canais)            | **`proxy.ts`** + `app/admin/layout.tsx` + âmbito por query |
+| `/admin/eventos/[id]/**` | → `/entrar?next=` | **404**             | ✅ se for do seu canal | ✅ se for do seu canal            | `server/event-access.ts` (canal do evento) |
+| `/admin/plataforma` | → `/entrar?next=`  | **404**                | **404**                | **404** · só `platform_admin` ✅  | página (`isPlatformAdmin`)          |
 | `/sem-acesso`   | ✅                     | ✅                     | ✅                     | ✅                                | público (é a página de recusa)      |
 
-> **Porque é que `league_staff` não entra no `/admin`:** quase nenhuma página do
+> **Porque é que o `staff` não entra no `/admin`:** quase nenhuma página do
 > backoffice tem gate próprio, por isso o gate do layout é o gate efetivo de
 > `/admin/ganhos` e `/admin/subscritores` — dinheiro e dados pessoais de
 > compradores. Abrir o backoffice ao staff para lhes dar o scanner dava-lhes a
@@ -69,14 +95,20 @@ Predicados (`server/authz.ts`, puros, sem I/O):
 > (`canOperateEvents`) e fica à espera de que a Frente D ponha gates página a
 > página; nessa altura este gate pode aliviar para `canOperateEvents`.
 
+> **`/admin/**` para um `owner` já não quer dizer "vê tudo".** O gate do layout
+> abre a porta; o que se vê lá dentro é limitado pelo `ChannelScope` de cada
+> query. Ver [Isolamento entre canais](#isolamento-entre-canais).
+
 ### Rotas de API e route handlers
 
-| Rota                                        | Regra                          | Anónimo | `viewer` | `league_owner` |
+`owner` = dono **do canal do evento em causa**.
+
+| Rota                                        | Regra                          | Anónimo | `viewer` | `owner` |
 | ------------------------------------------- | ------------------------------ | ------- | -------- | -------------- |
-| `POST /api/admin/events`                    | `canManageEvents`              | 401     | 403      | ✅             |
-| `POST /api/tickets/validate`                | `canOperateEvents` + limite    | 401     | 403      | ✅             |
-| `GET /admin/eventos/[id]/bilhetes/export`   | `canManageEvents`              | 307¹    | 307¹     | ✅             |
-| `GET /admin/eventos/[id]/transmissao/live`  | `canOperateEvents`             | 307¹    | 307¹     | ✅             |
+| `POST /api/admin/events`                    | canal alvo + `canManageEvents` | 401     | 403      | ✅             |
+| `POST /api/tickets/validate`                | `canOperateEvents` no canal do evento + limite | 401 | **404**⁵ | ✅   |
+| `GET /admin/eventos/[id]/bilhetes/export`   | `canManageEvents` no canal do evento | 307¹ | 307¹  | ✅             |
+| `GET /admin/eventos/[id]/transmissao/live`  | `canOperateEvents` no canal do evento | 307¹ | 307¹ | ✅             |
 | `POST /api/playback/[id]/session`           | sessão + **direito** + limite  | 401     | 403²     | 403²           |
 | `POST /api/playback/[id]/heartbeat`         | sessão + posse da sessão       | 401     | `{active:false}` | —      |
 | `GET /api/entitlements/[id]`                | sessão (só a própria conta)    | 401     | ✅       | —              |
@@ -96,6 +128,86 @@ de outra pessoa é indistinguível de um bilhete inventado. Enumerar ids não
 devolve informação nenhuma.
 ⁴ Sem assinatura válida não passa. A verificação é HMAC-SHA256 do corpo cru com
 comparação em tempo constante (`timingSafeEqual`), feita **antes** do `JSON.parse`.
+⁵ **404 e não 403**, pela mesma razão do ³: um evento de outro canal tem de ser
+indistinguível de um id inventado. Ver [Isolamento entre canais](#isolamento-entre-canais).
+
+---
+
+## Isolamento entre canais
+
+> Estado: verificado a **19 de julho de 2026** contra um Postgres real, com o
+> código de produção e **dois canais** semeados. Frente E.
+
+**O bug que isto fechou.** Os papéis eram globais: `league_owner` era uma
+coluna do utilizador, não um papel numa liga. Com um canal só — a SmokingBars,
+que estava *hardcoded* em `lib/channels.ts` — ninguém notava. No dia em que
+entrasse a segunda liga, o dono da primeira passava a ser dono **de tudo**: dos
+eventos e do dinheiro de uma liga que nunca viu.
+
+Agora o canal é uma linha em `channels`, o poder vive em `channel_members`, e
+`events.channel_id` diz de quem é cada evento.
+
+### As duas perguntas, e onde cada uma se responde
+
+| A pergunta                     | Quem responde                      | Como                                    |
+| ------------------------------ | ---------------------------------- | --------------------------------------- |
+| "Podes mexer **neste evento**?" | `server/event-access.ts`           | o canal vem de `event.channelId`; não é teu → **404** |
+| "De que canais podes **somar**?" | `manageScope` / `operateScope`     | um `ChannelScope` que entra em cada query agregada |
+
+A regra da segunda é a que mais importa acertar: **uma lista de canais vazia
+significa zero linhas, nunca "sem filtro"**. `inChannelScope()`
+(`server/events.ts`) devolve `false` explícito nesse caso.
+
+### O que estava a fugir e não estava na lista de tarefas
+
+Todas as queries de `server/stats.ts` corriam sobre a tabela de eventos
+inteira, sem filtro nenhum. Com duas ligas, o dono da primeira abria o
+backoffice e via, sem fazer nada de especial:
+
+| Ecrã                    | O que fugia da outra liga                        |
+| ----------------------- | ------------------------------------------------ |
+| `/admin`                | receita e nº de compras do mês; últimos pagamentos com **nome do comprador** |
+| `/admin/eventos`        | a lista de eventos, com receita por evento       |
+| `/admin/subscritores`   | **nome e email** de todos os compradores         |
+| `/admin/ganhos`         | o extrato mês a mês, ao cêntimo                  |
+| `/admin/plataforma`     | receita total e nº de contas da plataforma toda  |
+
+Mais dois, fora do `server/stats.ts`:
+
+- **`server/tickets.ts`** — a busca do código curto varria a tabela de bilhetes
+  toda para poder dizer "isto é de outro evento". Essa resposta leva o **nome do
+  comprador** e o **título do evento**: o porteiro de uma liga lia um código e
+  ficava a saber quem comprou o quê na outra. A busca passou a parar no canal,
+  e o mesmo filtro teve de ir para a query de detalhe — um QR completo
+  (`frt_…`) não passa pela busca do código curto e chegava lá direto.
+- **`/admin/eventos/[id]/bilhetes/export`** — o CSV de compradores só verificava
+  o papel, não o canal. Quem soubesse (ou adivinhasse) um id descarregava os
+  contactos de qualquer evento da plataforma.
+
+### Uma consequência boa
+
+O âmbito também tapa a [fuga do render em paralelo](#a-fuga-que-isto-fechou):
+as páginas do backoffice já correm as queries antes de o gate do layout as
+travar, mas agora essas queries levam os canais de quem pede. Quem não gere
+nenhum recebe **zeros**, não a receita de toda a gente.
+
+### Como foi verificado
+
+Postgres real (PGlite sobre socket) com o schema anterior à migração e dados
+com a forma dos de produção, e depois uma segunda liga semeada. As funções
+testadas são as **de produção**, importadas diretamente:
+
+- 10 asserções sobre os predicados puros — dono de A não gere nem opera B; staff
+  opera mas não gere; `platform_admin` passa sem ser membro; papel de canal
+  desconhecido **não** dá acesso; `null` não dá acesso.
+- 12 asserções sobre as queries — subscritores, extrato, lista de eventos,
+  pagamentos recentes e dashboard, cada um só com o seu canal; `platform_admin`
+  vê os dois; e o caso crítico: **conta sem canais vê zero, não tudo**.
+
+Tudo verde. A migração foi corrida contra a mesma base: aplicar → reaplicar
+(idempotente) → `--rollback` → aplicar outra vez, com os 2 eventos, os
+entitlements, os bilhetes e a sessão de reprodução intactos em todas as
+passagens.
 
 ---
 
@@ -369,6 +481,13 @@ evidência em vez de opinião.
 
 ## O que foi verificado
 
+> Registo da **Frente B** (blindagem de rotas), tal como foi medido a 19 de
+> julho. Fica como está, de propósito — é o que foi observado nessa altura.
+> `league_owner` já não existe: virou `owner` da SmokingBars em
+> `channel_members` (ver [Isolamento entre canais](#isolamento-entre-canais)).
+> Ler "`league_owner`" aqui como "a conta que gere a liga"; os resultados de
+> cada rota mantêm-se, com a diferença de que hoje o que decide é o canal.
+
 Build de produção + Neon real, com duas contas de teste criadas para o efeito:
 `qa.porta@firstrow.dev` (`viewer`) e `qa.gestor@firstrow.dev` (`league_owner`).
 
@@ -416,12 +535,9 @@ Capturas em `docs/screenshots/blindagem/`.
 Achados que ficam registados por não serem desta frente ou por precisarem de
 decisão do dono:
 
-1. **`lib/admin.ts` está morto nas APIs mas vivo nas páginas.** Nenhuma rota de
-   API o usa. Continua a ser usado por `app/admin/**` (páginas e a server action
-   de `transmissao/actions.ts`) — território da Frente D. Quando a D aterrar e
-   migrar para `server/authz.ts`, o ficheiro pode ser apagado. **Enquanto lá
-   estiver, o `ADMIN_EMAILS` é uma segunda noção de "admin" a correr em
-   paralelo com a coluna `role`.**
+1. ~~**`lib/admin.ts` está morto nas APIs mas vivo nas páginas.**~~ ✅ Resolvido:
+   o ficheiro foi apagado (ver `ffe6019`) e já não há uma segunda noção de
+   "admin" a correr em paralelo com a coluna `role`.
 2. **`server/auth-helper.ts` é o antecessor de `server/authz.ts`.** Já não é
    usado por nenhuma rota de API, mas ainda serve várias páginas de espectador.
    O seu `requireUser()` **não redireciona** (devolve `null`), ao contrário do
@@ -454,4 +570,33 @@ decisão do dono:
    sair.**
 9. **`components/tickets/scanner.tsx` assume sempre 2xx** (`res.json() as
    ScanOutcome`). Com 401/403/429 fica com um resultado indefinido em vez de
-   mostrar um estado. UI, por isso não foi tocado aqui.
+   mostrar um estado — e agora também com **404**, que é o que uma porta de
+   outro canal devolve. UI, por isso não foi tocado aqui.
+
+### Deixado pela Frente E (multi-canal)
+
+10. **Ninguém consegue criar nem editar canais pela app.** A tabela `channels`
+    existe e é lida em todo o lado, mas escrever nela é SQL à mão. A UI é da
+    **Frente F**; o schema já tem os campos todos à espera dela.
+11. **Não há como convidar membros para um canal.** `channel_members` só se
+    preenche por SQL ou pela migração. Enquanto não houver ecrã, um dono novo
+    entra por `insert` manual — vale a pena um comando antes de a segunda liga
+    assinar.
+12. **O backoffice não tem seletor de canal.** Quem gere **um** canal vê-o na
+    sidebar; o `platform_admin` (que gere todos) não vê canal nenhum, porque a
+    pergunta "qual é o canal ativo?" não tem resposta única para ele — e
+    mostrar um à sorte era repetir o bug que esta frente fechou.
+    `app/admin/layout.tsx` já passa o canal por prop; falta o seletor (Frente F).
+13. **`resolveChannelForNewEvent` recusa quando há mais do que um canal.** É
+    deliberado — criar o evento na liga errada põe o dinheiro no sítio errado —
+    mas quer dizer que, sem o seletor da Frente F, um `platform_admin` deixa de
+    conseguir criar eventos assim que existirem dois canais. O `POST
+    /api/admin/events` já aceita `canal: "<slug>"` como saída.
+14. **`/admin/eventos/[id]/bilhetes` monta um `BackofficeShell` dentro do
+    `BackofficeChrome` do layout** — duas sidebars encavalitadas. É anterior a
+    esta frente e é só UI, por isso não foi mexido; nota-se mais agora, porque
+    o shell de dentro fica sem o bloco do canal.
+15. **`getPlatformTotals()` é a única query sem âmbito.** É de propósito (é o
+    ecrã interno da FirstRow) e a página tem gate `isPlatformAdmin`. Se alguém a
+    chamar de outro sítio, tem de repetir esse gate — não há nada no tipo que o
+    obrigue.

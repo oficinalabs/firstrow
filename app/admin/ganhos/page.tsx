@@ -7,14 +7,18 @@ import { Card, CardContent } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
 import { TableCell, TableRow } from "@/components/ui/table";
 import { formatEuro, formatNumber } from "@/lib/format";
+import { manageScope, requireUser } from "@/server/authz";
 import { getMonthlyStatement, type MonthlyStatementRow } from "@/server/stats";
 
 export const dynamic = "force-dynamic";
 
 export const metadata: Metadata = { title: "Ganhos" };
 
+// O extrato é do dinheiro DOS CANAIS desta pessoa. Sem âmbito, esta era a
+// página que somava a faturação de todas as ligas na mesma tabela.
 export default async function EarningsPage() {
-  const { commissionPct, rows } = await getMonthlyStatement();
+  const user = await requireUser({ next: "/admin/ganhos" });
+  const { commissionPct, rows } = await getMonthlyStatement(manageScope(user));
 
   const totals = rows.reduce(
     (acc, r) => ({

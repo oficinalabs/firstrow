@@ -15,15 +15,40 @@ import {
 import { db } from "@/db";
 import { user } from "@/db/auth-schema";
 import { entitlements, events, playbackSessions } from "@/db/schema";
+import type { ChannelScope } from "@/server/authz";
+import { inChannelScope } from "@/server/events";
 
 /*
- * Queries agregadas do backoffice (Frente E). Dinheiro sempre em cêntimos —
- * formatar só na UI via lib/format.ts. Timestamps guardados como hora UTC;
- * fronteiras de mês/dia calculadas em Europe/Lisbon.
+ * Queries agregadas do backoffice. Dinheiro sempre em cêntimos — formatar só
+ * na UI via lib/format.ts. Timestamps guardados como hora UTC; fronteiras de
+ * mês/dia calculadas em Europe/Lisbon.
  *
- * TODO(frente-d): a tabela `tickets` ainda não existe no schema. Quando o
- * merge da Frente D chegar, juntar bilhetes à receita do mês, aos pagamentos
- * recentes, à lista de eventos e ao extrato de ganhos.
+ * ────────────────────────────────────────────────────────────────────────────
+ *  TODA A FUNÇÃO QUE SOMA MAIS DO QUE UM EVENTO RECEBE UM `ChannelScope`
+ * ────────────────────────────────────────────────────────────────────────────
+ *
+ * E não é burocracia: antes do multi-canal, TODAS estas queries corriam sobre a
+ * tabela de eventos inteira, sem filtro nenhum. Com um canal só, ninguém
+ * notava. Ao entrar a segunda liga, o dono da primeira abria o backoffice e
+ * via, sem fazer nada de especial:
+ *
+ *   · a receita e as compras do mês da outra liga (getDashboardStats)
+ *   · os últimos pagamentos, com nome do comprador (listRecentPayments)
+ *   · a lista de eventos da outra liga, com receita (listEventsWithSales)
+ *   · NOME e EMAIL de todos os compradores dela (listBuyers)
+ *   · o extrato mês a mês, ao cêntimo (getMonthlyStatement)
+ *
+ * O âmbito vem de `server/authz.ts` (`manageScope` / `operateScope`) e é
+ * traduzido para SQL por `inChannelScope` — que devolve `false` para quem não
+ * tem canais, porque "sem canais" tem de significar zero linhas e nunca
+ * "sem filtro".
+ *
+ * As funções de UM evento (`getEventSales`, `countActiveViewers`,
+ * `listBlockedSessionsToday`) não levam âmbito: quem as chama já passou pelo
+ * portão do evento em `server/event-access.ts`, que é onde o canal foi visto.
+ *
+ * TODO(frente-d): juntar bilhetes à receita do mês, aos pagamentos recentes,
+ * à lista de eventos e ao extrato de ganhos.
  */
 
 const LISBON = "Europe/Lisbon";
@@ -134,28 +159,37 @@ const activeEntitlement = eq(entitlements.status, "active");
 
 const grossCents = sql<number>`coalesce(sum(${events.priceCents}), 0)`.mapWith(Number);
 
-export async function getDashboardStats(): Promise<DashboardStats> {
+export async function getDashboardStats(scope: ChannelScope): Promise<DashboardStats> {
   const now = new Date();
   const { start, end, key } = monthBounds(now);
+  const mine = inChannelScope(scope);
 
   const [monthRow] = await db
     .select({ revenueCents: grossCents, purchases: count() })
     .from(entitlements)
     .innerJoin(events, eq(entitlements.eventId, events.id))
     .where(
-      and(activeEntitlement, gte(entitlements.createdAt, start), lt(entitlements.createdAt, end)),
+      and(
+        activeEntitlement,
+        gte(entitlements.createdAt, start),
+        lt(entitlements.createdAt, end),
+        mine,
+      ),
     );
 
+  // O join a `events` existe só para o âmbito: sem ele, a contagem de
+  // compradores era a da plataforma toda em vez da dos canais desta pessoa.
   const [buyersRow] = await db
     .select({ buyers: countDistinct(entitlements.userId) })
     .from(entitlements)
-    .where(activeEntitlement);
+    .innerJoin(events, eq(entitlements.eventId, events.id))
+    .where(and(activeEntitlement, mine));
 
   // Próximo evento: um live em curso ganha; senão, o rascunho mais próximo.
   const [liveEvent] = await db
     .select()
     .from(events)
-    .where(eq(events.status, "live"))
+    .where(and(eq(events.status, "live"), mine))
     .orderBy(desc(events.startsAt))
     .limit(1);
   const [upcoming] = liveEvent
@@ -163,11 +197,11 @@ export async function getDashboardStats(): Promise<DashboardStats> {
     : await db
         .select()
         .from(events)
-        .where(and(eq(events.status, "draft"), gte(events.startsAt, now)))
+        .where(and(eq(events.status, "draft"), gte(events.startsAt, now), mine))
         .orderBy(asc(events.startsAt))
         .limit(1);
 
-  const [eventsRow] = await db.select({ n: count() }).from(events);
+  const [eventsRow] = await db.select({ n: count() }).from(events).where(mine);
 
   return {
     monthLabel: monthLabel(key),
@@ -179,7 +213,7 @@ export async function getDashboardStats(): Promise<DashboardStats> {
   };
 }
 
-export async function listRecentPayments(limit = 6): Promise<RecentPayment[]> {
+export async function listRecentPayments(scope: ChannelScope, limit = 6): Promise<RecentPayment[]> {
   // TODO(frente-d): juntar (UNION) as compras de bilhetes físicos.
   const rows = await db
     .select({
@@ -192,17 +226,18 @@ export async function listRecentPayments(limit = 6): Promise<RecentPayment[]> {
     .from(entitlements)
     .innerJoin(user, eq(entitlements.userId, user.id))
     .innerJoin(events, eq(entitlements.eventId, events.id))
-    .where(activeEntitlement)
+    .where(and(activeEntitlement, inChannelScope(scope)))
     .orderBy(desc(entitlements.createdAt))
     .limit(limit);
   return rows.map((r) => ({ ...r, kind: "ppv" as const }));
 }
 
-export async function listEventsWithSales(): Promise<EventWithSales[]> {
+export async function listEventsWithSales(scope: ChannelScope): Promise<EventWithSales[]> {
   const rows = await db
     .select({ event: events, buyers: count(entitlements.id) })
     .from(events)
     .leftJoin(entitlements, and(eq(entitlements.eventId, events.id), activeEntitlement))
+    .where(inChannelScope(scope))
     .groupBy(events.id)
     .orderBy(desc(events.startsAt));
   // PPV com preço único por evento → receita = compradores × preço.
@@ -269,7 +304,12 @@ export async function listBlockedSessionsToday(
   };
 }
 
-export async function listBuyers(): Promise<BuyerRow[]> {
+/**
+ * Compradores — nome e email. É a resposta mais sensível do backoffice em
+ * dados pessoais, e por isso a que mais precisa do âmbito: sem ele, abrir
+ * `/admin/subscritores` numa liga dava a lista de contactos de todas as outras.
+ */
+export async function listBuyers(scope: ChannelScope): Promise<BuyerRow[]> {
   const lastPurchaseAt = max(entitlements.createdAt);
   const rows = await db
     .select({
@@ -283,13 +323,13 @@ export async function listBuyers(): Promise<BuyerRow[]> {
     .from(entitlements)
     .innerJoin(user, eq(entitlements.userId, user.id))
     .innerJoin(events, eq(entitlements.eventId, events.id))
-    .where(activeEntitlement)
+    .where(and(activeEntitlement, inChannelScope(scope)))
     .groupBy(user.id, user.name, user.email)
     .orderBy(desc(lastPurchaseAt));
   return rows.map((r) => ({ ...r, lastPurchaseAt: r.lastPurchaseAt ?? new Date(0) }));
 }
 
-export async function getMonthlyStatement(): Promise<{
+export async function getMonthlyStatement(scope: ChannelScope): Promise<{
   commissionPct: number;
   rows: MonthlyStatementRow[];
 }> {
@@ -312,7 +352,7 @@ export async function getMonthlyStatement(): Promise<{
     })
     .from(entitlements)
     .innerJoin(events, eq(entitlements.eventId, events.id))
-    .where(activeEntitlement)
+    .where(and(activeEntitlement, inChannelScope(scope)))
     .groupBy(monthKey)
     .orderBy(desc(monthKey));
 
@@ -326,6 +366,16 @@ export async function getMonthlyStatement(): Promise<{
   };
 }
 
+/**
+ * Totais da plataforma inteira, de propósito e sem âmbito — é o ecrã interno
+ * da FirstRow (`/admin/plataforma`).
+ *
+ * ⚠️  Sendo a única função daqui que NÃO leva âmbito, é também a única que só
+ * pode ser chamada atrás de `isPlatformAdmin`. A página faz esse gate; se
+ * alguém a chamar de outro sítio, tem de o repetir. Até esta frente, a página
+ * vivia só com o gate do layout (`league_owner` entrava) e um dono de liga via
+ * daqui a receita total e a contagem de contas de toda a plataforma.
+ */
 export async function getPlatformTotals(): Promise<PlatformTotals> {
   const [usersRow] = await db.select({ n: count() }).from(user);
   const [eventsRow] = await db.select({ n: count() }).from(events);

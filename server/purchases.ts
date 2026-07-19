@@ -1,6 +1,9 @@
 import { and, desc, eq, gt } from "drizzle-orm";
 import { db } from "@/db";
+import { user } from "@/db/auth-schema";
 import { entitlements, events, tickets } from "@/db/schema";
+import { type ChannelScope, inScope } from "@/server/authz";
+import type { PurchaseKind } from "@/server/fulfilment";
 
 export type Purchase = {
   entitlementId: string;
@@ -89,7 +92,7 @@ const CHARGE_WINDOW_MS = 5.5 * 60 * 1000;
  *
  * Passada a janela, pedir de novo é legítimo: a anterior expirou do lado deles.
  */
-export async function hasLiveCharge(kind: "entitlement" | "ticket", id: string): Promise<boolean> {
+export async function hasLiveCharge(kind: PurchaseKind, id: string): Promise<boolean> {
   const table = kind === "entitlement" ? entitlements : tickets;
   const rows = await db
     .select({ id: table.id })
@@ -99,4 +102,126 @@ export async function hasLiveCharge(kind: "entitlement" | "ticket", id: string):
     )
     .limit(1);
   return rows.length > 0;
+}
+
+/* ------------------------------------------------------------------ *
+ * DINHEIRO EM RISCO — as compras que ficaram a meio
+ *
+ * Uma compra pendente é dinheiro por fechar: ou está a decorrer, ou alguém
+ * pagou e não recebeu nada, ou a cobrança nunca chegou a ser criada. Até aqui
+ * não havia onde ver nenhum dos três — uma liga que venda 200 bilhetes ficava
+ * a saber pelas reclamações.
+ *
+ * A REFERÊNCIA DA EUPAGO É O PONTO TODO DESTE ECRÃ. É o número que se dita ao
+ * suporte deles para perguntar "esta foi paga?". Sem ela, uma compra pendente é
+ * uma linha sem saída.
+ * ------------------------------------------------------------------ */
+
+/**
+ * Em que pé ficou a compra. Derivado da hora da cobrança, não guardado: a
+ * verdade sobre se uma referência MB WAY ainda está viva é o relógio, e uma
+ * coluna com isto escrito ficava desatualizada no minuto seguinte.
+ */
+export type PurchaseRisk =
+  /** Cobrança pedida há pouco — a pessoa ainda está a confirmar na app. */
+  | "aberta"
+  /** A janela MB WAY fechou e continua por pagar. É onde se pergunta à Eupago. */
+  | "expirada"
+  /** Compra criada e cobrança nunca pedida: o pedido à Eupago falhou. */
+  | "sem-cobranca";
+
+export type PurchaseAtRisk = {
+  kind: PurchaseKind;
+  id: string;
+  risco: PurchaseRisk;
+  channelId: string;
+  eventTitle: string;
+  buyerName: string;
+  buyerEmail: string;
+  amountCents: number;
+  /** A referência da Eupago. NULL quando a cobrança nunca chegou a existir. */
+  providerRef: string | null;
+  chargeRequestedAt: Date | null;
+  /** Quando é que a reconciliação perguntou por esta compra pela última vez. */
+  reconciledAt: Date | null;
+  createdAt: Date;
+};
+
+/**
+ * Teto da lista. Um evento esgotado deixa dezenas de carrinhos abandonados e a
+ * página é para ler, não para percorrer: as mais recentes é que interessam.
+ */
+const AT_RISK_LIMIT = 200;
+
+function riskOf(chargeRequestedAt: Date | null, agora: number): PurchaseRisk {
+  if (!chargeRequestedAt) return "sem-cobranca";
+  return agora - chargeRequestedAt.getTime() < CHARGE_WINDOW_MS ? "aberta" : "expirada";
+}
+
+/**
+ * As compras pendentes dos canais deste âmbito, das mais recentes para trás.
+ *
+ * O `innerJoin` a `events` está lá pelo âmbito, e não por conveniência: é o que
+ * impede o dono do canal A de ver o dinheiro (e o email dos compradores) do
+ * canal B. `inScope` devolve `false` para quem não gere canal nenhum — zero
+ * linhas, nunca "sem filtro". É a mesma regra de `server/stats.ts`.
+ *
+ * Duas queries e um merge, e não uma união em SQL: as duas tabelas guardam o
+ * preço em sítios diferentes (o acesso vale o preço do evento, o bilhete tem o
+ * seu) e uma união obrigava a alinhar colunas à mão de cada vez que uma delas
+ * mudasse. Os volumes são de dezenas.
+ */
+export async function listPurchasesAtRisk(scope: ChannelScope): Promise<PurchaseAtRisk[]> {
+  const pendente = (table: typeof entitlements | typeof tickets) =>
+    and(eq(table.status, "pending"), inScope(events.channelId, scope));
+
+  const [acessos, bilhetes] = await Promise.all([
+    db
+      .select({
+        id: entitlements.id,
+        channelId: events.channelId,
+        eventTitle: events.title,
+        buyerName: user.name,
+        buyerEmail: user.email,
+        amountCents: events.priceCents,
+        providerRef: entitlements.providerRef,
+        chargeRequestedAt: entitlements.chargeRequestedAt,
+        reconciledAt: entitlements.reconciledAt,
+        createdAt: entitlements.createdAt,
+      })
+      .from(entitlements)
+      .innerJoin(events, eq(entitlements.eventId, events.id))
+      .innerJoin(user, eq(entitlements.userId, user.id))
+      .where(pendente(entitlements))
+      .orderBy(desc(entitlements.createdAt))
+      .limit(AT_RISK_LIMIT),
+    db
+      .select({
+        id: tickets.id,
+        channelId: events.channelId,
+        eventTitle: events.title,
+        buyerName: user.name,
+        buyerEmail: user.email,
+        amountCents: tickets.priceCents,
+        providerRef: tickets.providerRef,
+        chargeRequestedAt: tickets.chargeRequestedAt,
+        reconciledAt: tickets.reconciledAt,
+        createdAt: tickets.createdAt,
+      })
+      .from(tickets)
+      .innerJoin(events, eq(tickets.eventId, events.id))
+      .innerJoin(user, eq(tickets.userId, user.id))
+      .where(pendente(tickets))
+      .orderBy(desc(tickets.createdAt))
+      .limit(AT_RISK_LIMIT),
+  ]);
+
+  const agora = Date.now();
+  return [
+    ...acessos.map((r) => ({ ...r, kind: "entitlement" as const })),
+    ...bilhetes.map((r) => ({ ...r, kind: "ticket" as const })),
+  ]
+    .map((r) => ({ ...r, risco: riskOf(r.chargeRequestedAt, agora) }))
+    .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
+    .slice(0, AT_RISK_LIMIT);
 }

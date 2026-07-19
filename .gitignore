@@ -43,3 +43,6 @@ next-env.d.ts
 
 # claude code (worktrees + tooling local)
 .claude/
+
+# banco de medições descartável (provas da Frente I; não entra na app)
+.medicoes/

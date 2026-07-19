@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { validateEventForm } from "@/lib/event-rules";
 import { requireApi } from "@/server/api-guard";
 import { resolveChannelForNewEvent } from "@/server/event-access";
-import { createEvent } from "@/server/events";
+import { createEvent, describeSaveFailure } from "@/server/events";
 
 /*
  * Criar evento por JSON.
@@ -67,6 +67,13 @@ export async function POST(req: Request) {
     return NextResponse.json({ id: created.id }, { status: created.reused ? 200 : 201 });
   } catch (error) {
     console.error("[api/admin/events] criar falhou:", error);
-    return NextResponse.json({ error: "Não deu para criar o evento." }, { status: 502 });
+    // A stream falhar (dependência externa) é 502; o resto é 500. Quem consome a
+    // API à mão merece a mesma distinção que o formulário faz — ver
+    // `describeSaveFailure`.
+    const failure = describeSaveFailure(error);
+    return NextResponse.json(
+      { error: failure.message },
+      { status: failure.code === "stream" ? 502 : 500 },
+    );
   }
 }

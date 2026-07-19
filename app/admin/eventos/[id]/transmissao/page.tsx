@@ -5,9 +5,10 @@ import { EventStatusActions } from "@/components/admin/event-status-actions";
 import { EventStatusBadge } from "@/components/admin/event-status-badge";
 import { LiveViewers } from "@/components/admin/live-viewers";
 import { PageHeader } from "@/components/admin/page-header";
+import { ProvisionStreamButton } from "@/components/admin/provision-stream-button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { formatEuro, formatNumber, formatTime } from "@/lib/format";
-import { operateScope } from "@/server/authz";
+import { canManageEvents, operateScope } from "@/server/authz";
 import { channelsInScope } from "@/server/channels";
 import { getStreamCredentials } from "@/server/cloudflare-stream";
 import { requireEventOperator } from "@/server/event-access";
@@ -53,6 +54,10 @@ export default async function TransmissionPage({ params }: { params: Promise<{ i
    * Com um canal só, isto não aparece: não há engano possível.
    */
   const channel = channels.many ? channels.byId.get(event.channelId) : undefined;
+
+  // Provisionar de novo custa dinheiro na conta da liga: é gerir, não operar.
+  // O staff vê a explicação, mas o botão que gasta é só para quem gere o canal.
+  const canManage = canManageEvents(user, event.channelId);
 
   return (
     <div className="mx-auto flex w-full max-w-5xl flex-col gap-5">
@@ -113,12 +118,33 @@ export default async function TransmissionPage({ params }: { params: Promise<{ i
                     A chave é deste evento. Nunca a mostres em stream nem a partilhes fora da régie.
                   </p>
                 </>
-              ) : (
+              ) : event.cfLiveInputId ? (
+                /*
+                 * A stream existe, mas não a conseguimos ler agora. É temporário
+                 * (a Cloudflare ou a nossa ligação a ela), por isso a saída é
+                 * recarregar — não mexer em nada.
+                 */
                 <p className="text-2sm leading-relaxed text-muted-foreground">
-                  {event.cfLiveInputId
-                    ? "Não deu para ir buscar as credenciais à Cloudflare. Confirma o CLOUDFLARE_ACCOUNT_ID e o token no .env e recarrega a página."
-                    : "Este evento ficou sem stream — a Cloudflare não respondeu quando ele foi criado. Apaga-o na lista de eventos e cria outra vez."}
+                  Não deu para ir buscar as credenciais à Cloudflare agora. É do lado do serviço de
+                  streaming, não do teu evento — espera um momento e recarrega a página.
                 </p>
+              ) : (
+                /*
+                 * O evento nasceu sem stream: a Cloudflare não respondeu quando
+                 * ele foi criado. Antes, a única saída era apagar e criar outro —
+                 * mas apagar recusa se já houve vendas, e aí o evento ficava
+                 * morto. Agora pede-se a stream outra vez, sem apagar nada.
+                 */
+                <div className="flex flex-col gap-3">
+                  <p className="text-2sm leading-relaxed text-muted-foreground">
+                    Este evento ficou sem stream — o serviço de streaming (Cloudflare) não respondeu
+                    quando ele foi criado. Nada do que vendeste se perdeu.
+                    {canManage
+                      ? " Pede a stream outra vez aqui em baixo."
+                      : " Quem gere o canal pode voltar a pedi-la."}
+                  </p>
+                  {canManage ? <ProvisionStreamButton eventId={event.id} /> : null}
+                </div>
               )}
             </CardContent>
           </Card>

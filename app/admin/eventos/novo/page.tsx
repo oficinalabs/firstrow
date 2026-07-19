@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { createEventAction } from "@/app/admin/eventos/actions";
 import { EventForm } from "@/components/admin/event-form";
 import { PageHeader } from "@/components/admin/page-header";
 import { buttonVariants } from "@/components/ui/button";
@@ -54,7 +55,7 @@ export default async function NewEventPage() {
           }
         />
       ) : (
-        <EventForm channels={channels} />
+        <EventForm mode="create" action={createEventAction} channels={channels} />
       )}
     </div>
   );

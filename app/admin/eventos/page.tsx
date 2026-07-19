@@ -98,12 +98,23 @@ function EventsTable({
               >
                 {e.status === "ended" ? "Ver" : "Abrir"}
               </Link>
+              {/* Editar é gerir (mexe no preço e na configuração), por isso segue
+                  o mesmo `canManage` do botão de apagar — o canal do evento, não
+                  o papel da pessoa. */}
               {canManage(e) ? (
-                <DeleteEventDialog
-                  eventId={e.id}
-                  title={e.title}
-                  blocked={deleteBlock(e, sales.get(e.id) ?? 0)}
-                />
+                <>
+                  <Link
+                    href={`/admin/eventos/${e.id}/editar`}
+                    className="font-sans text-xs font-semibold text-muted-foreground underline-offset-4 transition-colors hover:text-foreground hover:underline"
+                  >
+                    Editar
+                  </Link>
+                  <DeleteEventDialog
+                    eventId={e.id}
+                    title={e.title}
+                    blocked={deleteBlock(e, sales.get(e.id) ?? 0)}
+                  />
+                </>
               ) : null}
             </span>
           ),

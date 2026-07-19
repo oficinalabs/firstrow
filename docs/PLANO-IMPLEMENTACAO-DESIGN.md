@@ -33,7 +33,8 @@ events (colunas novas): ticket_price_cents int? · ticket_capacity int?
 - API bilhetes: `POST /api/tickets/checkout/[eventId]` (MB WAY one-off, reusa lib/eupago) · webhook eupago existente passa a ativar também tickets (identifier = ticket id) · `POST /api/tickets/validate` (qr_token → válido/já usado/outro evento; marca used_at)
 
 ### Single-tenant (Fase 0)
-`lib/tenant.ts` exporta a config do canal (nome, logos, cor de destaque, banner) — hardcoded SmokingBars-demo. O co-branding (canal dentro da moldura FirstRow, barra `#0F0E0C`) usa isto. Multi-tenant é Fase 2; NÃO criar tabela tenants agora.
+`lib/tenant.ts` exporta a config do canal (nome, logos, cor de destaque, banner) — hardcoded SmokingBars-demo.
+> **Atualização (plano v2, Frente C):** passou a `lib/channels.ts`, com um **array** de canais e helpers (`getChannel`, `listChannels`, `defaultChannel`, `channelPath`). A raiz `/` é a visão geral da plataforma e o canal vive em `/canal/[slug]`. O co-branding (canal dentro da moldura FirstRow, barra `#0F0E0C`) usa isto. Multi-tenant é Fase 2; NÃO criar tabela tenants agora.
 
 ### Subscritores/tiers — honestidade de âmbito
 Recorrência Eupago ainda não confirmada em sandbox → **não implementar billing recorrente**. `/admin/subscritores` lista compradores (entitlements/tickets) por evento; a UI de tiers na página de canal mostra o PPV/acessos. Billing mensal = fase seguinte.

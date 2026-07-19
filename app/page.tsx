@@ -1,49 +1,80 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { AccessCard } from "@/components/eventos/access-card";
-import { AgendaList } from "@/components/eventos/agenda-list";
-import { ChannelHeader } from "@/components/eventos/channel-header";
 import { EventCard } from "@/components/eventos/event-card";
-import { HowItWorksCard } from "@/components/eventos/how-it-works-card";
+import { COMO_FUNCIONA, HowItWorksCard } from "@/components/eventos/how-it-works-card";
 import { LiveNowBanner } from "@/components/eventos/live-now-banner";
-import { NextLiveCard } from "@/components/eventos/next-live-card";
-import { type ChannelProgram, type EventRow, splitProgram } from "@/components/eventos/program";
 import { ViewerFooter } from "@/components/eventos/viewer-footer";
+import { ChannelRow } from "@/components/home/channel-row";
+import { buildOverview, type PlatformOverview } from "@/components/home/overview";
+import { UpcomingRow } from "@/components/home/upcoming-row";
+import { SITE_URL } from "@/components/marketing/dados";
 import { buttonVariants } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { SectionHeader } from "@/components/ui/section-header";
 import { ViewerShell } from "@/components/ui/viewer-shell";
-import { tenant } from "@/lib/tenant";
 import { listEvents } from "@/server/events";
 
 export const dynamic = "force-dynamic";
 
+const DESCRICAO =
+  "Lives com acesso pago, arquivo e bilhetes dos canais da FirstRow. Compras com MB WAY " +
+  "e vês onde quiseres — quem não paga, não entra.";
+
 export const metadata: Metadata = {
-  title: tenant.name,
-  description: `${tenant.tagline}. Lives com acesso pago por MB WAY e replays no canal ${tenant.name}, na FirstRow.`,
+  title: { absolute: "FirstRow — lives dos canais que valem a pena pagar" },
+  description: DESCRICAO,
+  alternates: { canonical: `${SITE_URL}/` },
+  openGraph: {
+    title: "FirstRow — lives dos canais que valem a pena pagar",
+    description: DESCRICAO,
+    url: `${SITE_URL}/`,
+    type: "website",
+  },
 };
 
-const HOW_IT_WORKS = [
-  "Compras com MB WAY, sem cartão.",
-  "O acesso é da tua conta — 1 sessão de cada vez.",
-  "Nada de links: quem não paga, não entra.",
-];
+// Régua de secção do design: título com filete forte por baixo.
+const SECTION_RULE = "border-b-2 border-foreground pb-3";
 
-export default async function ChannelPage() {
-  let rows: EventRow[] | null = null;
+/*
+ * Raiz da plataforma: visão geral de TODOS os canais — nunca a página de um
+ * canal (essa vive em /canal/[slug]). Lista, não montra: com um canal só tem de
+ * continuar a ler-se como uma plataforma a começar, não como uma página vazia.
+ */
+export default async function HomePage() {
+  let overview: PlatformOverview | null = null;
   try {
-    rows = await listEvents();
+    overview = buildOverview(await listEvents());
   } catch {
-    rows = null;
+    overview = null;
   }
 
   return (
-    <ViewerShell active="canal">
-      <ChannelHeader />
-      <div className="mx-auto flex w-full max-w-6xl flex-1 flex-col gap-7 px-4 pt-5 md:gap-8 md:px-8 md:pt-6">
-        {rows === null ? (
+    <ViewerShell active="inicio">
+      <div className="mx-auto flex w-full max-w-6xl flex-1 flex-col px-4 md:px-8">
+        {overview !== null && overview.live.length > 0 ? (
+          <div className="flex flex-col gap-3 pt-5 md:pt-6">
+            {overview.live.map(({ event, channel }) => (
+              <LiveNowBanner key={event.id} event={event} channelName={channel.name} />
+            ))}
+          </div>
+        ) : null}
+
+        <section className="grid gap-8 py-10 md:grid-cols-[1fr_336px] md:items-start md:gap-12 md:py-14">
+          <div>
+            <h1 className="font-display text-2xl font-extrabold leading-[1.08] tracking-display text-balance md:text-3xl">
+              O que está a dar na FirstRow
+            </h1>
+            <p className="mt-4 max-w-[48ch] text-sm leading-relaxed text-foreground-secondary md:text-base">
+              {DESCRICAO}
+            </p>
+          </div>
+          <HowItWorksCard title="Como funciona" lines={COMO_FUNCIONA} />
+        </section>
+
+        {overview === null ? (
           <EmptyState
-            title="Não conseguimos carregar o canal"
+            className="mb-14"
+            title="Não conseguimos carregar a programação"
             description="Foi um problema do nosso lado, não teu. Recarrega a página — se continuar, volta a tentar daqui a uns minutos."
             action={
               <Link href="/" className={buttonVariants({ variant: "secondary" })}>
@@ -52,55 +83,61 @@ export default async function ChannelPage() {
             }
           />
         ) : (
-          <ChannelContent program={splitProgram(rows)} />
+          <Programacao overview={overview} />
         )}
+
+        {/* Entrada para criadores: uma linha e um link, sem virar landing page. */}
+        <section className="flex flex-wrap items-center justify-between gap-x-8 gap-y-3 border-t py-6">
+          <p className="max-w-[56ch] text-2sm leading-relaxed text-muted-foreground">
+            Tens público que paga para te ver? A FirstRow abre canais a ligas, comédia, música e
+            formação — com bilhetes à porta e lives que não fogem para links piratas.
+          </p>
+          <Link
+            href="/criadores"
+            className="text-2sm font-medium text-accent decoration-2 underline-offset-4 hover:underline"
+          >
+            Abrir um canal ›
+          </Link>
+        </section>
       </div>
       <ViewerFooter />
     </ViewerShell>
   );
 }
 
-function ChannelContent({ program }: { program: ChannelProgram }) {
-  const { liveNow, nextLive, upcoming, archive } = program;
-
-  if (!liveNow && !nextLive && archive.length === 0) {
-    return (
-      <>
-        <EmptyState
-          title="Ainda não há eventos anunciados"
-          description={`A próxima live do ${tenant.name} vai aparecer aqui, com data, preço e contagem decrescente.`}
-        />
-        <HowItWorksCard title="Como funciona" lines={HOW_IT_WORKS} className="md:max-w-84" />
-      </>
-    );
-  }
+function Programacao({ overview }: { overview: PlatformOverview }) {
+  const { upcoming, archive, channels } = overview;
 
   return (
     <>
-      {/* Coluna principal (live + próxima + agenda) e barra lateral, como no design. */}
-      <div className="grid gap-7 md:grid-cols-[1fr_336px] md:gap-8">
-        <div className="flex min-w-0 flex-col gap-7">
-          {liveNow && <LiveNowBanner event={liveNow} />}
-          {nextLive && <NextLiveCard event={nextLive} />}
-          <section aria-label="Agenda">
-            <SectionHeader title="Agenda" />
-            {upcoming.length > 0 ? (
-              <AgendaList events={upcoming} />
-            ) : (
-              <p className="py-4 text-2sm text-muted-foreground">
-                Sem mais datas marcadas — quando houver, aparecem aqui.
-              </p>
-            )}
-          </section>
+      <section aria-label="Canais" className="pb-12 md:pb-14">
+        <SectionHeader title="Canais" className={SECTION_RULE} />
+        <div className="mt-1">
+          {channels.map((summary) => (
+            <ChannelRow key={summary.channel.slug} {...summary} />
+          ))}
         </div>
-        <div className="flex flex-col gap-5">
-          <AccessCard upcoming={upcoming} />
-          <HowItWorksCard title="Como funciona" lines={HOW_IT_WORKS} />
-        </div>
-      </div>
-      <section aria-label="Arquivo" className="pb-2">
+      </section>
+
+      <section aria-label="Próximas lives" className="pb-12 md:pb-14">
+        <SectionHeader title="Próximas lives" className={SECTION_RULE} />
+        {upcoming.length > 0 ? (
+          <div className="mt-1">
+            {upcoming.map(({ event, channel }) => (
+              <UpcomingRow key={event.id} event={event} channel={channel} />
+            ))}
+          </div>
+        ) : (
+          <p className="py-5 text-2sm text-muted-foreground">
+            Sem datas marcadas neste momento — assim que houver, aparecem aqui primeiro.
+          </p>
+        )}
+      </section>
+
+      <section aria-label="Arquivo" className="pb-12 md:pb-14">
         <SectionHeader
           title="Arquivo"
+          className={SECTION_RULE}
           action={
             archive.length > 0 ? (
               <Link
@@ -113,16 +150,16 @@ function ChannelContent({ program }: { program: ChannelProgram }) {
           }
         />
         {archive.length > 0 ? (
-          <div className="mt-4 grid grid-cols-2 gap-3 md:grid-cols-4 md:gap-5">
+          <div className="mt-5 grid grid-cols-2 gap-3 md:grid-cols-4 md:gap-5">
             {archive.slice(0, 4).map((event) => (
               <EventCard key={event.id} event={event} />
             ))}
           </div>
         ) : (
           <EmptyState
-            className="mt-4"
+            className="mt-5"
             title="O arquivo estreia depois da primeira live"
-            description="Cada evento fica disponível aqui como replay depois do direto."
+            description="Cada evento fica disponível aqui como replay depois do direto — de todos os canais."
           />
         )}
       </section>

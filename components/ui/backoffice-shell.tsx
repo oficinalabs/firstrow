@@ -1,6 +1,6 @@
 import Image from "next/image";
 import Link from "next/link";
-import { tenant } from "@/lib/tenant";
+import { defaultChannel } from "@/lib/channels";
 import { cn } from "@/lib/utils";
 
 export type BackofficeNavItem = { label: string; href: string };
@@ -30,7 +30,7 @@ export function BackofficeShell({
     <div
       data-theme="light"
       className="flex min-h-dvh w-full flex-col bg-background text-foreground md:flex-row"
-      style={{ "--tenant": tenant.accentColor } as React.CSSProperties}
+      style={{ "--tenant": defaultChannel.accentColor } as React.CSSProperties}
     >
       {/* topo mobile (o backoffice é desktop-first; isto é o mínimo digno) */}
       <header className="flex h-13 items-center justify-between bg-bar px-4 text-bar-foreground md:hidden">
@@ -43,10 +43,10 @@ export function BackofficeShell({
         </div>
         <div className="flex items-center gap-2.5 px-4.5 py-3.5">
           <span className="flex size-7 items-center justify-center rounded-sm bg-bar-active font-mono text-2xs text-bar-muted">
-            {tenant.initials}
+            {defaultChannel.initials}
           </span>
           <span className="flex flex-col">
-            <span className="text-2sm font-bold">{tenant.name}</span>
+            <span className="text-2sm font-bold">{defaultChannel.name}</span>
             <span className="font-mono text-2xs" style={{ color: "var(--tenant)" }}>
               ● canal ativo
             </span>

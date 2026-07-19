@@ -5,7 +5,7 @@ import { limitByIp } from "@/lib/rate-limit";
 import { buildSplit } from "@/lib/split";
 import { requireApi } from "@/server/api-guard";
 import { getEvent } from "@/server/events";
-import { recordChargeReference } from "@/server/purchases";
+import { hasLiveCharge, recordChargeReference } from "@/server/purchases";
 import { createPendingTicket } from "@/server/tickets";
 
 const bodySchema = z.object({ phone: z.string().trim().min(9) });
@@ -41,6 +41,16 @@ export async function POST(req: Request, { params }: { params: Promise<{ eventId
 
   const amountEur = result.ticket.priceCents / 100;
   const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? "";
+
+  // Dois cliques não podem virar dois pedidos ao telemóvel da pessoa: ela podia
+  // aceitar os dois e pagar dois bilhetes julgando comprar um. O bilhete
+  // pendente é reutilizado, a cobrança não.
+  if (await hasLiveCharge("ticket", result.ticket.id)) {
+    return NextResponse.json(
+      { error: "Já enviámos um pedido para o teu telemóvel. Confirma na app MB WAY." },
+      { status: 409 },
+    );
+  }
 
   const charge = await createMbwayCharge({
     amountEur,

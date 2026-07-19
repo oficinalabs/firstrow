@@ -132,6 +132,15 @@ export const entitlements = pgTable(
     // active | refunded
     status: text("status").notNull().default("active"),
     providerRef: text("provider_ref"),
+    /**
+     * Quando pedimos a última cobrança MB WAY para esta compra.
+     *
+     * Não é o mesmo que `createdAt`: a compra é reutilizada em cada tentativa
+     * (de propósito — não queremos linhas a acumular), mas a COBRANÇA não pode
+     * ser. Sem isto, dois cliques faziam dois pedidos ao telemóvel da pessoa e
+     * ela podia aceitar os dois: pagava duas vezes o mesmo acesso.
+     */
+    chargeRequestedAt: timestamp("charge_requested_at"),
     createdAt: timestamp("created_at").notNull().defaultNow(),
   },
   (t) => [uniqueIndex("entitlements_user_event_uq").on(t.userId, t.eventId)],
@@ -156,6 +165,15 @@ export const tickets = pgTable(
     usedAt: timestamp("used_at"),
     priceCents: integer("price_cents").notNull(),
     providerRef: text("provider_ref"),
+    /**
+     * Quando pedimos a última cobrança MB WAY para esta compra.
+     *
+     * Não é o mesmo que `createdAt`: a compra é reutilizada em cada tentativa
+     * (de propósito — não queremos linhas a acumular), mas a COBRANÇA não pode
+     * ser. Sem isto, dois cliques faziam dois pedidos ao telemóvel da pessoa e
+     * ela podia aceitar os dois: pagava duas vezes o mesmo acesso.
+     */
+    chargeRequestedAt: timestamp("charge_requested_at"),
     createdAt: timestamp("created_at").notNull().defaultNow(),
     updatedAt: timestamp("updated_at").notNull().defaultNow(),
   },

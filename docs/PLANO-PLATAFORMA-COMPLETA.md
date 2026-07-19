@@ -113,7 +113,15 @@ leitor de ecrã) — não só contraste, que a Frente F já garantiu.
 - **Webhook em pagamento genuíno** — só se prova com um MB WAY a sério em sandbox.
 - **Release de segurança do Next** — instalar quando sair.
 
-## Decisões de produto por tomar (não são técnicas)
+## Decisões de produto (tomadas 19/07/2026)
 
-- `/admin/subscritores` junta compradores de vários canais ou separa-os?
-- Percentagem da comissão, janela de acesso ao VOD, nome legal e NIF nos documentos.
+- **Comissão da plataforma:** 10%.
+- **Janela de acesso ao VOD:** 30 dias após o evento.
+- **Entidade legal nos documentos:** Aresta.
+- **`/admin/subscritores`:** separado **por canal** (não junta compradores de vários canais).
+- **Email de suporte:** a intenção é `suporte@arestadigital.pt` (domínio já verificado no Resend),
+  mas a caixa **ainda não existe** — o Rui tem de a criar. Usar este endereço nos textos e marcar
+  como pendente de criação onde for preciso.
+
+### Ainda por decidir
+- **NIF** da entidade legal para os documentos — fica `[DEFINIR]` até o Rui o dar.

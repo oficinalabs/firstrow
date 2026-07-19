@@ -2,11 +2,24 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { type EventFormState, validateEventForm } from "@/lib/event-rules";
+import {
+  type EventFormState,
+  eventEditRules,
+  eventToDraft,
+  validateEventForm,
+} from "@/lib/event-rules";
 import { formatNumber } from "@/lib/format";
-import { getCurrentUser } from "@/server/authz";
+import { type AuthUser, getCurrentUser } from "@/server/authz";
 import { permitEventManagement, resolveChannelForNewEvent } from "@/server/event-access";
-import { createEvent, type DeleteEventResult, deleteEvent } from "@/server/events";
+import {
+  createEvent,
+  type DeleteEventResult,
+  deleteEvent,
+  describeSaveFailure,
+  provisionLiveInput,
+  readCommitments,
+  updateEvent,
+} from "@/server/events";
 
 /*
  * Ações de eventos do backoffice. Uma server action é um endpoint como
@@ -14,7 +27,7 @@ import { createEvent, type DeleteEventResult, deleteEvent } from "@/server/event
  * outro lado é conveniência, não segurança.
  *
  * Com o multi-canal, "que papel tens?" deixou de chegar: a pergunta é "podes
- * mexer NESTE canal?". Para apagar, o canal vem do evento
+ * mexer NESTE canal?". Para apagar e editar, o canal vem do evento
  * (`permitEventManagement`); para criar, é escolhido em
  * `resolveChannelForNewEvent` — que recusa em vez de adivinhar.
  */
@@ -22,7 +35,44 @@ import { createEvent, type DeleteEventResult, deleteEvent } from "@/server/event
 function refreshEventScreens(eventId?: string) {
   revalidatePath("/admin");
   revalidatePath("/admin/eventos");
-  if (eventId) revalidatePath(`/admin/eventos/${eventId}/transmissao`);
+  if (eventId) {
+    revalidatePath(`/admin/eventos/${eventId}/transmissao`);
+    revalidatePath(`/admin/eventos/${eventId}/editar`);
+    revalidatePath(`/admin/eventos/${eventId}/bilhetes`);
+    // O que muda num evento muda também no que o público vê dele.
+    revalidatePath(`/eventos/${eventId}`);
+  }
+}
+
+/** A mesma frase em todas as recusas por "já cá não está" — ver server/event-access.ts. */
+const NO_LONGER_EXISTS = "Este evento já não existe — recarrega a página.";
+
+/**
+ * A sessão caiu a meio de um formulário cheio.
+ *
+ * Devolver só a frase deixava a pessoa num beco: tudo escrito, e nenhum sítio
+ * onde carregar que não perdesse o que lá está. Com o caminho de volta, abre-se
+ * a sessão noutro separador e submete-se outra vez — os campos são controlados,
+ * por isso continuam preenchidos.
+ */
+function sessionExpired(values: EventFormState["values"], back: string): EventFormState {
+  return {
+    errors: {},
+    message: "A tua sessão expirou. Volta a entrar e submete outra vez — o que escreveste fica aí.",
+    signInHref: `/entrar?next=${encodeURIComponent(back)}`,
+    values,
+  };
+}
+
+/** Há sessão? Devolve o utilizador, ou o estado de formulário já redigido. */
+async function requireFormUser(
+  submitted: unknown,
+  back: string,
+): Promise<{ user: AuthUser } | { state: EventFormState }> {
+  const user = await getCurrentUser();
+  if (user) return { user };
+  const { values } = validateEventForm(submitted);
+  return { state: sessionExpired(values, back) };
 }
 
 /**
@@ -37,11 +87,9 @@ export async function createEventAction(
 ): Promise<EventFormState> {
   const submitted = Object.fromEntries(formData);
 
-  const user = await getCurrentUser();
-  if (!user) {
-    const { values } = validateEventForm(submitted);
-    return { errors: {}, message: "A tua sessão expirou — volta a entrar.", values };
-  }
+  const signedIn = await requireFormUser(submitted, "/admin/eventos/novo");
+  if ("state" in signedIn) return signedIn.state;
+  const { user } = signedIn;
 
   /*
    * Em que canal nasce este evento. O formulário manda o slug — escolhido no
@@ -78,11 +126,9 @@ export async function createEventAction(
     created = await createEvent(checked.draft, channel.channelId);
   } catch (error) {
     console.error("[eventos] criar falhou:", error);
-    return {
-      errors: {},
-      message: "Não deu para criar o evento. Espera um momento e tenta outra vez.",
-      values: checked.values,
-    };
+    // A Cloudflare em baixo e a nossa base de dados em baixo não são a mesma
+    // coisa para quem está do outro lado — ver `describeSaveFailure`.
+    return { errors: {}, message: describeSaveFailure(error).message, values: checked.values };
   }
 
   refreshEventScreens(created.id);
@@ -90,10 +136,94 @@ export async function createEventAction(
   redirect(`/admin/eventos/${created.id}/transmissao`);
 }
 
+/**
+ * Grava alterações a um evento que já existe.
+ *
+ * O `eventId` vem LIGADO no servidor (`updateEventAction.bind(null, id)`), não
+ * do formulário: um campo escondido dava a quem soubesse mexer no HTML a
+ * hipótese de gravar as alterações de um ecrã por cima de outro evento. O canal
+ * continua a sair do evento — quem não gere o canal dele leva a mesma resposta
+ * que levaria de um id inventado.
+ */
+export async function updateEventAction(
+  eventId: string,
+  _previous: EventFormState,
+  formData: FormData,
+): Promise<EventFormState> {
+  const submitted = Object.fromEntries(formData);
+  const back = `/admin/eventos/${eventId}/editar`;
+
+  const signedIn = await requireFormUser(submitted, back);
+  if ("state" in signedIn) return signedIn.state;
+
+  const permit = await permitEventManagement(eventId);
+  if (!permit.ok) {
+    const { values } = validateEventForm(submitted);
+    return { errors: {}, message: permit.error, values };
+  }
+
+  /*
+   * As regras saem das vendas que este evento já tem. É a mesma função que
+   * pintou o ecrã, por isso o que aparece fechado e o que é recusado aqui não
+   * podem discordar — e o `updateEvent` volta a fazer as contas DENTRO da
+   * transação, que é o que aguenta uma compra a entrar entretanto.
+   */
+  const commitments = await readCommitments(eventId, permit.event.status);
+  const checked = validateEventForm(submitted, {
+    editing: { current: eventToDraft(permit.event), rules: eventEditRules(commitments) },
+  });
+  if (!checked.ok) return { errors: checked.errors, message: "", values: checked.values };
+
+  let saved: Awaited<ReturnType<typeof updateEvent>>;
+  try {
+    saved = await updateEvent(eventId, checked.draft);
+  } catch (error) {
+    console.error("[eventos] guardar falhou:", error);
+    return { errors: {}, message: describeSaveFailure(error).message, values: checked.values };
+  }
+
+  if (!saved.ok) {
+    return saved.reason === "not-found"
+      ? { errors: {}, message: NO_LONGER_EXISTS, values: checked.values }
+      : { errors: saved.errors, message: "", values: checked.values };
+  }
+
+  refreshEventScreens(eventId);
+  // Para a lista, que é onde a alteração se vê — a confirmação honesta de que
+  // gravou é o valor novo lá, e não um aviso a dizê-lo. (Mesma escolha da
+  // edição de canais, em app/admin/canais.)
+  redirect("/admin/eventos");
+}
+
+/**
+ * Volta a pedir à Cloudflare a stream de um evento que ficou sem ela.
+ *
+ * Só quem gere o canal do evento: provisionar custa dinheiro na conta da liga.
+ */
+export async function provisionStreamAction(eventId: unknown): Promise<{ error?: string }> {
+  if (typeof eventId !== "string" || eventId.length === 0) {
+    return { error: "Pedido inválido — recarrega a página." };
+  }
+
+  const permit = await permitEventManagement(eventId);
+  if (!permit.ok) return { error: permit.error };
+
+  try {
+    const result = await provisionLiveInput(eventId);
+    if (!result.ok) return { error: NO_LONGER_EXISTS };
+  } catch (error) {
+    console.error("[eventos] provisionar stream falhou:", error);
+    return { error: describeSaveFailure(error).message };
+  }
+
+  refreshEventScreens(eventId);
+  return {};
+}
+
 function refusalMessage(result: Extract<DeleteEventResult, { ok: false }>): string {
   switch (result.reason) {
     case "not-found":
-      return "Este evento já não existe — recarrega a página.";
+      return NO_LONGER_EXISTS;
     case "live":
       return "Está no ar neste momento. Termina a transmissão antes de o apagar.";
     case "has-sales": {

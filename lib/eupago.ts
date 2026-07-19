@@ -27,26 +27,59 @@ export type CreateSplitMbwayInput = {
   callbackUrl: string;
 };
 
-export async function createSplitMbwayPayment(input: CreateSplitMbwayInput): Promise<unknown> {
+/**
+ * Cobra por MB WAY, com split quando ele está configurado.
+ *
+ * O split precisa de uma `externKey` por beneficiário, criada no backoffice da
+ * Eupago. Enquanto essas chaves não existirem, o comportamento diverge de
+ * propósito conforme o ambiente:
+ *
+ *  · **produção** — recusa. Cobrar sem split fazia o dinheiro TODO entrar na
+ *    conta da FirstRow, incluindo a parte da liga, e transformava um problema
+ *    de configuração numa dívida a um cliente. Falhar a compra é menos mau.
+ *  · **sandbox** — cobra por MB WAY simples e avisa no log. Não há dinheiro
+ *    real, e sem isto era impossível testar o resto da cadeia (webhook,
+ *    ativação, recibo) antes de a Eupago ativar o serviço de split.
+ */
+export async function createMbwayCharge(input: CreateSplitMbwayInput): Promise<unknown> {
   const apiKey = requireEnv("EUPAGO_API_KEY");
+  const isProduction = process.env.EUPAGO_ENV === "production";
 
-  const res = await fetch(`${baseUrl()}/api/v1/split-payments/mbway`, {
-    method: "POST",
-    headers: {
-      Authorization: `ApiKey ${apiKey}`,
-      "Content-Type": "application/json",
+  const configurados = input.beneficiaries.filter((b) => b.externKey.trim() !== "");
+  const comSplit = configurados.length > 0 && configurados.length === input.beneficiaries.length;
+
+  if (!comSplit) {
+    if (isProduction) {
+      throw new Error(
+        "Split por configurar (EUPAGO_LEAGUE_EXTERNKEY / EUPAGO_PLATFORM_EXTERNKEY): " +
+          "compra recusada para não reter a parte da liga.",
+      );
+    }
+    console.warn("[eupago] sandbox sem externKeys — a cobrar por MB WAY simples, sem split.");
+  }
+
+  const res = await fetch(
+    `${baseUrl()}${comSplit ? "/api/v1/split-payments/mbway" : "/api/v1/mbway"}`,
+    {
+      method: "POST",
+      headers: {
+        Authorization: `ApiKey ${apiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        amount: input.amountEur,
+        alias: input.phone,
+        identifier: input.identifier,
+        adminCallback: input.callbackUrl,
+        lang: "PT",
+        ...(comSplit ? { beneficiaries: input.beneficiaries } : {}),
+      }),
     },
-    body: JSON.stringify({
-      amount: input.amountEur,
-      alias: input.phone,
-      identifier: input.identifier,
-      adminCallback: input.callbackUrl,
-      lang: "PT",
-      beneficiaries: input.beneficiaries,
-    }),
-  });
+  );
 
   if (!res.ok) {
+    // O corpo da resposta da Eupago vem no erro de propósito: é ele que diz se
+    // o formato do pedido está errado, e é a única pista na primeira tentativa.
     throw new Error(`Eupago MB WAY falhou: ${res.status} ${await res.text()}`);
   }
   return res.json();

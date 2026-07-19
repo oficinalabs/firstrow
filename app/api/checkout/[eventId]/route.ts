@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { createSplitMbwayPayment } from "@/lib/eupago";
+import { createMbwayCharge } from "@/lib/eupago";
 import { limitByIp } from "@/lib/rate-limit";
 import { buildSplit } from "@/lib/split";
 import { requireApi } from "@/server/api-guard";
@@ -33,7 +33,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ eventId
   const amountEur = event.priceCents / 100;
   const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? "";
 
-  await createSplitMbwayPayment({
+  await createMbwayCharge({
     amountEur,
     phone: body.phone,
     identifier: entitlement.id,

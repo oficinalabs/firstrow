@@ -1,13 +1,13 @@
 import { NextResponse } from "next/server";
-import { isAdmin } from "@/lib/admin";
-import { requireUser } from "@/server/auth-helper";
+import { canOperateEvents, getCurrentUser } from "@/server/authz";
 import { countActiveViewers, listBlockedSessionsToday } from "@/server/stats";
 
 // Polling (10s) da página de transmissão: espectadores ativos + bloqueadas
 // hoje. Gate próprio — route handlers não herdam a proteção do layout.
 export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
-  const user = await requireUser();
-  if (!user || !isAdmin(user.email)) {
+  const user = await getCurrentUser();
+  if (!user) return NextResponse.json({ error: "Sem sessão" }, { status: 401 });
+  if (!canOperateEvents(user)) {
     return NextResponse.json({ error: "Sem permissão" }, { status: 403 });
   }
 

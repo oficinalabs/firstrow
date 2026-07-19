@@ -6,8 +6,14 @@ import { formatNumber } from "@/lib/format";
 
 type LiveCounts = { viewers: number; blockedToday: number };
 
-// Espectadores em tempo real: valores do servidor à cabeça, polling de 10s
-// ao endpoint da transmissão (só re-renderiza os números, não a página).
+/**
+ * Os dois números ao vivo da transmissão: quem está a ver agora e quantas
+ * sessões foram cortadas hoje. Valores do servidor à cabeça, depois polling de
+ * 10s (só re-renderiza os números, não a página).
+ *
+ * **É aqui que a contagem de bloqueadas vive** — a tabela em baixo na página de
+ * transmissão é o detalhe (que contas, a que horas), não uma segunda contagem.
+ */
 export function LiveViewers({
   eventId,
   initial,
@@ -20,6 +26,10 @@ export function LiveViewers({
   const [counts, setCounts] = useState(initial);
 
   useEffect(() => {
+    // Fora do ar não há ninguém a ver nem sessões a serem cortadas: não vale a
+    // pena bater ao servidor de 10 em 10 segundos.
+    if (!isLive) return;
+
     const interval = setInterval(async () => {
       try {
         const res = await fetch(`/admin/eventos/${eventId}/transmissao/live`, {
@@ -32,7 +42,7 @@ export function LiveViewers({
       }
     }, 10_000);
     return () => clearInterval(interval);
-  }, [eventId]);
+  }, [eventId, isLive]);
 
   return (
     <div className="grid grid-cols-2 gap-3.5">

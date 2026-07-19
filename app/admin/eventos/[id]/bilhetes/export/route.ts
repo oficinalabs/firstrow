@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
-import { isAdmin } from "@/lib/admin";
 import { formatDate, formatDateTime } from "@/lib/format";
-import { requireUser } from "@/server/auth-helper";
+import { canManageEvents, getCurrentUser } from "@/server/authz";
 import { getEvent } from "@/server/events";
 import { listTicketsByEvent, shortCode } from "@/server/tickets";
 
@@ -18,9 +17,12 @@ function csvField(value: string): string {
   return `"${value.replace(/"/g, '""')}"`;
 }
 
+// O CSV leva nomes e emails de quem comprou — é para quem gere a liga, não
+// para quem só está a operar a porta.
 export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
-  const user = await requireUser();
-  if (!user || !isAdmin(user.email)) {
+  const user = await getCurrentUser();
+  if (!user) return NextResponse.json({ error: "Sem sessão" }, { status: 401 });
+  if (!canManageEvents(user)) {
     return NextResponse.json({ error: "Sem acesso" }, { status: 403 });
   }
 

@@ -1,14 +1,13 @@
 import Link from "next/link";
-import { notFound, redirect } from "next/navigation";
+import { notFound } from "next/navigation";
 import { BuyersTable } from "@/components/tickets/buyers-table";
-import { StatCard } from "@/components/ui/stat-card";
 import { BackofficeShell } from "@/components/ui/backoffice-shell";
 import { buttonVariants } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
-import { isAdmin } from "@/lib/admin";
+import { StatCard } from "@/components/ui/stat-card";
 import { formatDate, formatEuro, formatNumber, formatTime } from "@/lib/format";
-import { requireUser } from "@/server/auth-helper";
+import { requireEventOperator } from "@/server/event-access";
 import { getEvent } from "@/server/events";
 import { getEventTicketStats, listTicketsByEvent, shortCode } from "@/server/tickets";
 
@@ -19,10 +18,10 @@ export default async function AdminEventoBilhetesPage({
 }: {
   params: Promise<{ id: string }>;
 }) {
-  const user = await requireUser();
-  if (!user || !isAdmin(user.email)) redirect("/");
-
   const { id } = await params;
+  // Quem opera a porta valida bilhetes, por isso também vê esta lista.
+  await requireEventOperator(`/admin/eventos/${id}/bilhetes`);
+
   const event = await getEvent(id);
   if (!event) notFound();
 

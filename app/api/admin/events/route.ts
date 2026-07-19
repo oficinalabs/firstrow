@@ -1,27 +1,46 @@
 import { NextResponse } from "next/server";
-import { isAdmin } from "@/lib/admin";
-import { requireUser } from "@/server/auth-helper";
+import { validateEventForm } from "@/lib/event-rules";
+import { canManageEvents, getCurrentUser } from "@/server/authz";
 import { createEvent } from "@/server/events";
 
+/*
+ * Criar evento por JSON.
+ *
+ * O backoffice usa a server action (app/admin/eventos/actions.ts); esta rota é
+ * a mesma operação para quem chame de fora, e passa pelas MESMAS regras
+ * (lib/event-rules.ts) e pela mesma guarda de duplicados (server/events.ts) —
+ * não há uma porta com validação mais fraca do que a outra.
+ *
+ * Corpo: { title, date: "2026-07-26", time: "21:00", price: "7,50" }.
+ * A hora é de Lisboa, como no formulário.
+ *
+ * A resposta devolve só o id: as credenciais RTMPS (a chave da stream incluída)
+ * vão-se buscar à página de transmissão, por quem tem papel para as ver.
+ */
 export async function POST(req: Request) {
-  const user = await requireUser();
-  if (!user || !isAdmin(user.email)) {
+  const user = await getCurrentUser();
+  if (!user) return NextResponse.json({ error: "Sem sessão" }, { status: 401 });
+  if (!canManageEvents(user)) {
     return NextResponse.json({ error: "Sem permissão" }, { status: 403 });
   }
 
-  const body = (await req.json()) as {
-    title?: string;
-    startsAt?: string;
-    priceCents?: number;
-  };
-  if (!body.title || !body.startsAt || typeof body.priceCents !== "number") {
-    return NextResponse.json({ error: "Dados inválidos" }, { status: 400 });
+  let body: unknown;
+  try {
+    body = await req.json();
+  } catch {
+    return NextResponse.json({ error: "Corpo inválido — esperava JSON." }, { status: 400 });
   }
 
-  const result = await createEvent({
-    title: body.title,
-    startsAt: new Date(body.startsAt),
-    priceCents: body.priceCents,
-  });
-  return NextResponse.json(result);
+  const checked = validateEventForm(body);
+  if (!checked.ok) {
+    return NextResponse.json({ error: "Dados inválidos", campos: checked.errors }, { status: 400 });
+  }
+
+  try {
+    const created = await createEvent(checked.draft);
+    return NextResponse.json({ id: created.id }, { status: created.reused ? 200 : 201 });
+  } catch (error) {
+    console.error("[api/admin/events] criar falhou:", error);
+    return NextResponse.json({ error: "Não deu para criar o evento." }, { status: 502 });
+  }
 }

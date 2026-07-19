@@ -8,6 +8,8 @@ import { LiveViewers } from "@/components/admin/live-viewers";
 import { PageHeader } from "@/components/admin/page-header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { formatEuro, formatNumber, formatTime } from "@/lib/format";
+import { getStreamCredentials } from "@/server/cloudflare-stream";
+import { requireEventOperator } from "@/server/event-access";
 import { getEvent } from "@/server/events";
 import {
   type BlockedSession,
@@ -15,8 +17,9 @@ import {
   getEventSales,
   listBlockedSessionsToday,
 } from "@/server/stats";
-import { getStreamCredentials } from "./stream-credentials";
 
+// Nunca em cache: a chave da stream vive nesta página e é por pedido, para
+// quem tem papel para a ver. Uma versão guardada era uma versão partilhada.
 export const dynamic = "force-dynamic";
 
 export const metadata: Metadata = { title: "Transmissão" };
@@ -29,6 +32,10 @@ const STATUS_HELP: Record<string, string> = {
 
 export default async function TransmissionPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
+  // Antes de ir buscar seja o que for: a chave da stream é a chave de casa da
+  // transmissão e só sai daqui para quem opera o evento.
+  await requireEventOperator(`/admin/eventos/${id}/transmissao`);
+
   const event = await getEvent(id);
   if (!event) notFound();
 
@@ -50,6 +57,8 @@ export default async function TransmissionPage({ params }: { params: Promise<{ i
 
       <div className="grid items-start gap-5 lg:grid-cols-[1fr_380px]">
         <div className="flex flex-col gap-3.5">
+          {/* A contagem de bloqueadas hoje é a do StatCard aqui em cima — a
+              tabela em baixo é o detalhe, não uma segunda contagem. */}
           <LiveViewers
             eventId={event.id}
             initial={{ viewers, blockedToday: blocked.total }}
@@ -57,11 +66,8 @@ export default async function TransmissionPage({ params }: { params: Promise<{ i
           />
 
           <Card>
-            <CardHeader className="flex-row items-baseline justify-between">
-              <CardTitle>Sessões bloqueadas · hoje</CardTitle>
-              <span className="font-mono text-2xs text-muted-foreground">
-                1 sessão por conta · a nova corta a antiga
-              </span>
+            <CardHeader>
+              <CardTitle>Contas com sessão cortada</CardTitle>
             </CardHeader>
             <CardContent>
               <DataTable<BlockedSession>
@@ -70,19 +76,13 @@ export default async function TransmissionPage({ params }: { params: Promise<{ i
                     header: "Conta",
                     cell: (s) => <span className="font-mono text-xs">{s.email}</span>,
                   },
-                  {
-                    header: "Motivo",
-                    cell: () => (
-                      <span className="text-muted-foreground">2ª sessão na mesma conta</span>
-                    ),
-                  },
                   { header: "Hora", numeric: true, cell: (s) => formatTime(s.revokedAt) },
                 ]}
                 rows={blocked.rows}
                 rowKey={(s) => s.id}
                 empty={
                   <p className="py-4 text-2sm text-muted-foreground">
-                    Nenhuma sessão bloqueada hoje.
+                    Nenhuma sessão cortada hoje.
                   </p>
                 }
               />
@@ -106,8 +106,9 @@ export default async function TransmissionPage({ params }: { params: Promise<{ i
                 </>
               ) : (
                 <p className="text-2sm leading-relaxed text-muted-foreground">
-                  Não deu para ir buscar as credenciais à Cloudflare. Confirma o
-                  CLOUDFLARE_ACCOUNT_ID e o token no .env e recarrega a página.
+                  {event.cfLiveInputId
+                    ? "Não deu para ir buscar as credenciais à Cloudflare. Confirma o CLOUDFLARE_ACCOUNT_ID e o token no .env e recarrega a página."
+                    : "Este evento ficou sem stream — a Cloudflare não respondeu quando ele foi criado. Apaga-o na lista de eventos e cria outra vez."}
                 </p>
               )}
             </CardContent>

@@ -27,7 +27,18 @@ import type { channels } from "@/db/schema";
  */
 export type Channel = Pick<
   typeof channels.$inferSelect,
-  "id" | "slug" | "name" | "tagline" | "accentColor" | "logoUrl" | "bannerUrl" | "initials"
+  | "id"
+  | "slug"
+  | "name"
+  | "tagline"
+  | "accentColor"
+  // A segunda cor viaja com a primeira, senão o co-branding derivava metade da
+  // marca: `BrandedChannel` (lib/colors.ts) lê as duas e é assim que o filete
+  // de topo sabe se tem um corte seco ou uma cor só.
+  | "accentColorSecondary"
+  | "logoUrl"
+  | "bannerUrl"
+  | "initials"
 >;
 
 /** Rota pública do canal — usar sempre isto em vez de escrever "/canal/…". */

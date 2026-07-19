@@ -1,25 +1,23 @@
-import { and, count, desc, eq, gte, inArray, type SQL, sql } from "drizzle-orm";
+import { and, count, desc, eq, gte, type SQL } from "drizzle-orm";
 import { db } from "@/db";
 import { entitlements, events, tickets } from "@/db/schema";
 import { createLiveInput } from "@/lib/cloudflare";
 import { DUPLICATE_WINDOW_MS, type EventDraft } from "@/lib/event-rules";
 import { newId } from "@/lib/ids";
-import type { ChannelScope } from "@/server/authz";
+import { type ChannelScope, inScope } from "@/server/authz";
 import { deleteLiveInput } from "@/server/cloudflare-stream";
 
 /**
- * Traduz um âmbito de canais para a condição SQL que TODAS as queries do
- * backoffice têm de levar. Um sítio só: se a regra mudar, muda aqui.
+ * Traduz um âmbito de canais para a condição SQL que TODAS as queries de
+ * EVENTOS do backoffice têm de levar.
  *
- * O caso da lista vazia é o que mais importa acertar. Alguém sem canal nenhum
- * tem de ver ZERO — e não "sem filtro", que era o comportamento antigo e a
- * fuga que esta frente veio fechar. Por isso o vazio devolve `false` explícito
- * em vez de `undefined`.
+ * A regra em si — sobretudo o caso da lista vazia, que tem de dar ZERO linhas e
+ * não "sem filtro" — vive em `inScope` (server/authz.ts), a par dos âmbitos que
+ * a produzem. Isto é só o atalho para a coluna desta tabela, que é a que quase
+ * toda a gente daqui quer.
  */
 export function inChannelScope(scope: ChannelScope): SQL | undefined {
-  if (scope.all) return undefined;
-  if (scope.channelIds.length === 0) return sql`false`;
-  return inArray(events.channelId, [...scope.channelIds]);
+  return inScope(events.channelId, scope);
 }
 
 export type CreatedEvent = {

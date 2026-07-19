@@ -1,10 +1,8 @@
 import Link from "next/link";
-import { redirect } from "next/navigation";
 import { Scanner } from "@/components/tickets/scanner";
 import { EmptyState } from "@/components/ui/empty-state";
-import { isAdmin } from "@/lib/admin";
 import { formatDateTime } from "@/lib/format";
-import { requireUser } from "@/server/auth-helper";
+import { requireEventOperator } from "@/server/event-access";
 import { getEvent, listEvents } from "@/server/events";
 import { getEventTicketStats } from "@/server/tickets";
 
@@ -17,8 +15,10 @@ export default async function AdminScannerPage({
 }: {
   searchParams: Promise<{ evento?: string }>;
 }) {
-  const user = await requireUser();
-  if (!user || !isAdmin(user.email)) redirect("/");
+  // Validar bilhetes à porta é operar o evento — o mesmo papel que a página de
+  // bilhetes exige. (O layout do /admin ainda corta em `canManageEvents`, por
+  // isso um `league_staff` não chega aqui — ver docs/SEGURANCA-APP.md.)
+  await requireEventOperator("/admin/scanner");
 
   const { evento } = await searchParams;
 

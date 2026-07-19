@@ -316,13 +316,24 @@ export function parseWebhook2(
  *
  * É isto que torna o 1.0 utilizável: uma notificação forjada não sobrevive a
  * uma pergunta feita ao servidor da Eupago com a nossa chave. Falha fechada em
- * produção — se não conseguimos confirmar, não emitimos nada. Em sandbox
- * deixa passar com aviso, senão era impossível testar antes de o suporte da
- * Eupago responder.
+ * produção — se não conseguimos confirmar, não emitimos nada. Em sandbox deixa
+ * passar com aviso, senão era impossível testar antes de a Eupago responder.
  *
- * ATENÇÃO: a forma exata do pedido/resposta deste endpoint tem de ser validada
- * no primeiro pagamento real em sandbox — está documentada como "Reference
- * Information" mas sem exemplo de corpo. Se falhar, os logs dizem-no.
+ * TRÊS ARMADILHAS, todas medidas contra o sandbox e nenhuma óbvia a ler a doc:
+ *
+ *  1. **Outro host de API.** Não é `/api/v1*` como o resto da integração; é o
+ *     REST antigo em `/clientes/rest_api/multibanco/info`. O caminho por
+ *     analogia dava 404.
+ *  2. **Outra autenticação.** A chave vai no CORPO (`chave`), não no header
+ *     `Authorization` que todos os outros endpoints usam.
+ *  3. **`estado` não é o estado do pagamento** — é um código numérico onde 0
+ *     significa "pedido correu bem". O estado do pagamento está em
+ *     `estado_referencia`, e o valor é **"paga"**. Repara que não é "pago":
+ *     procurar por "pago" nunca corresponderia, e um `includes` desatento
+ *     dava sempre não-pago sem ninguém perceber porquê.
+ *
+ * O endpoint chama-se "multibanco" mas responde por referências MB WAY — foi
+ * verificado com uma referência MB WAY real.
  */
 export async function confirmPaid(reference: string): Promise<boolean> {
   const isProduction = process.env.EUPAGO_ENV === "production";
@@ -332,13 +343,10 @@ export async function confirmPaid(reference: string): Promise<boolean> {
   }
 
   try {
-    const res = await fetch(`${baseUrl()}/api/v1/reference-information`, {
+    const res = await fetch(`${baseUrl()}/clientes/rest_api/multibanco/info`, {
       method: "POST",
-      headers: {
-        Authorization: `ApiKey ${requireEnv("EUPAGO_API_KEY")}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ reference }),
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ chave: requireEnv("EUPAGO_API_KEY"), referencia: reference }),
     });
 
     if (!res.ok) {
@@ -346,9 +354,18 @@ export async function confirmPaid(reference: string): Promise<boolean> {
       return !isProduction;
     }
 
-    const data = (await res.json()) as { transactionStatus?: string; status?: string };
-    const estado = (data.transactionStatus ?? data.status ?? "").toLowerCase();
-    if (estado.includes("paid") || estado.includes("pago")) return true;
+    const data = (await res.json()) as {
+      estado_referencia?: string;
+      pagamentos?: { estado?: string }[];
+      sucesso?: boolean;
+    };
+
+    // A lista de pagamentos é a corroboração: uma referência paga traz lá a
+    // linha do pagamento. Aceitar qualquer uma das duas evita ficar refém de
+    // uma renomeação de campo do lado deles.
+    const estado = (data.estado_referencia ?? "").toLowerCase();
+    const temPagamento = (data.pagamentos ?? []).some((p) => p.estado?.toLowerCase() === "paga");
+    if (estado === "paga" || temPagamento) return true;
 
     console.warn(`[eupago] referência ${reference} não está paga (estado: "${estado}").`);
     return false;

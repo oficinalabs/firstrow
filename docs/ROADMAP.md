@@ -41,3 +41,23 @@ Vender os bilhetes de entrada dos eventos **presenciais** na FirstRow, com **tax
 - **Rail:** mesma integração de pagamento (Eupago MB WAY) já feita para o streaming.
 - **Porquê:** as ligas já vendem bilhetes por MB WAY hoje → porta para entrar nas operações delas para além do streaming; a taxa baixa é o argumento vs. bilhética genérica. Reforça o "somos a casa da liga" (streaming + bilhetes + dados dos fãs).
 - **Esboço técnico:** tabela `tickets` (evento, comprador, `qr_token` único, estado emitido/usado, `usado_em`); geração de QR; scan de validação; export para a liga. Pode cruzar com o acesso à VOD (quem foi ao vivo também vê a gravação).
+
+### Cores por canal (personalização da página do canal)
+Na criação do canal, escolher **1 ou 2 cores** da marca e a página `/canal/[slug]` passa a usá-las.
+- **Porque é barato:** o design system já vive todo em variáveis CSS e a Frente C já isolou o
+  co-branding numa var `--tenant` aplicada só onde faz sentido (canal, evento, arquivo — e **não**
+  em `/bilhetes` e `/conta`, que são transversais). Personalizar é alimentar essa var a partir da
+  config do canal em vez de a ter fixa.
+- **Cuidados:** garantir **contraste AA** com a cor escolhida (validar no momento da escolha e não
+  aceitar cores que rebentem a legibilidade); limitar a cor a acentos (não repintar superfícies
+  inteiras, senão perde-se a identidade FirstRow); manter o AO VIVO vermelho intocável — é sinal de
+  estado, não de marca.
+- **Quando:** encaixa naturalmente com a criação de canais em BD (Fase 2, multi-tenant), porque é aí
+  que deixa de ser config e passa a ser dado do canal.
+
+### Gates por página no backoffice (para o `league_staff` poder usar o scanner)
+Hoje o layout do `/admin` corta em `canManageEvents`, logo um `league_staff` — que existe
+precisamente para validar bilhetes à porta — não chega ao scanner. Para aliviar o layout para
+`canOperateEvents` é preciso **primeiro** pôr gate próprio nas páginas de dinheiro/dados
+(`/admin`, `/admin/ganhos`, `/admin/subscritores`, `/admin/plataforma`), senão o staff passava a
+ver a contabilidade. Ordem obrigatória: gates nas páginas → só depois relaxar o layout.

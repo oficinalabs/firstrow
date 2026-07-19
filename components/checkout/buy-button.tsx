@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
+import { ConsentGate } from "@/components/checkout/consent-gate";
 import { useNow } from "@/components/eventos/use-now";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -9,6 +10,7 @@ import { Field, FieldHint, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { PulseDot } from "@/components/ui/live-badge";
 import { formatDateTime, formatEuro, formatPhone } from "@/lib/format";
+import type { CopiaCliente } from "@/lib/legal/consentimentos";
 import { cn } from "@/lib/utils";
 
 // MB WAY cancela pedidos ao fim de 5 minutos (ver docs/PAGAMENTOS.md).
@@ -23,6 +25,12 @@ type Props = {
   startsAt: string;
   priceCents: number;
   channelName: string;
+  /*
+   * O texto de consentimento a mostrar antes do botão — vem do servidor já com
+   * o `kind` certo (ppv para live, vod para arquivo) e a versão em vigor. O
+   * cliente devolve a versão, não o texto: a prova reconstrói-se no servidor.
+   */
+  consent: CopiaCliente;
 };
 
 function mmss(ms: number): string {
@@ -42,12 +50,29 @@ function calendarUrl(title: string, startsAt: string): string {
   return `https://calendar.google.com/calendar/render?${params.toString()}`;
 }
 
-export function BuyButton({ eventId, eventTitle, startsAt, priceCents, channelName }: Props) {
+export function BuyButton({
+  eventId,
+  eventTitle,
+  startsAt,
+  priceCents,
+  channelName,
+  consent,
+}: Props) {
   const [phone, setPhone] = useState("");
   const [status, setStatus] = useState<Status>("idle");
   const [message, setMessage] = useState("");
   const [pendingUntil, setPendingUntil] = useState<number | null>(null);
+  // Renúncia ao direito de resolução. Arranca a false — a checkbox nunca vem
+  // pré-marcada (regra da secção 6).
+  const [consentAceite, setConsentAceite] = useState(false);
+  const [consentErro, setConsentErro] = useState("");
   const now = useNow(1000);
+
+  // Arquivo (vod) vs. live: muda só o rótulo, não o fluxo.
+  const isVod = consent.kind === "vod";
+  const produto = isVod ? "o vídeo" : "a live";
+  // O botão só desbloqueia com a renúncia marcada quando o caso a exige.
+  const consentFalta = consent.checkbox !== null && !consentAceite;
 
   // Polling do entitlement enquanto o pedido está pendente (o webhook ativa-o).
   useEffect(() => {
@@ -65,14 +90,32 @@ export function BuyButton({ eventId, eventTitle, startsAt, priceCents, channelNa
     if (status === "pending" && pendingUntil && now >= pendingUntil) setStatus("expired");
   }, [status, pendingUntil, now]);
 
+  function aceitarConsentimento(v: boolean) {
+    setConsentAceite(v);
+    // Erro silencia-se assim que a pessoa mexe no campo — não fica a martelar.
+    if (v) setConsentErro("");
+  }
+
   async function pay() {
+    // Guarda do cliente, antes de tocar no servidor: sem a renúncia marcada não
+    // avançamos, e o estado fica em idle para a checkbox continuar à vista. A
+    // recusa a sério é no servidor — isto só poupa uma ida e volta.
+    if (consentFalta) {
+      setConsentErro("Marca a confirmação para continuares.");
+      return;
+    }
+
     setStatus("submitting");
     setMessage("");
     try {
       const res = await fetch(`/api/checkout/${eventId}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ phone }),
+        body: JSON.stringify({
+          phone,
+          consentVersao: consent.versao,
+          consentAceite,
+        }),
       });
       if (!res.ok) {
         const body = (await res.json().catch(() => ({}))) as { error?: string };
@@ -111,7 +154,7 @@ export function BuyButton({ eventId, eventTitle, startsAt, priceCents, channelNa
         </div>
         <h1 className="font-display text-2xl font-extrabold">Estás dentro.</h1>
         <p className="max-w-72 text-2sm leading-relaxed text-foreground-secondary">
-          O acesso à live{" "}
+          O acesso a {produto}{" "}
           <strong className="font-semibold text-foreground">
             {eventTitle} — {formatDateTime(startsAt)}
           </strong>{" "}
@@ -121,14 +164,16 @@ export function BuyButton({ eventId, eventTitle, startsAt, priceCents, channelNa
           <Link href={`/eventos/${eventId}`} className={buttonVariants({ size: "lg" })}>
             Ir para o evento
           </Link>
-          <a
-            href={calendarUrl(eventTitle, startsAt)}
-            target="_blank"
-            rel="noopener noreferrer"
-            className={buttonVariants({ variant: "secondary" })}
-          >
-            Adicionar ao calendário
-          </a>
+          {!isVod ? (
+            <a
+              href={calendarUrl(eventTitle, startsAt)}
+              target="_blank"
+              rel="noopener noreferrer"
+              className={buttonVariants({ variant: "secondary" })}
+            >
+              Adicionar ao calendário
+            </a>
+          ) : null}
         </div>
         <p className="mt-2 flex w-full items-center justify-center border-t border-accent pt-3 font-mono text-2xs text-muted-foreground">
           FIRSTROW · lugar garantido na primeira fila
@@ -187,6 +232,7 @@ export function BuyButton({ eventId, eventTitle, startsAt, priceCents, channelNa
             : "O MB WAY cancela pedidos ao fim de 5 minutos. Não foi cobrado nada — podes tentar outra vez quando quiseres."}
         </p>
         <div className="mt-2 flex w-full flex-col gap-2.5">
+          {/* A renúncia já foi dada para chegar aqui — só se repete o pedido. */}
           <Button size="lg" onClick={pay} disabled={phone.length < 9}>
             Tentar outra vez
           </Button>
@@ -211,7 +257,9 @@ export function BuyButton({ eventId, eventTitle, startsAt, priceCents, channelNa
       <Card className="p-4">
         <div className="flex justify-between gap-3 border-b pb-2.5">
           <div className="min-w-0">
-            <div className="text-2sm font-semibold">Acesso à live</div>
+            <div className="text-2sm font-semibold">
+              {isVod ? "Acesso ao vídeo" : "Acesso à live"}
+            </div>
             <div className="mt-0.5 text-xs text-muted-foreground">
               {eventTitle} · {formatDateTime(startsAt)} · {channelName}
             </div>
@@ -243,13 +291,44 @@ export function BuyButton({ eventId, eventTitle, startsAt, priceCents, channelNa
         </div>
       </Field>
 
-      <Button size="lg" onClick={pay} disabled={status === "submitting" || phone.length < 9}>
+      {/* Consentimento — antes do botão, como a lei exige. Para a live é
+          informativo + renúncia; para o arquivo é só a renúncia aos 14 dias. */}
+      <ConsentGate
+        copy={consent}
+        accepted={consentAceite}
+        onAcceptedChange={aceitarConsentimento}
+        error={consentErro}
+      />
+
+      <Button
+        size="lg"
+        onClick={pay}
+        disabled={status === "submitting" || phone.length < 9 || consentFalta}
+      >
         {status === "submitting" ? "A enviar…" : `Pagar ${formatEuro(priceCents)}`}
       </Button>
+
       <FieldHint>
         Vais receber um pedido na app MB WAY. Tens 5 minutos para confirmar — não é cobrado nada
         antes disso.
       </FieldHint>
+
+      {/* Aceite genérico dos termos, por texto e distinto da renúncia acima —
+          são consentimentos diferentes e não se misturam num só sítio. */}
+      <p className="text-xs leading-relaxed text-muted-foreground">
+        Ao pagar, aceitas os{" "}
+        <Link href="/legal/termos" className="underline underline-offset-2 hover:text-foreground">
+          Termos
+        </Link>{" "}
+        e a{" "}
+        <Link
+          href="/legal/privacidade"
+          className="underline underline-offset-2 hover:text-foreground"
+        >
+          Política de Privacidade
+        </Link>
+        .
+      </p>
     </div>
   );
 }

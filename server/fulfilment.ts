@@ -1,6 +1,7 @@
 import "server-only";
 import { sendReceiptEmail } from "@/lib/email";
 import { confirmPaid } from "@/lib/eupago";
+import { textoConsentidoNaCompra } from "@/server/consents";
 import { activateEntitlement } from "@/server/entitlements";
 import { issueTicket, isTicketId } from "@/server/tickets";
 
@@ -71,11 +72,18 @@ export async function settlePurchase(identifier: string, reference: string): Pro
  * cima. A ORDEM e o CONTEÚDO do que se faz aqui é o que não pode divergir.
  */
 export async function grantAndNotify(identifier: string, reference: string): Promise<SettleResult> {
+  const kind = purchaseKindOf(identifier);
   const receipt =
-    purchaseKindOf(identifier) === "ticket"
+    kind === "ticket"
       ? await issueTicket(identifier, reference)
       : await activateEntitlement(identifier, reference);
   if (!receipt) return "sem-efeito";
+
+  // O texto exato que a pessoa aceitou, para o recibo o reproduzir (secção 6 de
+  // docs/legal/CONTEUDO-PAGINAS.md). Vive AQUI, no caminho único, e não no
+  // webhook: senão um recibo enviado pela reconciliação saía sem ele. Se não
+  // houver registo de consentimento, o recibo sai na mesma, só sem esta secção.
+  const textoConsentido = (await textoConsentidoNaCompra(kind, identifier)) ?? undefined;
 
   const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? "";
   await sendReceiptEmail({
@@ -89,6 +97,7 @@ export async function grantAndNotify(identifier: string, reference: string): Pro
     numeroRecibo: reference || undefined,
     emailConta: receipt.emailConta,
     urlEvento: `${appUrl}/eventos/${receipt.eventId}`,
+    textoConsentido,
   });
 
   return "ativada";

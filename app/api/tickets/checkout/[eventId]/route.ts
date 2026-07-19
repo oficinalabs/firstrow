@@ -1,14 +1,25 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { createMbwayCharge } from "@/lib/eupago";
+import { validarConsentimento } from "@/lib/legal/consentimentos";
 import { limitByIp } from "@/lib/rate-limit";
 import { buildSplit } from "@/lib/split";
 import { requireApi } from "@/server/api-guard";
+import { guardarConsentimento } from "@/server/consents";
 import { getEvent } from "@/server/events";
 import { hasLiveCharge, recordChargeReference } from "@/server/purchases";
 import { createPendingTicket } from "@/server/tickets";
 
-const bodySchema = z.object({ phone: z.string().trim().min(9) });
+/*
+ * O bilhete leva a versão do texto de consentimento que o cliente viu. Não há
+ * checkbox (é a opção A, informativa) — mas guarda-se na mesma o texto exato
+ * mostrado, para a prova. `consentAceite` fica de fora: não existe aceitação a
+ * validar num consentimento sem checkbox.
+ */
+const bodySchema = z.object({
+  phone: z.string().trim().min(9),
+  consentVersao: z.string().min(1),
+});
 
 // Compra de bilhete físico por MB WAY — espelha o checkout de acesso à live,
 // mas o `identifier` na Eupago é o id do bilhete ("tkt_…"), que o webhook emite.
@@ -29,6 +40,19 @@ export async function POST(req: Request, { params }: { params: Promise<{ eventId
   if (!parsed.success) {
     return NextResponse.json({ error: "Confirma o telemóvel — faltam dígitos." }, { status: 400 });
   }
+
+  /*
+   * Consentimento do bilhete: sempre `bilhete` (evento presencial com data
+   * marcada). Valida-se a versão — se o cliente não a mandou, ou é de antes de
+   * um deploy que mudou a redação, recusa-se aqui e não se cobra. Não há
+   * checkbox a exigir, mas o texto exato mostrado fica guardado.
+   */
+  const consent = validarConsentimento({
+    kind: "bilhete",
+    versao: parsed.data.consentVersao,
+    aceite: undefined,
+  });
+  if (!consent.ok) return NextResponse.json({ error: consent.erro }, { status: 400 });
 
   const result = await createPendingTicket(gate.user.id, eventId);
   if (!result.ok) {
@@ -51,6 +75,20 @@ export async function POST(req: Request, { params }: { params: Promise<{ eventId
       { status: 409 },
     );
   }
+
+  // A prova antes da cobrança — o erro passa de propósito (ver a rota de PPV).
+  await guardarConsentimento({
+    compra: { tipo: "ticket", id: result.ticket.id },
+    userId: gate.user.id,
+    userEmail: gate.user.email,
+    eventId,
+    eventTitle: event.title,
+    kind: "bilhete",
+    texto: consent.texto,
+    versao: consent.versao,
+    checkboxAceite: consent.checkboxAceite,
+    req,
+  });
 
   const charge = await createMbwayCharge({
     amountEur,

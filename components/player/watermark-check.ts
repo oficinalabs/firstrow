@@ -16,6 +16,23 @@
 
 export type Caixa = { left: number; top: number; width: number; height: number };
 
+/**
+ * O que o ecrã inteiro está a fazer à marca, num instante.
+ *
+ *  • `nenhum`      — não há elemento em ecrã inteiro. O caso normal.
+ *  • `com-a-marca` — o elemento em ecrã inteiro CONTÉM a marca. É o que o nosso
+ *                    botão faz: pede ecrã inteiro à moldura, e a marca, que
+ *                    vive lá dentro, vai com ela. Verifica-se como sempre.
+ *  • `sem-a-marca` — há um elemento em ecrã inteiro e a marca ficou de fora.
+ *                    O elemento em ecrã inteiro é pintado na *top layer*, por
+ *                    cima de tudo o resto: a marca continua a ter caixa,
+ *                    opacidade e texto certos — só que ninguém a vê.
+ *
+ * A distinção importa porque `sem-a-marca` é o único estado em que TODAS as
+ * outras medições mentem. Medir mais fundo não ajuda: a resposta já se sabe.
+ */
+export type EstadoDoEcraInteiro = "nenhum" | "com-a-marca" | "sem-a-marca";
+
 /** O que o DOM disse sobre a marca, num instante. */
 export type EstadoDaMarca = {
   /** O nó ainda está ligado ao documento? */
@@ -30,6 +47,8 @@ export type EstadoDaMarca = {
   moldura: Caixa;
   /** Nome do elemento desenhado por cima da marca, se houver algum. */
   tapadaPor: string | null;
+  /** O ecrã inteiro leva a marca com ele, ou deixa-a para trás? */
+  ecraInteiro: EstadoDoEcraInteiro;
 };
 
 /** Abaixo disto a marca está a esconder-se — o CSS põe-na a 0.30. */
@@ -74,6 +93,38 @@ export function molduraUtil(moldura: Caixa): boolean {
  */
 export function porqueFalha(estado: EstadoDaMarca, label: string): string | null {
   if (!estado.ligada) return "removida";
+
+  /*
+   * ECRÃ INTEIRO SEM A MARCA — a decisão difícil deste ficheiro.
+   *
+   * Vem cedo porque, neste estado, todos os testes abaixo dão verde a mentir: o
+   * elemento em ecrã inteiro é pintado na *top layer* e a marca continua com a
+   * caixa, a opacidade e o texto de sempre, apenas invisível. Medir mais fundo
+   * é medir uma marca que ninguém está a ver.
+   *
+   * PORQUÊ CORTAR, e não deixar passar. Depois de o player deixar de dar
+   * `allowfullscreen` ao iframe, mediu-se que já não existe caminho legítimo
+   * para aqui em nenhum motor de secretária ou Android:
+   *   — o nosso botão põe a MOLDURA em ecrã inteiro, e a marca vai lá dentro;
+   *   — o botão de ecrã inteiro do player da Cloudflare deixa de ser desenhado
+   *     (o próprio player o esconde quando a política não lho permite);
+   *   — `iframe.requestFullscreen()` a partir da página passa a ser recusado
+   *     pelo browser ("Permissions check failed");
+   *   — mais nada na aplicação chama a API de ecrã inteiro.
+   * Sobra a consola do inspetor. Ou seja: chegar aqui é sinal de intenção, e a
+   * regra das duas falhas seguidas continua a proteger de um engano isolado.
+   *
+   * O QUE ISTO **NÃO** É: o ecrã inteiro do BROWSER (F11, ou o botão verde do
+   * macOS) não põe `fullscreenElement` nenhum — a página só fica maior e a
+   * marca continua desenhada. Esse caso nunca passa por aqui, e é bom que não
+   * passe: é comuníssimo e não é ataque nenhum.
+   *
+   * O QUE ISTO **NÃO COBRE**: o iPhone. Lá o vídeo vai para o leitor nativo do
+   * sistema, que vive fora do DOM e não acende `fullscreenElement` nenhum na
+   * nossa página — este teste nem chega a disparar. Não é uma omissão: é o que
+   * não se consegue ver deste lado. Ver a nota em `watermark.tsx`.
+   */
+  if (estado.ecraInteiro === "sem-a-marca") return "fora-do-ecra-inteiro";
 
   // O texto é metade do valor da marca: sem o email, identifica quem?
   if (!estado.texto.includes(label)) return "texto-trocado";

@@ -41,6 +41,7 @@ function marcaNormal(por: Partial<EstadoDaMarca> = {}): EstadoDaMarca {
     caixa: { left: 120, top: 80, width: 240, height: 20 },
     moldura: MOLDURA,
     tapadaPor: null,
+    ecraInteiro: "nenhum",
     ...por,
   };
 }
@@ -137,6 +138,64 @@ describe("os limiares, no ponto exato onde viram", () => {
       marcaNormal({ caixa: { left: 100, top: 100, width: area / 10, height: 10 } });
     expect(porqueFalha(comArea(AREA_MINIMA), LABEL)).toBeNull();
     expect(porqueFalha(comArea(AREA_MINIMA - 10), LABEL)).toBe("tamanho");
+  });
+});
+
+describe("o ecrã inteiro", () => {
+  /*
+   * O buraco que isto veio fechar: em ecrã inteiro o sistema desenha SÓ o
+   * elemento escolhido. Se o escolhido for o iframe, a marca fica de fora e o
+   * espectador tem uma cópia limpa a troco de um clique. Se for a moldura — que
+   * contém o iframe E a marca —, a marca continua lá.
+   *
+   * O estado `sem-a-marca` é o único em que todas as outras medições dão verde
+   * a mentir: a marca conserva caixa, opacidade e texto, e mesmo assim ninguém
+   * a vê. Por isso é testado com uma marca IMPECÁVEL em tudo o resto.
+   */
+  it("com a marca lá dentro (o nosso botão): não é adulteração", () => {
+    expect(porqueFalha(marcaNormal({ ecraInteiro: "com-a-marca" }), LABEL)).toBeNull();
+  });
+
+  it("sem a marca (o iframe sozinho): apanha, mesmo com tudo o resto perfeito", () => {
+    const impecavel = marcaNormal({
+      ecraInteiro: "sem-a-marca",
+      opacidade: 0.3,
+      display: "inline-flex",
+      visibility: "visible",
+      tapadaPor: null,
+    });
+    expect(porqueFalha(impecavel, LABEL)).toBe("fora-do-ecra-inteiro");
+  });
+
+  it("sem ecrã inteiro nenhum: continua a decidir como sempre", () => {
+    // O ecrã inteiro do BROWSER (F11) não acende `fullscreenElement` nenhum e
+    // não muda nada — a página só fica maior. Tem de continuar a passar.
+    expect(porqueFalha(marcaNormal({ ecraInteiro: "nenhum" }), LABEL)).toBeNull();
+    expect(porqueFalha(marcaNormal({ ecraInteiro: "nenhum", opacidade: 0 }), LABEL)).toBe(
+      "opacidade",
+    );
+  });
+
+  it("em ecrã inteiro com a marca, os outros ataques continuam a ser apanhados", () => {
+    // A razão de ser desta mudança: dantes o vigia suspendia-se em ecrã
+    // inteiro, e apagar a marca lá dentro não tinha consequência nenhuma.
+    const casos: [Partial<EstadoDaMarca>, string][] = [
+      [{ ligada: false }, "removida"],
+      [{ opacidade: 0 }, "opacidade"],
+      [{ display: "none" }, "display-none"],
+      [{ tapadaPor: "div" }, "tapada:div"],
+      [{ texto: "outro@exemplo.pt" }, "texto-trocado"],
+      [{ caixa: { left: -9999, top: 80, width: 240, height: 20 } }, "fora-do-enquadramento"],
+    ];
+    for (const [mudanca, esperado] of casos) {
+      const estado = marcaNormal({ ecraInteiro: "com-a-marca", ...mudanca });
+      expect(porqueFalha(estado, LABEL), esperado).toBe(esperado);
+    }
+  });
+
+  it("a marca removida ganha ao ecrã inteiro: o motivo mais preciso é que conta", () => {
+    const estado = marcaNormal({ ligada: false, ecraInteiro: "sem-a-marca" });
+    expect(porqueFalha(estado, LABEL)).toBe("removida");
   });
 });
 

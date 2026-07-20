@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { FullscreenButton } from "@/components/player/fullscreen-button";
 import { Watermark } from "@/components/player/watermark";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { LiveBadge } from "@/components/ui/live-badge";
@@ -50,6 +51,8 @@ export function WatchPlayer({
 }) {
   const [state, setState] = useState<State>({ kind: "loading" });
   const startingRef = useRef(false);
+  // A moldura que vai a ecrã inteiro — leva o iframe e a marca com ela.
+  const frameRef = useRef<HTMLDivElement>(null);
 
   const start = useCallback(async () => {
     if (startingRef.current) return;
@@ -141,24 +144,73 @@ export function WatchPlayer({
   }
 
   return (
-    <Frame>
+    <Frame ref={frameRef}>
       <iframe
         title="Transmissão"
+        /*
+         * SEM `allowFullScreen`, E ISSO É A DEFESA — não um esquecimento.
+         *
+         * Com ele, o elemento que ia a ecrã inteiro era o IFRAME, e o sistema
+         * desenha só o iframe: a marca de água, que vive cá fora, desaparecia
+         * do ecrã sem ninguém lhe tocar. O ecrã inteiro passou a ser pedido à
+         * MOLDURA por um botão nosso (ver `fullscreen-button.tsx`), e a marca
+         * vai lá dentro.
+         *
+         * Efeito lateral medido, e é o melhor desta abordagem: o player da
+         * Cloudflare **esconde sozinho** o botão de ecrã inteiro dele quando a
+         * política não lho permite. Não fica um botão morto na barra.
+         *
+         * `picture-in-picture 'none'` é o mesmo buraco por outra porta: em PiP
+         * o vídeo salta para uma janela do sistema, fora do nosso DOM, e a
+         * marca também não vai.
+         *
+         * Tem de ser NEGADO por escrito. Ao contrário do ecrã inteiro — cuja
+         * lista por omissão é `self`, e por isso basta calar —, o PiP vem
+         * permitido a todos por omissão. Mediu-se: **omitir não chega**, o
+         * vídeo entra em PiP na mesma; só `'none'` o fecha.
+         *
+         * O que foi medido, motor a motor, porque não é igual nos dois:
+         *   Chromium — `pictureInPictureEnabled` fica `false`, o pedido é
+         *              recusado (SecurityError) e a Cloudflare deixa de
+         *              desenhar o botão de PiP na barra (visto em captura).
+         *   WebKit   — `pictureInPictureEnabled` continua a dizer `true` (o
+         *              WebKit não liga essa bandeira à política), mas o pedido
+         *              é recusado na mesma (NotAllowedError).
+         *
+         * NÃO VERIFICADO: o Safari a sério tem uma API própria
+         * (`webkitSetPresentationMode`) que a Permissions Policy não governa.
+         * No WebKit do Playwright ela não chegou a entrar em PiP, mas essa
+         * build pode simplesmente não ter PiP — não serve de prova sobre o
+         * Safari de verdade. Quem lá for a seguir, meça num Mac com Safari.
+         */
         src={state.iframeUrl}
-        allow="accelerometer; gyroscope; autoplay; encrypted-media; picture-in-picture;"
-        allowFullScreen
+        allow="accelerometer; gyroscope; autoplay; encrypted-media; picture-in-picture 'none';"
         className="absolute inset-0 size-full border-0"
       />
       {mode === "live" && <LiveBadge className="absolute left-4 top-4 z-10" />}
       <Watermark label={watermark} onTampered={onTampered} />
+      <FullscreenButton alvo={frameRef} />
     </Frame>
   );
 }
 
-// Moldura 16:9 do player — vive sempre em dark (o vídeo pede-o).
-function Frame({ children }: { children: React.ReactNode }) {
+/*
+ * Moldura 16:9 do player — vive sempre em dark (o vídeo pede-o).
+ *
+ * É ESTE o elemento que vai a ecrã inteiro, e é por isso que ele leva `ref`: o
+ * iframe e a marca são ambos filhos dele, por isso o sistema desenha-os aos
+ * dois. Em ecrã inteiro o `aspect-video` deixa de mandar (o browser dá 100% do
+ * ecrã ao elemento) e é o player da Cloudflare, lá dentro, que trata das
+ * barras pretas do vídeo — como faria de qualquer maneira.
+ *
+ * Sem variante `fullscreen:` do Tailwind para arredondar os cantos a zero: essa
+ * variante não existe nesta versão (procurou-se), e uma classe que não existe
+ * compila para nada sem avisar. Em ecrã inteiro os 6px de canto ficam pretos
+ * sobre preto, o que não se vê — não vale um seletor à mão.
+ */
+function Frame({ children, ref }: { children: React.ReactNode; ref?: React.Ref<HTMLDivElement> }) {
   return (
-    <div className="relative aspect-video w-full overflow-hidden rounded-sm bg-black">
+    <div ref={ref} className="relative aspect-video w-full overflow-hidden rounded-sm bg-black">
       {children}
     </div>
   );

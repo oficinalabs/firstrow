@@ -2,7 +2,12 @@
 
 import Image from "next/image";
 import { useEffect, useRef, useState } from "react";
-import { type Caixa, molduraUtil, porqueFalha } from "@/components/player/watermark-check";
+import {
+  type Caixa,
+  type EstadoDoEcraInteiro,
+  molduraUtil,
+  porqueFalha,
+} from "@/components/player/watermark-check";
 
 /*
  * ============================================================================
@@ -33,13 +38,17 @@ import { type Caixa, molduraUtil, porqueFalha } from "@/components/player/waterm
  *    Quem lhe puser um breakpoint, ou bloquear o pedido de aviso, ou correr a
  *    página com o JS desligado (fica sem player, mas ainda assim), passa. O
  *    alvo é a remoção casual pelo inspetor — que é 99% de quem tenta.
- *  • Ecrã inteiro. Quando o player da Cloudflare entra em ecrã inteiro, o
- *    elemento em ecrã inteiro é o iframe, e nada que esteja FORA dele é
- *    desenhado por cima — a marca desaparece sem ninguém lhe tocar. Não é
- *    contornável a partir do documento de fora, por isso o vigia suspende-se
- *    em ecrã inteiro (senão cortava a reprodução de quem só carregou no botão
- *    de sempre). No telemóvel é pior: o iOS entrega o vídeo ao leitor nativo,
- *    fora do DOM. **É o maior buraco desta abordagem e continua aberto.**
+ *  • Ecrã inteiro NO iPHONE — e só aí. Em secretária (Chrome, Firefox, Safari)
+ *    e em Android isto passou a estar coberto: o ecrã inteiro é pedido à
+ *    MOLDURA e não ao iframe, por isso a marca vai lá dentro e continua a ser
+ *    desenhada por cima do vídeo (medido nos três motores, com captura). O
+ *    vigia já não se suspende em ecrã inteiro — pelo contrário, passou a saber
+ *    distinguir "o ecrã inteiro levou a marca" de "deixou-a de fora".
+ *    No iPhone não: lá não existe ecrã inteiro por elemento, e o vídeo pode
+ *    entregar-se ao leitor NATIVO do sistema por uma API que vive dentro do
+ *    iframe da Cloudflare. Esse leitor não é DOM nenhum — a marca não o
+ *    acompanha e nós nem conseguimos VER que aconteceu. **Continua aberto no
+ *    iPhone, e não há como o fechar deste lado.** Ver `fullscreen-button.tsx`.
  *  • Filmar o ecrã com um telemóvel. Nunca foi o alvo — aí a marca não impede,
  *    identifica. É para isso que ela tem o email lá dentro.
  *
@@ -143,14 +152,25 @@ export function Watermark({ label, onTampered }: WatermarkProps) {
       if (avisado.current || aVerificar) return;
 
       /*
-       * Ecrã inteiro: o iframe passa a ser o elemento em ecrã inteiro e nada
-       * cá fora é desenhado. Não é adulteração, é o botão de sempre — e é
-       * também, assumidamente, a maior falha desta abordagem (ver o cabeçalho).
+       * ECRÃ INTEIRO: o vigia DEIXOU DE SE SUSPENDER AQUI.
+       *
+       * Suspendia-se porque o elemento em ecrã inteiro era o iframe e a marca
+       * ficava de fora — vigiar isso só servia para cortar o vídeo a quem
+       * carregou no botão de sempre. Agora o ecrã inteiro é pedido à MOLDURA
+       * (ver `fullscreen-button.tsx`), a marca vai lá dentro e é desenhada por
+       * cima do vídeo na mesma. Deixou de haver motivo para fechar os olhos —
+       * e é exatamente em ecrã inteiro que interessa estar de olhos abertos.
+       *
+       * O que se passa a distinguir é apenas se a marca vai, ou não vai, dentro
+       * do que está em ecrã inteiro. Quem decide o que fazer com isso é
+       * `porqueFalha`, onde está escrito o porquê.
        */
-      if (document.fullscreenElement) {
-        falhas.current = 0;
-        return;
-      }
+      const emEcraInteiro = document.fullscreenElement;
+      const ecraInteiro: EstadoDoEcraInteiro = !emEcraInteiro
+        ? "nenhum"
+        : emEcraInteiro.contains(marca)
+          ? "com-a-marca"
+          : "sem-a-marca";
 
       /*
        * A moldura sem tamanho: a página está a mudar de layout, o elemento pai
@@ -174,7 +194,7 @@ export function Watermark({ label, onTampered }: WatermarkProps) {
 
       aVerificar = true;
       try {
-        const motivo = examinar(marca, molduraRect, label);
+        const motivo = examinar(marca, molduraRect, label, ecraInteiro);
         if (motivo) falhou(motivo);
         else falhas.current = 0;
       } finally {
@@ -277,7 +297,12 @@ export function Watermark({ label, onTampered }: WatermarkProps) {
  * quem está desenhado por cima de quem; a decisão está em `watermark-check.ts`
  * porque é lá que vivem os limiares, e limiares querem-se testados.
  */
-function examinar(marca: HTMLElement, moldura: DOMRect, label: string): string | null {
+function examinar(
+  marca: HTMLElement,
+  moldura: DOMRect,
+  label: string,
+  ecraInteiro: EstadoDoEcraInteiro,
+): string | null {
   if (!marca.isConnected) return "removida";
 
   const estilo = getComputedStyle(marca);
@@ -295,6 +320,7 @@ function examinar(marca: HTMLElement, moldura: DOMRect, label: string): string |
       // Só se pergunta quem tapa depois de o resto passar: é o teste caro
       // (força recálculo de estilo) e o mais raro de disparar.
       tapadaPor: quemTapa(marca, rect),
+      ecraInteiro,
     },
     label,
   );

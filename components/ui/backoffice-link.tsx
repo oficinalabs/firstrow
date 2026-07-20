@@ -2,7 +2,7 @@ import "server-only";
 
 import { PanelsTopLeft } from "lucide-react";
 import Link from "next/link";
-import { canEnterBackoffice, getCurrentUser } from "@/server/authz";
+import { backofficeHomeFor, getCurrentUser } from "@/server/authz";
 
 /*
  * ============================================================================
@@ -33,21 +33,27 @@ import { canEnterBackoffice, getCurrentUser } from "@/server/authz";
  *    Postgres a irem para o browser. Por isso o shell recebe isto por prop, já
  *    resolvido, e as páginas de servidor é que o passam.
  *
- * A PERGUNTA É `canEnterBackoffice`, e não "tem alguma filiação": é a mesma
- * função que o `proxy.ts` usa para deixar entrar em `/admin/**`. O staff de um
- * canal NÃO passa nesse portão (ver a nota em `app/admin/layout.tsx`), por isso
- * mostrar-lhe o link era pô-lo a carregar num atalho que dá em `/sem-acesso`.
- * Quando o backoffice tiver gates página a página e o staff puder entrar, muda
- * `canEnterBackoffice` — e este link acompanha sem se lhe tocar.
+ * A PERGUNTA É `backofficeHomeFor`, e ela responde a duas coisas de uma vez:
+ * se há atalho a mostrar, e PARA ONDE. Não é o mesmo destino para toda a gente
+ * — quem gere um canal entra pelo painel, quem só opera entra pelo scanner, que
+ * é o que veio cá fazer. Mandar o staff para `/admin` era pô-lo a saltar por um
+ * ecrã que não pode ver para chegar ao que pode.
+ *
+ * Vem de `server/authz.ts` de propósito: é a MESMA função que o `proxy.ts` usa
+ * para redirecionar quem bate na raiz do backoffice. Se um dia o staff deixar
+ * de ter scanner, ou ganhar outra coisa, o atalho acompanha sem se lhe tocar —
+ * que é precisamente o que NÃO aconteceu da última vez, quando este link ficou
+ * preso a um predicado que entretanto mudou de significado.
  */
 export async function BackofficeLink() {
   const user = await getCurrentUser();
+  const destino = backofficeHomeFor(user);
   // `null` e não `hidden`: para quem não tem poderes, isto não chega a existir.
-  if (!canEnterBackoffice(user)) return null;
+  if (!destino) return null;
 
   return (
     <Link
-      href="/admin"
+      href={destino}
       /*
        * Discreto: mono, minúsculo e da cor do resto da barra. É uma ferramenta
        * de trabalho para meia dúzia de pessoas, não uma chamada à ação — chamar

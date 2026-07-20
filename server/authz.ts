@@ -7,6 +7,7 @@ import { DEFAULT_ROLE, ROLES, type Role, user as userTable } from "@/db/auth-sch
 import { CHANNEL_ROLES, type ChannelRole, channelMembers } from "@/db/schema";
 import { auth, authCapabilities } from "@/lib/auth";
 import {
+  BACKOFFICE_GATES,
   BACKOFFICE_ROOT,
   type BackofficeGate,
   gateForPath,
@@ -239,6 +240,22 @@ export function satisfiesGate(user: Subject, gate: BackofficeGate): boolean {
  */
 export function canOpenBackofficePath(user: Subject, pathname: string): boolean {
   return satisfiesGate(user, gateForPath(pathname));
+}
+
+/**
+ * Todos os gates que esta pessoa satisfaz.
+ *
+ * Serve a navegação lateral, que é um componente de CLIENTE e não pode chamar
+ * predicados que arrastam o `db`. Vai por prop, já resolvida no servidor, e a
+ * sidebar filtra os itens com a MESMA tabela de `lib/backoffice-zones.ts` que o
+ * proxy usa. Assim a lista de links não pode divergir do que a porta deixa
+ * abrir — e ninguém leva com um item que acaba em `/sem-acesso`.
+ *
+ * Esconder um item é cortesia, não segurança: quem for lá à mão leva com o gate
+ * na mesma, primeiro no `proxy.ts` e depois na página.
+ */
+export function satisfiedGates(user: Subject): BackofficeGate[] {
+  return BACKOFFICE_GATES.filter((gate) => satisfiesGate(user, gate));
 }
 
 /**

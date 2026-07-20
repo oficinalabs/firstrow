@@ -29,8 +29,18 @@
  *  - `manage`   — gere algum canal (`owner`). Dinheiro, compradores e a lista
  *                 de ligas.
  *  - `platform` — só a FirstRow (`platform_admin`).
+ *
+ * ⚠️ CONTRATO DAS ZONAS `platform`: a página TEM de se travar a si própria, com
+ * `isPlatformAdmin` (ou `requireChannelCreator`) antes da primeira query, e
+ * responder `notFound()`. O `proxy.ts` deixa-as passar de propósito — a recusa
+ * tem de ser um 404, porque quem não é da FirstRow não deve sequer ficar a
+ * saber que o ecrã existe, e um redirect para `/sem-acesso` contava-lho. Há um
+ * teste que lê o código dessas páginas e falha se o gate próprio desaparecer.
  */
 export type BackofficeGate = "operate" | "manage" | "platform";
+
+/** Todos os gates que existem. A navegação percorre-os para saber o que mostrar. */
+export const BACKOFFICE_GATES = ["operate", "manage", "platform"] as const;
 
 /** A raiz do backoffice — o destino do atalho no header do site. */
 export const BACKOFFICE_ROOT = "/admin";

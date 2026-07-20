@@ -1,12 +1,7 @@
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { BackofficeChrome } from "@/components/admin/backoffice-chrome";
-import {
-  canEnterBackoffice,
-  isPlatformAdmin,
-  managedChannelIds,
-  requireUser,
-} from "@/server/authz";
+import { canEnterBackoffice, managedChannelIds, requireUser, satisfiedGates } from "@/server/authz";
 import { getChannelById } from "@/server/channels";
 
 export const metadata: Metadata = {
@@ -38,19 +33,30 @@ export const metadata: Metadata = {
  *
  * ESTE GATE ABRE A PORTA, NÃO DIZ DE QUE CANAL SE FALA
  *
- * `canEnterBackoffice` responde só "esta pessoa gere ALGUM canal?" — é a única
- * pergunta que se pode fazer num sítio sem canal no URL. Quem entra ainda tem
- * de passar pelo gate POR CANAL de cada ecrã: os que abrem um evento usam
- * `server/event-access.ts` (o canal vem do evento); os de lista e de somas
+ * `canEnterBackoffice` responde só "esta pessoa tem ALGUMA coisa aqui dentro?"
+ * — é a única pergunta que se pode fazer num sítio sem canal no URL. Quem entra
+ * ainda tem de passar pelo gate POR CANAL de cada ecrã: os que abrem um evento
+ * usam `server/event-access.ts` (o canal vem do evento); os de lista e de somas
  * levam um `ChannelScope` às queries de `server/stats.ts`. Sem isso, entrar no
  * backoffice era ver o backoffice de toda a gente.
  *
- * Exige `owner` do canal e não `staff`: quase nenhuma página daqui para dentro
- * tem gate próprio, por isso este é o gate efetivo de `/admin/ganhos` e
- * `/admin/subscritores` — dinheiro e dados de compradores. Abrir isto ao staff
- * para lhes dar o scanner seria dar-lhes a contabilidade ao mesmo tempo.
- * Quando a Frente D puser gates página a página, pode aliviar: a API do
- * scanner (`/api/tickets/validate`) já aceita staff e está à espera disso.
+ * ────────────────────────────────────────────────────────────────────────────
+ *  PORQUE É QUE ISTO PASSOU A DEIXAR ENTRAR O `staff`
+ * ────────────────────────────────────────────────────────────────────────────
+ *
+ * O `staff` existe precisamente para validar bilhetes à porta, e o scanner vive
+ * em `/admin/scanner`. Enquanto este gate exigiu `owner`, o único papel feito
+ * para o scanner era o único que não lhe chegava.
+ *
+ * A troca só pôde ser feita NESTA ORDEM, e a ordem é de segurança: primeiro as
+ * páginas de dinheiro e dados ganharam gate próprio (`requireBackofficePage`,
+ * um commit antes deste), só depois esta linha aliviou. Pela ordem inversa,
+ * entre um passo e o outro o staff da porta via a contabilidade da liga.
+ *
+ * Quem decide agora, ecrã a ecrã, é a tabela de `lib/backoffice-zones.ts` — a
+ * mesma que o `proxy.ts` lê. Este gate é só a porta: `/admin/ganhos` e
+ * `/admin/subscritores` continuam a exigir `manage`, e o staff que lá bata é
+ * mandado para `/sem-acesso`.
  *
  * Route handlers e server actions NÃO herdam isto — cada um repete o seu gate.
  */
@@ -70,8 +76,14 @@ export default async function AdminLayout({ children }: { children: React.ReactN
   const managed = managedChannelIds(user);
   const channel = managed.length === 1 ? await getChannelById(managed[0]) : null;
 
+  /*
+   * A navegação leva os GATES desta pessoa, não o papel dela. Assim a sidebar
+   * filtra-se com a mesma tabela que a porta usa, e deixou de existir a
+   * hipótese de a lista de links dizer uma coisa e o gate dizer outra — era o
+   * que ia acontecer ao staff, a quem a sidebar oferecia Ganhos e Subscritores.
+   */
   return (
-    <BackofficeChrome isPlatformAdmin={isPlatformAdmin(user)} channel={channel ?? undefined}>
+    <BackofficeChrome gates={satisfiedGates(user)} channel={channel ?? undefined}>
       {children}
     </BackofficeChrome>
   );

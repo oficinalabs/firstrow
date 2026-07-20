@@ -10,6 +10,7 @@ import {
   requireUser,
 } from "@/server/authz";
 import { channelsInScope, getChannel } from "@/server/channels";
+import { hasActiveEntitlement } from "@/server/entitlements";
 import { getEvent } from "@/server/events";
 
 /*
@@ -202,4 +203,43 @@ export async function resolveChannelForNewEvent(
     return { ok: false, reason: "ambiguous", error: CHANNEL_REQUIRED_MESSAGE };
   }
   return { ok: true, channelId: list[0].id };
+}
+
+/* ------------------------------------------------------------------ *
+ * QUEM PODE VER — e QUAL vídeo é que se vê
+ * ------------------------------------------------------------------ */
+
+/**
+ * O vídeo que este evento toca agora: a gravação se já terminou, senão o direto.
+ *
+ * Não são o mesmo recurso na Cloudflare, e o token de reprodução é assinado
+ * PARA UM recurso concreto (vai no `sub` do JWT). Assinar o live input para ver
+ * uma gravação dá um token válido para a coisa errada — e o player fica em
+ * branco sem dizer porquê. Era o que acontecia: o mint assinava sempre
+ * `cfLiveInputId`, portanto NENHUMA gravação tocava, nem para quem tinha pago.
+ */
+export function playbackTarget(event: EventRow): { id: string; isVod: boolean } | null {
+  if (event.status === "ended" && event.cfVodUid) {
+    return { id: event.cfVodUid, isVod: true };
+  }
+  if (event.cfLiveInputId) return { id: event.cfLiveInputId, isVod: false };
+  return null;
+}
+
+/**
+ * Pode esta pessoa ver este evento?
+ *
+ * Duas vias, e a segunda faltava: **ter comprado**, ou **operar o canal do
+ * evento**. Sem a segunda, quem organiza a liga não conseguia rever a própria
+ * transmissão — tinha de comprar o seu próprio evento para lhe aceder, o que é
+ * absurdo e impede o trabalho normal (rever qualidade, cortar excertos,
+ * responder a uma reclamação sobre o que se passou).
+ *
+ * O papel é verificado CONTRA O CANAL DO EVENTO (`canOperateEvents(user,
+ * event.channelId)`), nunca de forma global: o dono da liga A continua sem ver
+ * de graça o conteúdo pago da liga B. É a mesma regra do resto do backoffice.
+ */
+export async function canWatchEvent(user: AuthUser, event: EventRow): Promise<boolean> {
+  if (canOperateEvents(user, event.channelId)) return true;
+  return hasActiveEntitlement(user.id, event.id);
 }

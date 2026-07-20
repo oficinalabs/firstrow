@@ -4,6 +4,7 @@ import {
   type ChannelRole,
   channelMembers,
   channels,
+  chatMessages,
   entitlements,
   events,
   playbackSessions,
@@ -137,6 +138,25 @@ export async function criarSessao(
   const [linha] = await db
     .insert(playbackSessions)
     .values({ id: newId(), userId, eventId, ...dados })
+    .returning();
+  return linha;
+}
+
+/**
+ * Uma mensagem da conversa do evento.
+ *
+ * `createdAt` entra à mão quando o teste precisa de o controlar: o cursor do
+ * polling é o par `(created_at, id)`, e provar que ele não salta mensagens do
+ * MESMO milissegundo obriga a poder criar duas com o mesmo carimbo.
+ */
+export async function criarMensagem(
+  eventId: string,
+  userId: string,
+  dados: Partial<typeof chatMessages.$inferInsert> = {},
+) {
+  const [linha] = await db
+    .insert(chatMessages)
+    .values({ id: newId(), eventId, userId, body: `Mensagem ${unico()}`, ...dados })
     .returning();
   return linha;
 }

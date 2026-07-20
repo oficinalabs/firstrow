@@ -3,30 +3,71 @@
  *  RATE LIMITING — o travão das rotas que se podem martelar
  * ============================================================================
  *
- * ⚠️  LIMITAÇÃO ASSUMIDA, NÃO ESCONDIDA
+ * Este ficheiro tem DOIS contadores, e a diferença entre eles é a diferença
+ * entre "trava mesmo" e "trava enquanto a instância estiver quente". A escolha
+ * do que cada rota usa está descrita ao fundo; aqui fica o que cada um GARANTE,
+ * em números, para nunca ser descrito a uma liga como mais do que é.
  *
- * Isto guarda os contadores EM MEMÓRIA, no processo. Na Vercel a app corre em
- * várias instâncias serverless em paralelo, cada uma com o seu `Map`, e uma
- * instância fria começa a contar do zero. O limite efetivo é, no pior caso,
- * `limite × nº de instâncias ativas` — e não há forma honesta de contornar
- * isso sem um contador partilhado (Redis/KV).
+ * ────────────────────────────────────────────────────────────────────────────
+ *  1. CONTADOR EM MEMÓRIA (`checkRateLimit`, `limitByIp`) — síncrono, legado
+ * ────────────────────────────────────────────────────────────────────────────
  *
- * Então porquê ter isto? Porque o que defende é real:
- *   • mata o ataque de força bruta de origem única, que é o caso comum
- *     (um script a martelar /sign-in/email do mesmo IP bate sempre na mesma
- *     instância enquanto ela estiver quente);
- *   • corta o pico de uma sessão de scanner encravada em loop;
- *   • põe o custo do ataque a subir sem introduzir infraestrutura nova.
+ * Guarda os contadores num `Map` no processo. Na Vercel a app corre em VÁRIAS
+ * instâncias serverless, cada uma com o SEU `Map`, e uma instância fria começa
+ * do zero. O limite efetivo, no pior caso, é `max × nº de instâncias ativas`.
+ * Foi medido nesta sessão que, na prática, isto é quase não-limite: basta o
+ * pedido cair noutra instância para o contador recomeçar.
  *
- * O que NÃO defende: um atacante distribuído por muitos IPs, ou paciente o
- * suficiente para esperar pelo reciclar das instâncias.
+ * O que ainda defende, e é real: um flood de ORIGEM ÚNICA contra uma instância
+ * quente — o script que martela `/sign-in/email` do mesmo IP bate na mesma
+ * instância enquanto ela durar, e aí `max` por janela é respeitado. Não defende
+ * um atacante distribuído nem um paciente que espere o reciclar das instâncias.
  *
- * QUANDO HOUVER KV/REDIS: trocar `hit()` por um INCR+EXPIRE atómico contra o
- * store partilhado. A superfície pública (`checkRateLimit`, `rateLimitResponse`)
- * foi desenhada para essa troca não tocar em nenhuma rota. Ver docs/SEGURANCA-APP.md.
+ * Continua aqui, síncrono, porque as rotas ainda o chamam sem `await`. Não faz
+ * mal a ninguém: no pior caso não trava, nunca trava a mais.
+ *
+ * ────────────────────────────────────────────────────────────────────────────
+ *  2. CONTADOR PARTILHADO EM POSTGRES (`checkRateLimitShared`, `limitByIpShared`)
+ * ────────────────────────────────────────────────────────────────────────────
+ *
+ * O que SOBREVIVE ao serverless. O contador é UMA linha numa tabela, e cada
+ * pedido — venha de que instância vier — faz um `INSERT … ON CONFLICT DO UPDATE`
+ * atómico sobre essa linha. O `ON CONFLICT` tranca a linha, por isso dois
+ * pedidos simultâneos incrementam em série e nunca leem o mesmo valor: o limite
+ * é `max` por janela, GLOBAL, independente do nº de instâncias.
+ *
+ * GARANTIA, em números:
+ *   • com `auth: max=10/min`, o 11.º pedido do mesmo IP dentro do minuto é
+ *     recusado — esteja a app numa instância ou em cinquenta;
+ *   • o teste `tests/integracao/rate-limit-partilhado.test.ts` dispara 20
+ *     pedidos EM PARALELO contra o mesmo balde de `max=5` e mede exatamente 5
+ *     aceites e 15 recusados, sobre ligações diferentes (a simular instâncias).
+ *
+ * O QUE CONTINUA A NÃO DEFENDER (e tem de se dizer): o limite é por CHAVE. Para
+ * `limitByIpShared`, a chave é o IP — um atacante com mil IPs tem mil baldes de
+ * `max` cada. Isso é inerente a limitar por IP, não uma falha do contador; a
+ * defesa contra o distribuído é outra camada (WAF, prova de trabalho).
+ *
+ * CUSTO: uma ida à base de dados (um upsert por chave primária, indexado) por
+ * pedido limitado. Só pesa nas rotas sensíveis que já falam com a BD de
+ * qualquer forma (auth, checkout, playback, validação de bilhete), por isso a
+ * ida extra é proporcionada. Se algum dia pesar, o caminho é um KV ao lado — a
+ * superfície pública foi desenhada para essa troca não tocar em nenhuma rota.
+ *
+ * FALHA ABERTA, DE PROPÓSITO: se o contador partilhado estiver indisponível
+ * (BD em baixo, tabela por criar), `checkRateLimitShared` NÃO tranca o pedido —
+ * cai no contador em memória e regista o erro. Um limiter avariado não pode
+ * derrubar os logins e o checkout do site inteiro; degradar para o de memória é
+ * menos mau do que negar tudo. Ver `sharedHit`.
+ *
+ * A tabela é criada em RUNTIME (`ensureCounterTable`), com `create table if not
+ * exists`, para esta mudança viver toda num ficheiro só, sem migração. Só nasce
+ * quando uma rota adota o caminho partilhado — até lá, zero efeito em produção.
  */
 
+import { sql } from "drizzle-orm";
 import { NextResponse } from "next/server";
+import { db } from "@/db";
 
 /** Política de um limite: `max` pedidos por cada `windowMs`. */
 export type RateLimitPolicy = {
@@ -181,6 +222,92 @@ export function clientIp(req: Request): string {
   return req.headers.get("x-real-ip")?.trim() || "local";
 }
 
+// ── Contador partilhado (Postgres) ──────────────────────────────────────────
+
+/*
+ * A tabela do contador. Criada em runtime, e de propósito: assim toda esta
+ * mudança vive num ficheiro só, sem tocar em `db/schema.ts` nem nas migrações.
+ * `create table if not exists` é idempotente e barato quando a tabela já existe
+ * (é só uma consulta ao catálogo).
+ */
+let tabelaPronta: Promise<void> | null = null;
+
+function ensureCounterTable(): Promise<void> {
+  if (!tabelaPronta) {
+    tabelaPronta = db
+      .execute(
+        sql`create table if not exists rate_limit_hits (
+          key text primary key,
+          window_started_at timestamptz not null default now(),
+          count integer not null default 0
+        )`,
+      )
+      .then(() => undefined)
+      .catch((erro) => {
+        // Deixa tentar outra vez no próximo pedido, em vez de guardar a falha.
+        tabelaPronta = null;
+        throw erro;
+      });
+  }
+  return tabelaPronta;
+}
+
+/**
+ * Conta um pedido contra a linha partilhada e diz se passa. Janela fixa com
+ * reinício preguiçoso, tudo numa instrução atómica.
+ *
+ * O `ON CONFLICT DO UPDATE` tranca a linha antes de a reescrever, por isso dois
+ * pedidos simultâneos — de duas instâncias — incrementam em série e leem contas
+ * diferentes. É isto, e não o `Map` local, que faz o limite ser global.
+ *
+ * O `case` reinicia a janela quando a anterior já expirou: se `window_started_at`
+ * é mais velho que a janela, o contador volta a 1 e a hora avança; senão soma 1
+ * e mantém a hora — assim o `retryAfter` encolhe certo até ao fim da janela.
+ */
+async function sharedHit(key: string, policy: RateLimitPolicy): Promise<RateLimitResult> {
+  await ensureCounterTable();
+
+  const windowSecs = policy.windowMs / 1000;
+  const linhas = await db.execute<{ count: number; decorrido_ms: number }>(sql`
+    insert into rate_limit_hits as r (key, window_started_at, count)
+    values (${key}, now(), 1)
+    on conflict (key) do update set
+      count = case
+        when r.window_started_at <= now() - make_interval(secs => ${windowSecs}) then 1
+        else r.count + 1
+      end,
+      window_started_at = case
+        when r.window_started_at <= now() - make_interval(secs => ${windowSecs}) then now()
+        else r.window_started_at
+      end
+    returning
+      count,
+      (extract(epoch from (now() - window_started_at)) * 1000)::int as decorrido_ms
+  `);
+
+  const linha = linhas[0] as unknown as { count: number; decorrido_ms: number } | undefined;
+  const count = Number(linha?.count ?? 1);
+  const elapsed = Number(linha?.decorrido_ms ?? 0);
+
+  // Limpeza probabilística: de vez em quando varre as janelas mortas para a
+  // tabela não crescer sem fim com chaves de uso único (um IP por pedido). Sem
+  // `await` — é manutenção, não pode atrasar a resposta nem derrubá-la se falhar.
+  if (Math.random() < 0.01) {
+    void db
+      .execute(
+        sql`delete from rate_limit_hits where window_started_at < now() - interval '10 minutes'`,
+      )
+      .catch(() => {});
+  }
+
+  return {
+    allowed: count <= policy.max,
+    remaining: Math.max(0, policy.max - count),
+    retryAfterSeconds: Math.max(1, Math.ceil((policy.windowMs - elapsed) / 1000)),
+    policy,
+  };
+}
+
 // ── Superfície pública ──────────────────────────────────────────────────────
 
 /**
@@ -195,6 +322,27 @@ export function checkRateLimit(
   policy: RateLimitPolicy = RATE_LIMITS[scope],
 ): RateLimitResult {
   return hit(`${scope}:${id}`, policy, Date.now());
+}
+
+/**
+ * Como `checkRateLimit`, mas contra o contador PARTILHADO — o que vale entre
+ * instâncias. É a versão a usar nas rotas sensíveis (ver `limitByIpShared`).
+ *
+ * FALHA ABERTA: se a base de dados não responder, cai no contador em memória e
+ * regista o erro, em vez de negar o pedido. Um limiter avariado a trancar todos
+ * os logins é pior do que um limiter degradado. Ver o cabeçalho do ficheiro.
+ */
+export async function checkRateLimitShared(
+  scope: keyof typeof RATE_LIMITS,
+  id: string,
+  policy: RateLimitPolicy = RATE_LIMITS[scope],
+): Promise<RateLimitResult> {
+  try {
+    return await sharedHit(`${scope}:${id}`, policy);
+  } catch (erro) {
+    console.error("[rate-limit] contador partilhado indisponível, uso o de memória:", erro);
+    return hit(`${scope}:${id}`, policy, Date.now());
+  }
 }
 
 /**
@@ -242,5 +390,30 @@ export function limitByIp(
 ): NextResponse | null {
   const id = suffix ? `${clientIp(req)}|${suffix}` : clientIp(req);
   const result = checkRateLimit(scope, id);
+  return result.allowed ? null : rateLimitResponse(result);
+}
+
+/**
+ * O mesmo atalho, mas contra o contador PARTILHADO — o limite vale entre
+ * instâncias serverless. É a versão a preferir nas rotas sensíveis.
+ *
+ * É `async`: a troca numa rota é trocar
+ *
+ *   const limited = limitByIp(req, "checkout", gate.user.id);
+ *
+ * por
+ *
+ *   const limited = await limitByIpShared(req, "checkout", gate.user.id);
+ *
+ * e mais nada — a assinatura de retorno (`NextResponse | null`) é a mesma, por
+ * isso o `if (limited) return limited;` a seguir não muda.
+ */
+export async function limitByIpShared(
+  req: Request,
+  scope: keyof typeof RATE_LIMITS,
+  suffix?: string,
+): Promise<NextResponse | null> {
+  const id = suffix ? `${clientIp(req)}|${suffix}` : clientIp(req);
+  const result = await checkRateLimitShared(scope, id);
   return result.allowed ? null : rateLimitResponse(result);
 }

@@ -14,19 +14,54 @@ function groupThousands(digits: string): string {
   return digits.replace(/\B(?=(\d{3})+(?!\d))/g, NBSP);
 }
 
-/** Cêntimos → "8,59 €" (milhares com espaço: "2 244,00 €"). */
-export function formatEuro(cents: number): string {
+// Pontuação PT-PT para qualquer moeda: vírgula decimal, milhares com espaço,
+// símbolo no fim depois de um espaço inquebrável.
+function formatMoney(cents: number, symbol: string): string {
   const sign = cents < 0 ? "-" : "";
   const abs = Math.round(Math.abs(cents));
-  const euros = groupThousands(String(Math.floor(abs / 100)));
-  const centsPart = String(abs % 100).padStart(2, "0");
-  return `${sign}${euros},${centsPart}${NBSP}€`;
+  const units = groupThousands(String(Math.floor(abs / 100)));
+  const decimals = String(abs % 100).padStart(2, "0");
+  return `${sign}${units},${decimals}${NBSP}${symbol}`;
+}
+
+/** Cêntimos → "8,59 €" (milhares com espaço: "2 244,00 €"). */
+export function formatEuro(cents: number): string {
+  return formatMoney(cents, "€");
+}
+
+/**
+ * Cêntimos de dólar → "23,58 $".
+ *
+ * A Cloudflare fatura em USD (ver `lib/video-costs.ts`). O símbolo é diferente
+ * de propósito: pôr "€" num valor que ninguém converteu era dizer que já estava
+ * convertido, e é exatamente essa a confusão que o ecrã de custos tem de evitar.
+ */
+export function formatUsd(cents: number): string {
+  return formatMoney(cents, "$");
 }
 
 /** 1204 → "1 204". */
 export function formatNumber(value: number): string {
   const sign = value < 0 ? "-" : "";
   return sign + groupThousands(String(Math.round(Math.abs(value))));
+}
+
+/** Fração → percentagem inteira: 0.195 → "20 %". */
+export function formatPercent(fraction: number): string {
+  return `${formatNumber(fraction * 100)}${NBSP}%`;
+}
+
+/**
+ * Decimal com vírgula e casas fixas: 0.92 → "0,92".
+ *
+ * Para os poucos números que não são dinheiro nem contagens — hoje a taxa de
+ * câmbio. Sem isto ia para o ecrã o `String(0.92)` do JavaScript, com ponto
+ * decimal, no meio de uma frase em português.
+ */
+export function formatDecimal(value: number, places = 2): string {
+  const sign = value < 0 ? "-" : "";
+  const [whole, decimals] = Math.abs(value).toFixed(places).split(".");
+  return `${sign}${groupThousands(whole)}${decimals ? `,${decimals}` : ""}`;
 }
 
 type DateInput = Date | string | number;

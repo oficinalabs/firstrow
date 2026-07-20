@@ -7,7 +7,7 @@ import { buildSplit } from "@/lib/split";
 import { requireApi } from "@/server/api-guard";
 import { guardarConsentimento } from "@/server/consents";
 import { getEvent } from "@/server/events";
-import { hasLiveCharge, recordChargeReference } from "@/server/purchases";
+import { recordChargeReference, releaseCharge, reserveCharge } from "@/server/purchases";
 import { createPendingTicket } from "@/server/tickets";
 
 /*
@@ -67,36 +67,44 @@ export async function POST(req: Request, { params }: { params: Promise<{ eventId
   const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? "";
 
   // Dois cliques não podem virar dois pedidos ao telemóvel da pessoa: ela podia
-  // aceitar os dois e pagar dois bilhetes julgando comprar um. O bilhete
-  // pendente é reutilizado, a cobrança não.
-  if (await hasLiveCharge("ticket", result.ticket.id)) {
+  // aceitar os dois e pagar dois bilhetes julgando comprar um. A reserva é
+  // ATÓMICA (ver `reserveCharge`) — ler-e-agir deixava os dois passar.
+  if (!(await reserveCharge("ticket", result.ticket.id))) {
     return NextResponse.json(
       { error: "Já enviámos um pedido para o teu telemóvel. Confirma na app MB WAY." },
       { status: 409 },
     );
   }
 
-  // A prova antes da cobrança — o erro passa de propósito (ver a rota de PPV).
-  await guardarConsentimento({
-    compra: { tipo: "ticket", id: result.ticket.id },
-    userId: gate.user.id,
-    userEmail: gate.user.email,
-    eventId,
-    eventTitle: event.title,
-    kind: "bilhete",
-    texto: consent.texto,
-    versao: consent.versao,
-    checkboxAceite: consent.checkboxAceite,
-    req,
-  });
+  let charge: Awaited<ReturnType<typeof createMbwayCharge>>;
+  try {
+    // A prova antes da cobrança — o erro passa de propósito (ver a rota de PPV).
+    await guardarConsentimento({
+      compra: { tipo: "ticket", id: result.ticket.id },
+      userId: gate.user.id,
+      userEmail: gate.user.email,
+      eventId,
+      eventTitle: event.title,
+      kind: "bilhete",
+      texto: consent.texto,
+      versao: consent.versao,
+      checkboxAceite: consent.checkboxAceite,
+      req,
+    });
 
-  const charge = await createMbwayCharge({
-    amountEur,
-    phone: parsed.data.phone,
-    identifier: result.ticket.id,
-    beneficiaries: buildSplit(amountEur),
-    callbackUrl: `${appUrl}/api/webhooks/eupago`,
-  });
+    charge = await createMbwayCharge({
+      amountEur,
+      phone: parsed.data.phone,
+      identifier: result.ticket.id,
+      beneficiaries: buildSplit(amountEur),
+      callbackUrl: `${appUrl}/api/webhooks/eupago`,
+    });
+  } catch (error) {
+    // Reservámos o slot mas não chegámos a cobrar: devolve-o, senão a pessoa
+    // ficava 5,5 min sem poder tentar de novo por causa de uma falha nossa.
+    await releaseCharge("ticket", result.ticket.id);
+    throw error;
+  }
 
   // Guardar a referência agora, e não só quando o webhook chegar: é o que
   // permite reconciliar uma compra cujo webhook se perca pelo caminho.

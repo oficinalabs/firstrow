@@ -7,7 +7,7 @@ import { requireApi } from "@/server/api-guard";
 import { guardarConsentimento } from "@/server/consents";
 import { createPendingEntitlement } from "@/server/entitlements";
 import { getEvent } from "@/server/events";
-import { hasLiveCharge, recordChargeReference } from "@/server/purchases";
+import { recordChargeReference, releaseCharge, reserveCharge } from "@/server/purchases";
 
 /*
  * Compra do acesso à live. Autorização = ter sessão; o dono do recurso é
@@ -57,42 +57,51 @@ export async function POST(req: Request, { params }: { params: Promise<{ eventId
   const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? "";
 
   // Dois cliques não podem virar dois pedidos ao telemóvel da pessoa: ela podia
-  // aceitar os dois e pagar duas vezes o mesmo acesso. A compra é reutilizada,
-  // a cobrança não. Passada a janela, o pedido anterior expirou e pode repetir.
-  if (await hasLiveCharge("entitlement", entitlement.id)) {
+  // aceitar os dois e pagar duas vezes o mesmo acesso. A reserva é ATÓMICA (ver
+  // `reserveCharge`) — ler-e-agir deixava os dois pedidos passar. Quem não ganha
+  // o slot recusa aqui; passada a janela, o pedido anterior expirou e pode repetir.
+  if (!(await reserveCharge("entitlement", entitlement.id))) {
     return NextResponse.json(
       { error: "Já enviámos um pedido para o teu telemóvel. Confirma na app MB WAY." },
       { status: 409 },
     );
   }
 
-  /*
-   * Guardar a prova exatamente antes da cobrança, e deixar o erro passar (ao
-   * contrário de `recordChargeReference`, que o engole): se não conseguimos
-   * registar o que a pessoa aceitou, é preferível a compra falhar sem cobrança
-   * do que cobrar sem prova. O texto vem do servidor (`consent.texto`), nunca
-   * do corpo do pedido.
-   */
-  await guardarConsentimento({
-    compra: { tipo: "entitlement", id: entitlement.id },
-    userId: gate.user.id,
-    userEmail: gate.user.email,
-    eventId,
-    eventTitle: event.title,
-    kind,
-    texto: consent.texto,
-    versao: consent.versao,
-    checkboxAceite: consent.checkboxAceite,
-    req,
-  });
+  let charge: Awaited<ReturnType<typeof createMbwayCharge>>;
+  try {
+    /*
+     * Guardar a prova exatamente antes da cobrança, e deixar o erro passar (ao
+     * contrário de `recordChargeReference`, que o engole): se não conseguimos
+     * registar o que a pessoa aceitou, é preferível a compra falhar sem cobrança
+     * do que cobrar sem prova. O texto vem do servidor (`consent.texto`), nunca
+     * do corpo do pedido.
+     */
+    await guardarConsentimento({
+      compra: { tipo: "entitlement", id: entitlement.id },
+      userId: gate.user.id,
+      userEmail: gate.user.email,
+      eventId,
+      eventTitle: event.title,
+      kind,
+      texto: consent.texto,
+      versao: consent.versao,
+      checkboxAceite: consent.checkboxAceite,
+      req,
+    });
 
-  const charge = await createMbwayCharge({
-    amountEur,
-    phone: body.phone,
-    identifier: entitlement.id,
-    beneficiaries: buildSplit(amountEur),
-    callbackUrl: `${appUrl}/api/webhooks/eupago`,
-  });
+    charge = await createMbwayCharge({
+      amountEur,
+      phone: body.phone,
+      identifier: entitlement.id,
+      beneficiaries: buildSplit(amountEur),
+      callbackUrl: `${appUrl}/api/webhooks/eupago`,
+    });
+  } catch (error) {
+    // Reservámos o slot mas não chegámos a cobrar: devolve-o, senão a pessoa
+    // ficava 5,5 min sem poder tentar de novo por causa de uma falha nossa.
+    await releaseCharge("entitlement", entitlement.id);
+    throw error;
+  }
 
   // Guardar a referência agora, e não só quando o webhook chegar: é o que
   // permite reconciliar uma compra cujo webhook se perca pelo caminho.

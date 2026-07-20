@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { createPendingEntitlement } from "@/server/entitlements";
-import { hasLiveCharge, recordChargeReference } from "@/server/purchases";
+import { recordChargeReference, reserveCharge } from "@/server/purchases";
 import { limparBase, temBaseDeDados } from "../apoio/base-de-dados";
 import { cenarioBase } from "../apoio/fabrica";
 import { cumpridos, emParalelo } from "../apoio/paralelo";
@@ -36,36 +36,28 @@ import { RONDAS } from "./partilhado";
  * cobrado.
  *
  * ────────────────────────────────────────────────────────────────────────────
- *  ⚠️  BUG CONHECIDO — ESTE TESTE ESTÁ MARCADO `it.fails()` DE PROPÓSITO
+ *  CORRIGIDO — a reserva passou a ser atómica (`reserveCharge`)
  * ────────────────────────────────────────────────────────────────────────────
  *
- * A guarda atual é um check-then-act: lê `hasLiveCharge`, e só DEPOIS carimba
- * com `recordChargeReference`. Entre o ler e o carimbar não há atomicidade, por
- * isso dois pedidos simultâneos veem AMBOS "não há cobrança viva" e cobram os
- * dois. Medido nesta base: **11 de 12 rondas cobraram a dobrar** (só a primeira,
- * com a ligação fria, escapou — o mesmo padrão do bug dos eventos duplicados).
+ * Este teste esteve marcado `it.fails()` a documentar um bug real: a guarda era
+ * um check-then-act — lia `hasLiveCharge` e só DEPOIS carimbava. Sem atomicidade
+ * entre o ler e o carimbar, dois pedidos simultâneos viam ambos "não há cobrança
+ * viva" e cobravam os dois. Medido: **11 de 12 rondas cobravam a dobrar**.
  *
- * A guarda foi desenhada para o caso SEQUENCIAL (clique a clique, ver o commit
- * #37) e esse funciona — o teste a seguir prova-o. O que falta fechar é o caso
- * verdadeiramente simultâneo.
+ * A correção (`server/purchases.ts` → `reserveCharge`) junta a condição da
+ * janela e o carimbo no MESMO `UPDATE`: o Postgres tranca a linha, serializa os
+ * pedidos, e só um ganha o slot. É a mesma correção do último dono e dos eventos
+ * duplicados. O `it.fails()` virou `it()`: agora o invariante É verdade, e este
+ * teste passa a ser a rede que impede o bug de voltar em silêncio.
  *
- * Isto vive em `server/purchases.ts` + `app/api/checkout/[eventId]/route.ts`,
- * que são da Frente I/J — NÃO desta frente. Por isso não se corrige aqui.
- *
- * `it.fails()` faz duas coisas: mantém a suite verde enquanto o bug existir
- * (documentado, não escondido), e VIRA A VERMELHO no dia em que alguém o
- * corrigir — aí este teste "passa" inesperadamente e obriga a trocá-lo por um
- * `it()` normal. A regressão deixa de poder voltar em silêncio.
- *
- * A correção provável (para quem for dono): tornar o "reservar a cobrança"
- * atómico — um UPDATE condicional que carimbe `chargeRequestedAt` só se ele
- * ainda estiver fora da janela, e agir pelo nº de linhas devolvidas. Aí o
- * `it.fails()` abaixo passa a `it()`.
+ * O `canario.test.ts` corre a par disto o padrão ANTIGO sem reserva atómica e
+ * exige que ele PARTA — se um dia a corrida deixar de acontecer neste ambiente,
+ * é o canário que acusa, para este verde não virar falsa segurança.
  */
 
 /** A tentativa de cobrança, tal como a rota a faz — sem a rede à Eupago. */
 async function tentativaDeCobranca(entitlementId: string): Promise<"cobrado" | "recusado"> {
-  if (await hasLiveCharge("entitlement", entitlementId)) return "recusado";
+  if (!(await reserveCharge("entitlement", entitlementId))) return "recusado";
   await recordChargeReference("entitlement", entitlementId, "ref-de-teste");
   return "cobrado";
 }
@@ -73,9 +65,7 @@ async function tentativaDeCobranca(entitlementId: string): Promise<"cobrado" | "
 describe.skipIf(!temBaseDeDados())("cobrança repetida em paralelo", () => {
   beforeEach(limparBase);
 
-  // MARCADO `it.fails()`: o corpo assere o invariante CERTO (uma só cobrança),
-  // e esse invariante é hoje violado. Ver o cabeçalho do ficheiro.
-  it.fails(`[BUG CONHECIDO] dois cliques simultâneos cobram no máximo uma vez (${RONDAS} rondas)`, async () => {
+  it(`dois cliques simultâneos cobram no máximo uma vez (${RONDAS} rondas)`, async () => {
     const rondasComDupla: number[] = [];
 
     for (let ronda = 0; ronda < RONDAS; ronda++) {

@@ -10,7 +10,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { formatEuro, formatNumber, formatTime } from "@/lib/format";
 import { canManageEvents, operateScope } from "@/server/authz";
 import { channelsInScope } from "@/server/channels";
-import { getStreamCredentials } from "@/server/cloudflare-stream";
+import { getStreamAccountStatus, getStreamCredentials } from "@/server/cloudflare-stream";
 import { requireEventOperator } from "@/server/event-access";
 import {
   type BlockedSession,
@@ -38,12 +38,14 @@ export default async function TransmissionPage({ params }: { params: Promise<{ i
   // portão devolve o evento já carregado, por isso não há segunda query.
   const { user, event } = await requireEventOperator(id, `/admin/eventos/${id}/transmissao`);
 
-  const [sales, viewers, blocked, credentials, channels] = await Promise.all([
+  const [sales, viewers, blocked, credentials, channels, contaStream] = await Promise.all([
     getEventSales(id),
     countActiveViewers(id),
     listBlockedSessionsToday(id),
     event.cfLiveInputId ? getStreamCredentials(event.cfLiveInputId) : Promise.resolve(null),
     channelsInScope(operateScope(user)),
+    // Ter chave não é o mesmo que poder transmitir — ver getStreamAccountStatus.
+    getStreamAccountStatus(),
   ]);
 
   /*
@@ -112,11 +114,38 @@ export default async function TransmissionPage({ params }: { params: Promise<{ i
             <CardContent className="flex flex-col gap-3.5">
               {credentials ? (
                 <>
+                  {/*
+                   * O aviso vem ANTES das credenciais de propósito: com a conta
+                   * sem subscrição, a chave abaixo tem bom aspeto e é recusada
+                   * na mesma. Sem isto, perde-se a noite a culpar o OBS.
+                   */}
+                  {contaStream && !contaStream.podeTransmitir ? (
+                    <p className="rounded-sm border border-destructive/40 bg-destructive/5 px-3 py-2.5 text-2sm leading-relaxed text-foreground">
+                      <strong className="font-semibold">
+                        A conta Cloudflare não tem o Stream ativo.
+                      </strong>{" "}
+                      As credenciais abaixo estão certas, mas a transmissão vai ser recusada — o OBS
+                      fica em "a tentar reconectar" sem dizer porquê. O Cloudflare Stream é pago e
+                      não tem plano gratuito: ativa a subscrição no painel da Cloudflare e estas
+                      mesmas credenciais passam a funcionar, sem recriar nada.
+                    </p>
+                  ) : null}
                   <CopyField label="Servidor RTMPS" value={credentials.rtmpsUrl} />
                   <CopyField label="Chave da stream" value={credentials.streamKey} masked />
                   <p className="text-xs leading-relaxed text-muted-foreground">
                     A chave é deste evento. Nunca a mostres em stream nem a partilhes fora da régie.
                   </p>
+                  {contaStream?.podeTransmitir ? (
+                    /*
+                     * Com subscrição, o risco deixa de ser "não transmite" e passa
+                     * a ser "acaba o plano a meio da época" — o armazenamento
+                     * acumula evento a evento e ninguém vai ao painel ver.
+                     */
+                    <p className="text-xs leading-relaxed text-muted-foreground">
+                      Armazenamento Cloudflare: {Math.round(contaStream.minutosUsados)} de{" "}
+                      {contaStream.minutosLimite} minutos.
+                    </p>
+                  ) : null}
                 </>
               ) : event.cfLiveInputId ? (
                 /*

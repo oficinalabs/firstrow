@@ -4,9 +4,9 @@ import { splitProgram } from "@/components/eventos/program";
 import { WatchPlayer } from "@/components/player/watch-player";
 import { ViewerShell } from "@/components/ui/viewer-shell";
 import { formatDateTime } from "@/lib/format";
-import { requireUser } from "@/server/auth-helper";
+import { getCurrentUser } from "@/server/authz";
 import { getChannelById } from "@/server/channels";
-import { hasActiveEntitlement } from "@/server/entitlements";
+import { canWatchEvent } from "@/server/event-access";
 import { getEvent, listEventsByChannel } from "@/server/events";
 
 export const dynamic = "force-dynamic";
@@ -14,12 +14,15 @@ export const dynamic = "force-dynamic";
 export default async function WatchPage({ params }: { params: Promise<{ eventId: string }> }) {
   const { eventId } = await params;
 
-  const user = await requireUser();
+  // getCurrentUser (e não o auth-helper): traz as filiações de canal, sem as
+  // quais não se consegue perguntar se esta pessoa opera ESTE canal.
+  const user = await getCurrentUser();
   if (!user) redirect(`/eventos/${eventId}`);
 
   const event = await getEvent(eventId);
   if (!event) redirect("/");
-  if (!(await hasActiveEntitlement(user.id, eventId))) redirect(`/eventos/${eventId}`);
+  // Comprou, ou opera este canal — ver `canWatchEvent`.
+  if (!(await canWatchEvent(user, event))) redirect(`/eventos/${eventId}`);
 
   const isVod = event.status === "ended" && Boolean(event.cfVodUid);
 

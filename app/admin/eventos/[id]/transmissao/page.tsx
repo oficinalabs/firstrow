@@ -12,6 +12,7 @@ import { canManageEvents, operateScope } from "@/server/authz";
 import { channelsInScope } from "@/server/channels";
 import { getStreamAccountStatus, getStreamCredentials } from "@/server/cloudflare-stream";
 import { requireEventOperator } from "@/server/event-access";
+import { linkEventRecording } from "@/server/recordings";
 import {
   type BlockedSession,
   countActiveViewers,
@@ -37,6 +38,17 @@ export default async function TransmissionPage({ params }: { params: Promise<{ i
   // transmissão e só sai daqui para quem opera o evento — deste canal. O
   // portão devolve o evento já carregado, por isso não há segunda query.
   const { user, event } = await requireEventOperator(id, `/admin/eventos/${id}/transmissao`);
+
+  /*
+   * Segunda (e seguintes) tentativas de ligar a gravação. Ao terminar quase
+   * sempre é cedo demais — a Cloudflare ainda está a processar. Quem abre esta
+   * página de um evento terminado sem gravação resolve-o sem saber que o fez.
+   */
+  if (event.status === "ended" && !event.cfVodUid) {
+    await linkEventRecording(id).catch(() => {
+      // Diagnóstico, não guarda: a página abre à mesma.
+    });
+  }
 
   const [sales, viewers, blocked, credentials, channels, contaStream] = await Promise.all([
     getEventSales(id),

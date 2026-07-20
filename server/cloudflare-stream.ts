@@ -96,6 +96,47 @@ export async function getStreamAccountStatus(): Promise<StreamAccountStatus | nu
   }
 }
 
+/*
+ * ============================================================================
+ *  A GRAVAÇÃO DE UMA TRANSMISSÃO QUE JÁ ACABOU
+ * ============================================================================
+ *
+ * A Cloudflare grava sozinha (o live input é criado com `mode: automatic`) mas
+ * não nos diz nada: a gravação fica lá, com um uid próprio, e cabe-nos ir
+ * buscá-la. Sem este passo o vídeo existe e a plataforma nunca sabe dele — foi
+ * exatamente o que aconteceu na primeira transmissão real, com a gravação
+ * pronta na Cloudflare e o arquivo vazio.
+ *
+ * Devolve a gravação MAIS RECENTE e só quando está pronta a ver. Uma
+ * transmissão que caia e volte deixa várias gravações no mesmo live input; a
+ * última é a que interessa. E o processamento demora — pedir demasiado cedo
+ * devolve uma gravação que ainda não toca, e ligá-la assim dava um arquivo com
+ * um vídeo partido.
+ */
+export type Recording = { uid: string; duracaoSegundos: number };
+
+export async function getLatestRecording(liveInputId: string): Promise<Recording | null> {
+  try {
+    const res = await fetch(`${liveInputUrl(liveInputId)}/videos`, {
+      headers: authHeader(),
+      cache: "no-store",
+    });
+    if (!res.ok) return null;
+
+    const data = (await res.json()) as {
+      result?: { uid: string; duration?: number; readyToStream?: boolean; created?: string }[];
+    };
+    const prontas = (data.result ?? []).filter((v) => v.readyToStream);
+    if (prontas.length === 0) return null;
+
+    const maisRecente = prontas.reduce((a, b) => ((a.created ?? "") >= (b.created ?? "") ? a : b));
+    return { uid: maisRecente.uid, duracaoSegundos: Math.round(maisRecente.duration ?? 0) };
+  } catch (error) {
+    console.error(`[cloudflare] gravações de ${liveInputId}:`, error);
+    return null;
+  }
+}
+
 /**
  * Apaga o live input. Um input que fique para trás continua a contar na conta
  * da Cloudflare, por isso quem apaga um evento tem de saber se isto correu bem

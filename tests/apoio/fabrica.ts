@@ -6,6 +6,7 @@ import {
   channels,
   entitlements,
   events,
+  playbackSessions,
   tickets,
 } from "@/db/schema";
 import { newId } from "@/lib/ids";
@@ -116,6 +117,26 @@ export async function criarBilhete(
       priceCents: 1000,
       ...dados,
     })
+    .returning();
+  return linha;
+}
+
+/**
+ * Uma sessão de visionamento com duração CONTROLADA.
+ *
+ * Os carimbos entram à mão de propósito: a estimativa de minutos entregues vive
+ * da diferença entre eles (ver `getDeliveryByEvent`), e um teste que dependesse
+ * do `defaultNow()` media o tempo que a rede demorou em vez do que quer provar.
+ * Passar `revokedAt` recria a sessão cortada pela regra de 1-sessão-por-conta.
+ */
+export async function criarSessao(
+  userId: string,
+  eventId: string,
+  dados: Partial<typeof playbackSessions.$inferInsert> = {},
+) {
+  const [linha] = await db
+    .insert(playbackSessions)
+    .values({ id: newId(), userId, eventId, ...dados })
     .returning();
   return linha;
 }

@@ -15,6 +15,15 @@ import {
 import { db } from "@/db";
 import { user } from "@/db/auth-schema";
 import { channels, entitlements, events, playbackSessions } from "@/db/schema";
+import {
+  type DeliveryEstimate,
+  type EconomicsTotals,
+  type EventEconomics,
+  eventEconomics,
+  MAX_SESSION_MINUTES,
+  resolveUsdToEur,
+  totalEconomics,
+} from "@/lib/video-costs";
 import type { ChannelScope } from "@/server/authz";
 import { inChannelScope } from "@/server/events";
 
@@ -389,6 +398,187 @@ export async function getMonthlyStatement(scope: ChannelScope): Promise<{
       netCents: r.grossCents - r.firstrowFeeCents - r.eupagoFeeCents,
     })),
   };
+}
+
+/*
+ * ============================================================================
+ *  MINUTOS ENTREGUES — a estimativa, e porque é que é uma estimativa
+ * ============================================================================
+ *
+ * A analítica da Cloudflare não está ao nosso alcance: o token da conta não tem
+ * essa permissão (testado). A única fonte que temos é NOSSA — a tabela
+ * `playback_sessions`, onde o player carimba `lastHeartbeatAt` de 20 em 20
+ * segundos enquanto alguém está a ver.
+ *
+ *     duração da sessão ≈ lastHeartbeatAt − startedAt
+ *
+ * ⚠️  ISTO NÃO É O QUE A CLOUDFLARE FATURA, e o ecrã tem de o dizer. Ela cobra
+ * o que a rede dela entregou; nós vemos o que o nosso heartbeat viu. Prometer
+ * precisão que não temos é pior do que dar um número honesto — daí "custo
+ * ESTIMADO" em todo o lado, e nunca "custo".
+ *
+ * ────────────────────────────────────────────────────────────────────────────
+ *  OS CASOS QUE SUJAM A ESTIMATIVA, E O QUE SE DECIDIU EM CADA UM
+ * ────────────────────────────────────────────────────────────────────────────
+ *
+ * 1. SESSÃO QUE NUNCA FECHOU (alguém fechou o portátil).
+ *    Resolve-se sozinha, e é por isso que a fórmula é esta: sem heartbeat, o
+ *    `lastHeartbeatAt` PÁRA — não continua a crescer como um `now()` faria. O
+ *    erro fica limitado ao intervalo do heartbeat (≤ 20 s), sempre para MENOS.
+ *    Uma fórmula com `now()` para as sessões abertas transformava um portátil
+ *    esquecido numa sessão de dias.
+ *
+ * 2. SESSÃO CORTADA PELA REGRA DE 1-SESSÃO-POR-CONTA (`revokedAt`).
+ *    CONTA-SE à mesma: aqueles minutos foram entregues de verdade, e a
+ *    Cloudflare cobrou-os independentemente de nós termos cortado a sessão a
+ *    seguir. Descontá-los era fingir um custo mais baixo do que a fatura.
+ *    O fim efetivo é `least(lastHeartbeatAt, revokedAt)`. Hoje o `revokedAt` é
+ *    sempre o mais tarde dos dois — `heartbeat()` devolve `false` e NÃO carimba
+ *    quando a sessão já está revogada (`server/playback.ts`) — por isso o
+ *    `least` é redundante. Fica na mesma: custa nada e é o que impede que uma
+ *    mudança futura no heartbeat comece a contar minutos depois do corte.
+ *
+ * 3. DURAÇÃO NEGATIVA (relógios trocados). É real e não teórico: `startedAt`
+ *    vem do `defaultNow()` da BASE DE DADOS e `lastHeartbeatAt` de um `new
+ *    Date()` do SERVIDOR DE APLICAÇÃO (`server/playback.ts`). São relógios
+ *    diferentes, e na Vercel são máquinas diferentes. Um servidor alguns
+ *    milissegundos atrasado dava uma duração negativa, que subtraía minutos ao
+ *    total do evento. `greatest(0, …)` fecha isso.
+ *
+ * 4. SESSÃO ABSURDAMENTE LONGA. Teto de `MAX_SESSION_MINUTES` por sessão, e as
+ *    truncadas são CONTADAS para o ecrã as poder confessar. Ver a justificação
+ *    do teto em `lib/video-costs.ts`.
+ *
+ * 5. SESSÃO DE DURAÇÃO ZERO (abriu e fechou). Conta como sessão, soma zero
+ *    minutos. É a diferença entre "ninguém viu" e "não sabemos" — e é essa
+ *    diferença que faz o ecrã mostrar "—" em vez de "0,00 €".
+ *
+ * Os segundos somam-se todos e só no fim é que viram minutos. Arredondar sessão
+ * a sessão empurrava o total para cima em eventos com muitas sessões curtas.
+ */
+
+// O fim efetivo de uma sessão, e a sua duração em segundos, com os casos 2 e 3
+// já tratados. Fragmentos reutilizados para que a expressão exista UMA vez.
+const sessionEndsAt = sql`least(${playbackSessions.lastHeartbeatAt}, coalesce(${playbackSessions.revokedAt}, ${playbackSessions.lastHeartbeatAt}))`;
+const sessionSeconds = sql`greatest(0, extract(epoch from (${sessionEndsAt} - ${playbackSessions.startedAt})))`;
+// `sql.raw` de uma constante NOSSA, não de nada que venha de fora: um parâmetro
+// ligado aqui deixava o Postgres sem tipo para inferir dentro do `least`.
+const capSeconds = sql.raw(String(MAX_SESSION_MINUTES * 60));
+
+/**
+ * Minutos entregues por evento, para os canais do âmbito.
+ *
+ * Eventos sem uma única sessão NÃO aparecem no mapa — de propósito. "Ausente" é
+ * o que permite a quem chama distinguir "não sabemos" de "zero", e é o que faz
+ * o ecrã mostrar "sem dados" em vez de um zero com ar de facto.
+ */
+export async function getDeliveryByEvent(
+  scope: ChannelScope,
+): Promise<Map<string, DeliveryEstimate>> {
+  const rows = await db
+    .select({
+      eventId: playbackSessions.eventId,
+      sessions: count(),
+      seconds: sql<number>`coalesce(sum(least(${sessionSeconds}, ${capSeconds})), 0)`.mapWith(
+        Number,
+      ),
+      cappedSessions:
+        sql<number>`count(*) filter (where ${sessionSeconds} > ${capSeconds})`.mapWith(Number),
+    })
+    .from(playbackSessions)
+    // O join a `events` existe só para o âmbito: `playback_sessions` não tem
+    // canal, e sem ele esta query respondia com as sessões de toda a plataforma.
+    .innerJoin(events, eq(playbackSessions.eventId, events.id))
+    .where(inChannelScope(scope))
+    .groupBy(playbackSessions.eventId);
+
+  return new Map(
+    rows.map((row) => [
+      row.eventId,
+      {
+        sessions: row.sessions,
+        minutes: Math.round(row.seconds / 60),
+        cappedSessions: row.cappedSessions,
+      },
+    ]),
+  );
+}
+
+/**
+ * Uma linha da economia por evento.
+ *
+ * Colunas escolhidas à mão em vez de `EventRow` inteiro, pela mesma razão do
+ * `PUBLIC_COLUMNS` em `server/channels.ts`: isto viaja para o browser no
+ * payload do RSC, e o `EventRow` traz `cfLiveInputId` — o identificador da
+ * transmissão não tem nada que fazer num ecrã de contas.
+ */
+export type EventEconomicsRow = EventEconomics & {
+  eventId: string;
+  title: string;
+  startsAt: Date;
+  channelId: string;
+  buyers: number;
+  sessions: number;
+  cappedSessions: number;
+};
+
+export type PlatformEconomics = {
+  commissionPct: number;
+  /** A taxa usada na conversão, para o ecrã a poder escrever. */
+  usdToEur: number;
+  rows: EventEconomicsRow[];
+  totals: EconomicsTotals;
+};
+
+/**
+ * Receita, comissão e custo estimado de vídeo, evento a evento.
+ *
+ * DUAS queries e um merge, e não um join só: `entitlements` e
+ * `playback_sessions` têm cardinalidades diferentes e, na mesma query agrupada,
+ * cada compra multiplicava cada sessão — as contagens saíam infladas sem dar
+ * erro nenhum. É a mesma armadilha já documentada em
+ * `listChannelsInScope` (server/channels.ts) e em `countSalesByEvent`.
+ *
+ * As duas queries levam o MESMO âmbito. Tem de ser: uma lista de eventos mais
+ * larga do que o mapa de minutos (ou o contrário) dava linhas de um canal com
+ * os minutos de outro.
+ */
+export async function getPlatformEconomics(scope: ChannelScope): Promise<PlatformEconomics> {
+  const commissionPct = platformCommissionPct();
+  // A taxa é lida AQUI, do lado do servidor, e entregue pura ao modelo — ver a
+  // nota sobre `NEXT_PUBLIC_` no topo de `lib/video-costs.ts`.
+  const usdToEur = resolveUsdToEur(process.env.USD_TO_EUR_RATE);
+
+  const [eventRows, delivery] = await Promise.all([
+    listEventsWithSales(scope),
+    getDeliveryByEvent(scope),
+  ]);
+
+  const rows = eventRows
+    .map((event) => {
+      const estimate = delivery.get(event.id) ?? null;
+      return {
+        eventId: event.id,
+        title: event.title,
+        startsAt: event.startsAt,
+        channelId: event.channelId,
+        buyers: event.buyers,
+        sessions: estimate?.sessions ?? 0,
+        cappedSessions: estimate?.cappedSessions ?? 0,
+        ...eventEconomics({
+          buyers: event.buyers,
+          unitPriceCents: event.priceCents,
+          commissionPct,
+          delivery: estimate,
+          usdToEur,
+        }),
+      };
+    })
+    // Um rascunho que nunca vendeu nem foi visto não tem economia nenhuma para
+    // mostrar — só empurrava para fora do ecrã os eventos que têm.
+    .filter((row) => row.buyers > 0 || row.sessions > 0);
+
+  return { commissionPct, usdToEur, rows, totals: totalEconomics(rows) };
 }
 
 /**

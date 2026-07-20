@@ -1,15 +1,20 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { DataTable } from "@/components/admin/data-table";
+import { EventEconomics } from "@/components/admin/event-economics";
 import { PageHeader } from "@/components/admin/page-header";
 import { buttonVariants } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
 import { TableCell, TableRow } from "@/components/ui/table";
 import { formatEuro, formatNumber } from "@/lib/format";
-import { manageScope, requireUser } from "@/server/authz";
+import { isPlatformAdmin, manageScope, requireUser } from "@/server/authz";
 import { channelsInScope } from "@/server/channels";
-import { getMonthlyStatement, type MonthlyStatementRow } from "@/server/stats";
+import {
+  getMonthlyStatement,
+  getPlatformEconomics,
+  type MonthlyStatementRow,
+} from "@/server/stats";
 
 export const dynamic = "force-dynamic";
 
@@ -23,13 +28,38 @@ export const metadata: Metadata = { title: "Ganhos" };
  * um total que não se pode pagar a ninguém, porque cada liga recebe o seu.
  * Aí a tabela ganha a coluna do canal e passa a haver uma linha por mês E por
  * canal — o total no fundo continua a ser o mesmo dinheiro.
+ *
+ * ────────────────────────────────────────────────────────────────────────────
+ *  PORQUE É QUE A ECONOMIA POR EVENTO É SÓ PARA A FIRSTROW
+ * ────────────────────────────────────────────────────────────────────────────
+ *
+ * O custo do vídeo é da PLATAFORMA, não da liga: sai da comissão que a FirstRow
+ * cobra, e não do líquido que a liga recebe. Pô-lo na tabela do extrato dizia a
+ * um dono de liga que ele paga uma coisa que não paga — e o extrato existe
+ * precisamente para ele conseguir conferir, ao cêntimo, o que lhe é devido.
+ *
+ * Por isso o bloco novo é um bloco à parte, com o gate `isPlatformAdmin`, e o
+ * extrato fica exatamente como estava para quem gere uma liga. (Se um dia se
+ * decidir passar o custo à liga, é aqui que a decisão se inverte — e aí passa a
+ * ser uma linha do extrato, não um bloco separado.)
+ *
+ * O GATE É UMA CONDIÇÃO ANTES DO `await`, e não um `{cond && <bloco/>}` no JSX.
+ * A diferença não é de estilo: layout e página renderizam em paralelo no App
+ * Router, e dados já lidos entram no payload do RSC mesmo quando o componente
+ * que os mostra não chega a ser desenhado — foi assim que o backoffice fugia
+ * antes do corte no `proxy.ts` (ver a medição lá). Não buscar é a única forma
+ * de não revelar.
  */
 export default async function EarningsPage() {
   const user = await requireUser({ next: "/admin/ganhos" });
   const scope = manageScope(user);
-  const [{ commissionPct, rows }, channels] = await Promise.all([
+  const [{ commissionPct, rows }, channels, economics] = await Promise.all([
     getMonthlyStatement(scope),
     channelsInScope(scope),
+    // O âmbito vai à mesma, apesar de o gate garantir hoje `{ all: true }`:
+    // uma query de dinheiro sem âmbito é uma fuga à espera de que alguém
+    // alargue o gate. Ver `inScope` em `server/authz.ts`.
+    isPlatformAdmin(user) ? getPlatformEconomics(scope) : Promise.resolve(null),
   ]);
 
   const totals = rows.reduce(
@@ -53,6 +83,10 @@ export default async function EarningsPage() {
             : "bruto → taxas → líquido, sempre ao cêntimo"
         }
       />
+
+      {/* Primeiro o que é novo e urgente — a fatura da Cloudflare não espera
+          pelo fecho do mês. O extrato, que já se conhece, fica por baixo. */}
+      {economics ? <EventEconomics economics={economics} channels={channels} /> : null}
 
       {rows.length > 0 ? (
         <Card>

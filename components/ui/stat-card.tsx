@@ -4,6 +4,10 @@ import { cn } from "@/lib/utils";
 const HINT_TONES = {
   muted: "text-muted-foreground",
   success: "text-success",
+  // Estado intermédio — o degrau que faltava entre "está bem" e "está mau".
+  // O token já existia (--warning) e o Badge já o usava; só o StatCard é que
+  // obrigava a escolher entre calar o aviso ou gritá-lo como se fosse falha.
+  warning: "text-warning",
   destructive: "text-destructive",
 } as const;
 

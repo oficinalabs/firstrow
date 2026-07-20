@@ -202,25 +202,41 @@ export default async function TransmissionPage({ params }: { params: Promise<{ i
             </CardContent>
           </Card>
 
-          <Card>
-            <CardHeader>
-              <CardTitle>Neste evento</CardTitle>
-            </CardHeader>
-            <CardContent className="flex flex-col gap-2.5">
-              <div className="flex items-baseline justify-between text-2sm">
-                <span className="text-muted-foreground">Acessos vendidos</span>
-                <span className="font-mono font-medium tabular-nums">
-                  {formatNumber(sales.buyers)}
-                </span>
-              </div>
-              <div className="flex items-baseline justify-between text-2sm">
-                <span className="text-muted-foreground">Receita</span>
-                <span className="font-mono font-medium tabular-nums">
-                  {formatEuro(sales.revenueCents)}
-                </span>
-              </div>
-            </CardContent>
-          </Card>
+          {/*
+           * VENDAS E RECEITA SÓ PARA QUEM GERE O CANAL.
+           *
+           * Este ecrã é `canOperateEvents`, ou seja a equipa da liga também o
+           * abre — e passou a abri-lo mesmo, desde que o backoffice deixou
+           * entrar o `staff` para chegar ao scanner. Medido contra o servidor:
+           * com sessão de staff, o corpo desta página trazia "Receita" e o
+           * valor em euros. Quem opera a transmissão precisa de saber se está
+           * no ar e quantos estão a ver; quanto é que o evento faturou é da
+           * gestão da liga.
+           *
+           * `canManage` é o mesmo que já decide o botão de provisionar stream,
+           * logo acima — o papel NESTE canal, não o papel da pessoa.
+           */}
+          {canManage ? (
+            <Card>
+              <CardHeader>
+                <CardTitle>Neste evento</CardTitle>
+              </CardHeader>
+              <CardContent className="flex flex-col gap-2.5">
+                <div className="flex items-baseline justify-between text-2sm">
+                  <span className="text-muted-foreground">Acessos vendidos</span>
+                  <span className="font-mono font-medium tabular-nums">
+                    {formatNumber(sales.buyers)}
+                  </span>
+                </div>
+                <div className="flex items-baseline justify-between text-2sm">
+                  <span className="text-muted-foreground">Receita</span>
+                  <span className="font-mono font-medium tabular-nums">
+                    {formatEuro(sales.revenueCents)}
+                  </span>
+                </div>
+              </CardContent>
+            </Card>
+          ) : null}
         </div>
       </div>
     </div>

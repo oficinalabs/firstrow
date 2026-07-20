@@ -84,22 +84,95 @@ papel noutro canal conta como `viewer` para estas rotas.
 | `/eventos/[id]/ver` | → `/eventos/[id]`  | só com direito ativo   | idem                   | idem                              | página + `hasActiveEntitlement`     |
 | `/conta`        | → `/entrar?next=`      | ✅ (só os seus dados)  | ✅                     | ✅                                | `proxy.ts` + página                 |
 | `/bilhetes`     | → `/entrar?next=`      | ✅ (só os seus)        | ✅                     | ✅                                | `proxy.ts` + página                 |
-| `/admin/**`     | → `/entrar?next=`      | → `/sem-acesso` (403)  | → `/sem-acesso` (403)  | ✅ (só os SEUS canais)            | **`proxy.ts`** + `app/admin/layout.tsx` + âmbito por query |
-| `/admin/eventos/[id]/**` | → `/entrar?next=` | **404**             | ✅ se for do seu canal | ✅ se for do seu canal            | `server/event-access.ts` (canal do evento) |
-| `/admin/plataforma` | → `/entrar?next=`  | **404**                | **404**                | **404** · só `platform_admin` ✅  | página (`isPlatformAdmin`)          |
+| `/admin/**`     | \_\_\_\_\_\_           | \_\_\_\_\_\_           | \_\_\_\_\_\_           | \_\_\_\_\_\_                      | tabela própria, já a seguir — deixou de ter uma resposta só |
 | `/sem-acesso`   | ✅                     | ✅                     | ✅                     | ✅                                | público (é a página de recusa)      |
 
-> **Porque é que o `staff` não entra no `/admin`:** quase nenhuma página do
-> backoffice tem gate próprio, por isso o gate do layout é o gate efetivo de
-> `/admin/ganhos` e `/admin/subscritores` — dinheiro e dados pessoais de
-> compradores. Abrir o backoffice ao staff para lhes dar o scanner dava-lhes a
-> contabilidade ao mesmo tempo. A **API** do scanner já aceita staff
-> (`canOperateEvents`) e fica à espera de que a Frente D ponha gates página a
-> página; nessa altura este gate pode aliviar para `canOperateEvents`.
+> **A descrição do evento é texto de utilizador**, e as duas páginas que a
+> desenham — `/eventos/[id]` e `/eventos/[id]/ver` — tratam-na como filho de
+> texto: o React escapa-a, e as quebras de linha são desenhadas por
+> `whitespace-pre-line`, sem marcação pelo meio. Não há `dangerouslySetInnerHTML`
+> em caminho nenhum da descrição, e há um teste que lê o código-fonte desses
+> ficheiros e falha se alguém acrescentar o atalho.
 
-> **`/admin/**` para um `owner` já não quer dizer "vê tudo".** O gate do layout
-> abre a porta; o que se vê lá dentro é limitado pelo `ChannelScope` de cada
-> query. Ver [Isolamento entre canais](#isolamento-entre-canais).
+#### O backoffice, página a página
+
+> Estado: **medido a 21 de julho de 2026** contra o build de produção na porta
+> 3012, com sessões reais das quatro contas. Os códigos são os observados, não
+> os pretendidos. Frente T.
+
+O `/admin` deixou de ter **uma** porta. Cada caminho declara o papel mínimo de
+que precisa em [`lib/backoffice-zones.ts`](../lib/backoffice-zones.ts), e essa
+tabela é lida em três sítios — `proxy.ts` (que corta), o gate de cada página
+(`requireBackofficePage`) e a navegação lateral (que se filtra por ela). Uma
+tabela só, três leitores: é o que impede a sidebar de oferecer o que a porta
+recusa.
+
+| Rota                            | Zona       | Anónimo | `viewer` | `staff` | `owner` | `platform_admin` |
+| ------------------------------- | ---------- | ------- | -------- | ------- | ------- | ---------------- |
+| `/admin`                        | `manage`   | 307 `/entrar` | 307 `/sem-acesso` | **307 `/admin/scanner`** | 200 | 200 |
+| `/admin/eventos`                | `manage`   | 307 `/entrar` | 307 `/sem-acesso` | 307 `/sem-acesso` | 200 | 200 |
+| `/admin/eventos/novo`           | `manage`   | 307 `/entrar` | 307 `/sem-acesso` | 307 `/sem-acesso` | 200 | 200 |
+| `/admin/canais`                 | `manage`   | 307 `/entrar` | 307 `/sem-acesso` | 307 `/sem-acesso` | 200 | 200 |
+| `/admin/canais/[id]`            | `manage`   | 307 `/entrar` | 307 `/sem-acesso` | 307 `/sem-acesso` | 200 | 200 |
+| `/admin/canais/[id]/membros`    | `manage`   | 307 `/entrar` | 307 `/sem-acesso` | 307 `/sem-acesso` | 200 | 200 |
+| `/admin/subscritores`           | `manage`   | 307 `/entrar` | 307 `/sem-acesso` | 307 `/sem-acesso` | 200 | 200 |
+| `/admin/pagamentos`             | `manage`   | 307 `/entrar` | 307 `/sem-acesso` | 307 `/sem-acesso` | 200 | 200 |
+| `/admin/ganhos`                 | `manage`   | 307 `/entrar` | 307 `/sem-acesso` | 307 `/sem-acesso` | 200 | 200 |
+| **`/admin/scanner`**            | `operate`  | 307 `/entrar` | 307 `/sem-acesso` | **200** | 200 | 200 |
+| `/admin/eventos/[id]/transmissao` | `operate` | 307 `/entrar` | 307 `/sem-acesso` | **200** | 200 | 200 |
+| `/admin/eventos/[id]/bilhetes`  | `operate`  | 307 `/entrar` | 307 `/sem-acesso` | **200** | 200 | 200 |
+| `/admin/eventos/[id]/editar`    | `operate`¹ | 307 `/entrar` | 307 `/sem-acesso` | 200¹ | 200 | 200 |
+| `/admin/plataforma`             | `platform` | 307 `/entrar` | 307 `/sem-acesso` | 200² | 200² | 200 |
+| `/admin/canais/novo`            | `platform` | 307 `/entrar` | 307 `/sem-acesso` | 200² | 200² | 200 |
+
+¹ A zona abre; **quem decide é `requireEventManager`** (owner do canal do
+evento), dentro da página. A zona é grossa de propósito — é o caminho, e o
+caminho não sabe de que canal é o evento. Quem só opera não passa do gate fino.
+
+² **200 com o corpo do 404.** A página responde `notFound()` (o gate próprio
+corre antes da primeira query), mas o streaming do App Router já enviou o
+cabeçalho — é o mesmo fenómeno descrito em
+[⚠️ O "404" das páginas é, na verdade, um 200](#️-o-404-das-páginas-é-na-verdade-um-200--e-porque-é-que-continua-a-servir).
+Medido: o corpo traz só a moldura, sem um único número da plataforma. O
+`proxy.ts` deixa estas zonas passar **de propósito** — um `redirect` para
+`/sem-acesso` confirmava que o ecrã existe, que é o que o 404 esconde.
+
+**Fuga medida:** com sessão de `league_staff`, nenhuma das rotas acima devolveu
+`7,50 €`, `Receita`, `Extrato`, o nome ou o email de um comprador no corpo em
+bruto (HTML + payload RSC). As mesmas sondas com sessão de `owner` acusam
+`7,50 €×4`, `Receita×2` e o nome do comprador em `/admin` — ou seja, a sonda
+funciona; o que não aparece é porque não foi enviado.
+
+> **Porque é que o `staff` entra agora.** Ele existe precisamente para validar
+> bilhetes à porta, e o scanner vive em `/admin/scanner` — enquanto o gate foi
+> único e exigiu `owner`, o único papel feito para o scanner era o único que não
+> lhe chegava. **A ordem da troca foi obrigatória e é de segurança:** primeiro
+> as páginas de dinheiro e dados ganharam gate próprio, só depois a porta
+> aliviou. Pela ordem inversa, entre um passo e o outro o staff da porta via a
+> contabilidade da liga.
+
+> **`manage` é a omissão, e isso é a rede.** Um caminho de `/admin` que ninguém
+> tenha classificado exige `owner`. Uma página nova nasce fechada ao staff, e
+> quem a quiser abrir tem de o ir dizer à tabela — uma linha a mais, e não uma
+> fuga a menos.
+
+> **`/admin/**` para um `owner` não quer dizer "vê tudo".** A zona abre a porta;
+> o que se vê lá dentro é limitado pelo `ChannelScope` de cada query. Ver
+> [Isolamento entre canais](#isolamento-entre-canais).
+
+> **Dentro de uma página `operate`, o dinheiro continua a ser do `owner`.** A
+> transmissão e os bilhetes abrem-se à equipa (é lá que se opera o direto e a
+> porta), mas o cartão de vendas/receita da transmissão, a receita dos bilhetes
+> e o export CSV seguem `canManageEvents` **do canal do evento**. Foi a medição
+> que os apanhou: ao abrir a porta ao staff, essas três coisas passaram a ir no
+> corpo para quem só valida QR codes.
+
+> **Os dois predicados da porta não são o mesmo, e o nome importa.**
+> `canEnterBackoffice` = opera **algum** canal (é só a porta, e é a pergunta do
+> atalho no header). `canManageAnyChannel` = gere **algum** canal, e é o que
+> guarda dinheiro sem canal à frente — a action de reconciliação de pagamentos e
+> o botão de criar evento. Eram a mesma função: alargar a porta sem os separar
+> teria aberto a reconciliação de pagamentos a quem valida bilhetes.
 
 ### Rotas de API e route handlers
 

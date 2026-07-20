@@ -4,6 +4,7 @@ import { auth } from "@/lib/auth";
 import { BACKOFFICE_ROOT, gateForPath } from "@/lib/backoffice-zones";
 import {
   backofficeHomeFor,
+  canEnterBackoffice,
   canOpenBackofficePath,
   DEFAULT_ROLE,
   loadMemberships,
@@ -168,12 +169,17 @@ export default async function proxy(req: NextRequest) {
        * página que corre em paralelo com ele; uma página a travar-se a si
        * mesma, antes de ler seja o que for, não tem esse problema.
        *
-       * Quem não entra sequer no backoffice continua a ser apanhado a seguir,
-       * pelo gate do layout. Há um teste que lê o código de `/admin/plataforma`
-       * e falha se o gate próprio desaparecer — sem ele, esta linha passava a
-       * ser um buraco.
+       * A exceção da exceção: isto só vale para quem JÁ entra no backoffice.
+       * Um espectador não tem nada que esconder-lhe — nunca soube que estas
+       * páginas existem — e deixá-lo passar só o punha a receber a moldura do
+       * backoffice antes de o layout o travar. Vai pela porta normal.
+       *
+       * Há um teste que lê o código destas páginas e falha se o gate próprio
+       * desaparecer — sem ele, esta linha passava a ser um buraco.
        */
-      if (gateForPath(pathname) === "platform") return NextResponse.next();
+      if (gateForPath(pathname) === "platform" && canEnterBackoffice(subject)) {
+        return NextResponse.next();
+      }
 
       /*
        * Quem tem backoffice, mas não ESTE, vai para o que tem em vez de levar

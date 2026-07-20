@@ -265,6 +265,52 @@ describe("a matriz cobre as páginas que existem mesmo", () => {
   });
 });
 
+describe("o gate corre ANTES do primeiro await de dados", () => {
+  /*
+   * ============================================================================
+   *  A POSIÇÃO DO GATE DENTRO DA PÁGINA É QUE CONTA
+   * ============================================================================
+   *
+   * No App Router, uma página que já começou a ler dados escreve-os no payload
+   * RSC mesmo que acabe por recusar — foi assim que, com uma conta `viewer`,
+   * "Receita · julho" e "7,50 €" apareceram no corpo de um `/admin` que tinha
+   * `redirect()` no layout. Um gate na linha certa impede isso; o mesmo gate
+   * três linhas abaixo, não.
+   *
+   * PORQUE É QUE ISTO É UM TESTE E NÃO UMA MEDIÇÃO
+   * Porque a medição não o consegue provar. Nas rotas `manage` o `proxy.ts`
+   * corta primeiro, por isso a página nem chega a correr e o corpo vem vazio
+   * quer o gate esteja bem quer esteja mal colocado — um zero que não distingue
+   * os dois casos não prova nada. O que dá para verificar é a PROPRIEDADE DO
+   * CÓDIGO: o primeiro `await` de cada uma destas páginas é o gate.
+   *
+   * `params`/`searchParams` não contam: são a entrada do pedido, não dados —
+   * e no Next 16 têm mesmo de ser esperados antes de qualquer coisa.
+   */
+  const PAGINAS = [
+    "app/admin/page.tsx",
+    "app/admin/subscritores/page.tsx",
+    "app/admin/pagamentos/page.tsx",
+    "app/admin/canais/page.tsx",
+    "app/admin/eventos/page.tsx",
+    "app/admin/scanner/page.tsx",
+  ];
+
+  it.each(PAGINAS)("%s espera o gate antes de ler dados", (ficheiro) => {
+    const fonte = readFileSync(new URL(`../../${ficheiro}`, import.meta.url), "utf8");
+
+    // Só o corpo do componente: os comentários do topo mencionam nomes de
+    // funções e falseavam a ordem.
+    const corpo = fonte.slice(fonte.indexOf("export default async function"));
+    const semComentarios = corpo.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/[^\n]*/g, "");
+
+    const esperas = [...semComentarios.matchAll(/await\s+([A-Za-z_$][\w$]*)/g)].map((m) => m[1]);
+    const primeiroDeDados = esperas.find((nome) => nome !== "params" && nome !== "searchParams");
+
+    expect(primeiroDeDados).toBe("requireBackofficePage");
+  });
+});
+
 describe("as zonas `platform` travam-se a si próprias", () => {
   /*
    * O `proxy.ts` deixa passar as zonas `platform` DE PROPÓSITO: a recusa delas

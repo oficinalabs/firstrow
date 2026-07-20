@@ -156,6 +156,30 @@ funciona; o que não aparece é porque não foi enviado.
 > quem a quiser abrir tem de o ir dizer à tabela — uma linha a mais, e não uma
 > fuga a menos.
 
+##### ⚠️ O que a medição NÃO prova — e o teste que tapa o buraco
+
+A tabela acima mostra `307` para o `staff` nas rotas `manage`. Isso prova que o
+**proxy** corta; **não** prova que o gate da página está no sítio certo, porque
+a página nem chega a correr. Um corpo vazio tem o mesmo aspeto quando o gate
+está bem colocado e quando está mal colocado — é um zero que não distingue os
+dois casos, e portanto não prova nada sozinho.
+
+O que decide, se um dia o proxy falhar ou o matcher mudar, é a **posição do gate
+dentro da página**: tem de cortar antes do primeiro `await` de dados, senão o
+App Router escreve as queries no payload RSC mesmo com a página a recusar (foi
+assim que "Receita · julho" e "7,50 €" apareceram no corpo de um `/admin` com
+`redirect()` no layout). Como isso é uma propriedade do CÓDIGO e não de um
+valor, verifica-se lendo o código: `tests/unidade/matriz-de-acessos-do-backoffice.test.ts`
+exige que o **primeiro `await`** de cada página de dinheiro seja
+`requireBackofficePage` (`params`/`searchParams` não contam — são a entrada do
+pedido). Confirmado com controlo negativo: mover a query para antes do gate põe
+o teste vermelho.
+
+O mesmo princípio vale para a leitura da tabela de fugas: um zero só conta
+porque as **mesmas** sondas acusam `7,50 €×4` e o nome do comprador com sessão
+de `owner`. Sem esse controlo positivo, "não encontrei nada" podia ser só uma
+sonda partida.
+
 > **`/admin/**` para um `owner` não quer dizer "vê tudo".** A zona abre a porta;
 > o que se vê lá dentro é limitado pelo `ChannelScope` de cada query. Ver
 > [Isolamento entre canais](#isolamento-entre-canais).

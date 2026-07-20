@@ -7,13 +7,37 @@ import { Button, buttonVariants } from "@/components/ui/button";
 import { LiveBadge } from "@/components/ui/live-badge";
 import { Skeleton } from "@/components/ui/skeleton";
 
+/*
+ * ============================================================================
+ *  O PLAYER — e as três coisas que ele passou a fazer bem
+ * ============================================================================
+ *
+ * 1. NÃO RECARREGA A MEIO. O token de reprodução passou a cobrir a sessão
+ *    inteira (ver `lib/cloudflare.ts`), por isso este componente pede UM token
+ *    e fica quieto. Não há renovação porque não pode haver: renovar obriga a
+ *    trocar o `src` do iframe, e trocar o `src` reinicia o vídeo.
+ *
+ * 2. SABE PORQUE PAROU. O heartbeat devolve um motivo, e cada motivo tem o seu
+ *    ecrã. Mostrar "a tua conta abriu noutro dispositivo" a quem só abriu um
+ *    segundo separador é ensinar a pessoa a ignorar o aviso que interessa.
+ *
+ * 3. VIGIA A MARCA DE ÁGUA. Se ela sair do ecrã, o iframe é desmontado (o
+ *    vídeo pára mesmo, não fica em pausa por baixo) e a sessão é revogada no
+ *    servidor. Ver a nota de honestidade em `components/player/watermark.tsx`
+ *    sobre o que esta defesa apanha e o que nunca vai apanhar.
+ */
+
+type Stop = "revoked" | "superseded" | "no-access" | "tampered";
+
 type State =
   | { kind: "loading" }
   | { kind: "playing"; iframeUrl: string; sessionId: string }
   | { kind: "error"; message: string }
-  | { kind: "revoked" };
+  | { kind: "stopped"; reason: Stop };
 
 const HEARTBEAT_MS = 20_000;
+
+type HeartbeatBody = { active: boolean; reason?: Stop };
 
 export function WatchPlayer({
   eventId,
@@ -55,7 +79,8 @@ export function WatchPlayer({
     start();
   }, [start]);
 
-  // Heartbeat: se a sessão for revogada (a conta abriu noutro sítio), corta aqui.
+  // Heartbeat: se a sessão for cortada (outro dispositivo, outro separador, ou
+  // o direito acabou), o player descobre aqui e pára com o ecrã certo.
   useEffect(() => {
     if (state.kind !== "playing") return;
     const sessionId = state.sessionId;
@@ -65,13 +90,34 @@ export function WatchPlayer({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ sessionId }),
       });
-      const data = (await res.json().catch(() => ({ active: false }))) as { active: boolean };
-      if (!data.active) setState({ kind: "revoked" });
+      const data = (await res.json().catch(() => ({ active: false }))) as HeartbeatBody;
+      if (!data.active) setState({ kind: "stopped", reason: data.reason ?? "revoked" });
     }, HEARTBEAT_MS);
     return () => clearInterval(interval);
   }, [state, eventId]);
 
-  if (state.kind === "revoked") return <RevokedFrame onResume={start} />;
+  /*
+   * A marca de água saiu do ecrã. A ordem importa: primeiro tirar o vídeo (o
+   * `setState` desmonta o iframe e a reprodução pára já), só depois avisar o
+   * servidor. Se o aviso falhar — sem rede, pedido bloqueado — o vídeo ficou
+   * parado à mesma neste browser.
+   */
+  const onTampered = useCallback(
+    (motivo: string) => {
+      const sessionId = state.kind === "playing" ? state.sessionId : null;
+      setState({ kind: "stopped", reason: "tampered" });
+      if (!sessionId) return;
+      void fetch(`/api/playback/${eventId}/marca`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sessionId, detail: motivo }),
+        keepalive: true,
+      }).catch(() => {});
+    },
+    [eventId, state],
+  );
+
+  if (state.kind === "stopped") return <StoppedFrame reason={state.reason} onResume={start} />;
 
   if (state.kind === "error") {
     return (
@@ -104,7 +150,7 @@ export function WatchPlayer({
         className="absolute inset-0 size-full border-0"
       />
       {mode === "live" && <LiveBadge className="absolute left-4 top-4 z-10" />}
-      <Watermark label={watermark} />
+      <Watermark label={watermark} onTampered={onTampered} />
     </Frame>
   );
 }
@@ -118,7 +164,37 @@ function Frame({ children }: { children: React.ReactNode }) {
   );
 }
 
-function RevokedFrame({ onResume }: { onResume: () => void }) {
+/*
+ * Cada paragem tem o seu texto. O caso `superseded` é o que existia a mentir:
+ * era o mesmo browser a recarregar e o ecrã dizia "outro dispositivo" — um
+ * alarme falso, repetido de dois em dois minutos, que treinava a pessoa a não
+ * ler o alarme verdadeiro.
+ */
+const STOPS: Record<Stop, { title: string; body: string; resume: string }> = {
+  revoked: {
+    title: "A tua conta começou a ver noutro dispositivo",
+    body: "Só uma reprodução de cada vez. Se foste tu, retoma aqui; se não reconheces isto, muda já a password.",
+    resume: "Retomar aqui",
+  },
+  superseded: {
+    title: "Abriste este evento noutro separador",
+    body: "A reprodução foi para lá. Podes trazê-la de volta para este separador quando quiseres.",
+    resume: "Ver aqui",
+  },
+  "no-access": {
+    title: "O teu acesso a este evento terminou",
+    body: "Isto acontece se a compra foi reembolsada ou anulada. Se achas que é engano, fala com a organização da liga.",
+    resume: "Tentar outra vez",
+  },
+  tampered: {
+    title: "Reprodução interrompida",
+    body: "A marca de água que identifica esta sessão foi removida ou tapada. A sessão foi terminada e o caso ficou registado na conta.",
+    resume: "Recomeçar",
+  },
+};
+
+function StoppedFrame({ reason, onResume }: { reason: Stop; onResume: () => void }) {
+  const texto = STOPS[reason];
   return (
     <div className="overflow-hidden rounded-sm border bg-card">
       <div className="flex aspect-video items-center justify-center gap-2 bg-bar">
@@ -127,19 +203,18 @@ function RevokedFrame({ onResume }: { onResume: () => void }) {
       </div>
       <div className="flex flex-col items-center gap-3 px-5 py-6 text-center">
         <h2 className="max-w-75 font-display text-lg font-extrabold leading-tight">
-          A tua conta começou a ver noutro dispositivo
+          {texto.title}
         </h2>
-        <p className="max-w-75 text-2sm leading-relaxed text-muted-foreground">
-          Só uma sessão pode ver de cada vez. Se foste tu, retoma aqui; se não reconheces isto, muda
-          já a password.
-        </p>
+        <p className="max-w-75 text-2sm leading-relaxed text-muted-foreground">{texto.body}</p>
         <div className="mt-1.5 flex w-full flex-col gap-2.5">
           <Button size="lg" onClick={onResume}>
-            Retomar aqui
+            {texto.resume}
           </Button>
-          <Link href="/recuperar" className={buttonVariants({ variant: "ghost" })}>
-            Mudar a password
-          </Link>
+          {reason === "revoked" && (
+            <Link href="/recuperar" className={buttonVariants({ variant: "ghost" })}>
+              Mudar a password
+            </Link>
+          )}
         </div>
       </div>
     </div>

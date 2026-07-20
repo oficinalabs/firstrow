@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { attachDeviceCookie, newDeviceId, readDeviceId } from "@/app/api/playback/device";
 import { signPlaybackToken, streamIframeUrl } from "@/lib/cloudflare";
 import { limitByIp } from "@/lib/rate-limit";
 import { requireApi } from "@/server/api-guard";
@@ -18,6 +19,11 @@ import { startSession } from "@/server/playback";
  * Sem travão, uma conta comprada uma vez podia servir de fábrica de tokens
  * para distribuir. 12/min dá para recarregar a página à vontade e não dá
  * para alimentar uma audiência.
+ *
+ * O DISPOSITIVO (cookie `fr_dv`, ver `../../device.ts`) entra aqui e só aqui:
+ * é o primeiro sítio onde há um espectador a começar a ver. Quem chega sem
+ * cookie leva um na resposta — daí em diante, recarregar a página deixa de
+ * parecer uma tomada de sessão.
  */
 export async function POST(req: Request, { params }: { params: Promise<{ eventId: string }> }) {
   const { eventId } = await params;
@@ -46,9 +52,17 @@ export async function POST(req: Request, { params }: { params: Promise<{ eventId
     return NextResponse.json({ error: "Sem acesso a este evento" }, { status: 403 });
   }
 
-  // Concorrência: inicia a sessão (revoga outras da conta) e assina o token.
-  const sessionId = await startSession(gate.user.id, eventId);
-  const token = await signPlaybackToken(target.id);
+  // Sem cookie ainda? Este é o primeiro play deste browser: nasce aqui.
+  const deviceId = readDeviceId(req) ?? newDeviceId();
 
-  return NextResponse.json({ sessionId, iframeUrl: streamIframeUrl(token) });
+  // Concorrência: fecha as sessões anteriores da conta (silenciosamente se for
+  // o mesmo dispositivo) e assina o token para o recurso certo, com um TTL que
+  // cobre a visualização inteira — ver `lib/cloudflare.ts`.
+  const { sessionId } = await startSession(gate.user.id, eventId, deviceId);
+  const token = await signPlaybackToken(target.id, target.isVod ? "vod" : "live");
+
+  return attachDeviceCookie(
+    NextResponse.json({ sessionId, iframeUrl: streamIframeUrl(token) }),
+    deviceId,
+  );
 }

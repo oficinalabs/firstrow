@@ -214,7 +214,40 @@ export const tickets = pgTable(
   ],
 );
 
-// Concorrência: 1 sessão a ver por conta. O player faz heartbeat; 2a sessão é recusada.
+/**
+ * Porque é que uma sessão foi REVOGADA. Ver a nota da tabela.
+ *
+ *   other_device — a conta começou a ver noutro dispositivo (partilha)
+ *   watermark    — a marca de água foi removida ou tapada no browser
+ *   no_access    — deixou de ter direito a ver a meio (reembolso, estorno)
+ */
+export const REVOKE_REASONS = ["other_device", "watermark", "no_access"] as const;
+export type RevokeReason = (typeof REVOKE_REASONS)[number];
+
+/*
+ * Concorrência: 1 reprodução por conta de cada vez. O player faz heartbeat e
+ * descobre aí que foi cortado.
+ *
+ * DUAS FORMAS DE UMA SESSÃO ACABAR, e a diferença entre elas é a diferença
+ * entre uma métrica que serve para alguma coisa e uma que mente:
+ *
+ *   `supersededAt` — o MESMO dispositivo voltou a começar (recarregou a
+ *      página, abriu segundo separador). Substituição SILENCIOSA: continua a
+ *      valer a regra de uma reprodução de cada vez (a sessão velha deixa de
+ *      responder ao heartbeat), mas isto não é um bloqueio e não pode contar
+ *      como tal.
+ *
+ *   `revokedAt` — foi OUTRO dispositivo, ou a marca de água foi adulterada.
+ *      É o que a régie mostra como "sessões bloqueadas" e é o sinal de
+ *      partilha de conta. `revokedReason` diz qual dos dois.
+ *
+ * PORQUÊ DUAS COLUNAS E NÃO UMA COM MOTIVO: `server/stats.ts` conta bloqueios
+ * por `revokedAt is not null`. Enquanto a recarga do mesmo browser carimbava
+ * `revokedAt`, a régie mostrava 7 "sessões cortadas" para uma pessoa sozinha
+ * num browser só — media recargas e chamava-lhes partilha de conta. Com o
+ * carimbo separado, a contagem passa a ser o que o nome diz sem que a query
+ * precise de saber que isto existe.
+ */
 export const playbackSessions = pgTable(
   "playback_sessions",
   {
@@ -225,11 +258,29 @@ export const playbackSessions = pgTable(
     eventId: text("event_id")
       .notNull()
       .references(() => events.id, { onDelete: "cascade" }),
+    /**
+     * Que dispositivo é este — cookie httpOnly criado no primeiro play.
+     *
+     * NÃO é credencial: não abre nada, não autoriza nada. Serve só para
+     * distinguir "a mesma pessoa recarregou" de "a conta abriu noutro sítio".
+     * NULL nas sessões anteriores a esta coluna (e num cliente sem cookies),
+     * e NULL nunca casa com NULL — sem dispositivo conhecido, o caminho é o
+     * conservador: conta como outro dispositivo.
+     */
+    deviceId: text("device_id"),
     startedAt: timestamp("started_at").notNull().defaultNow(),
     lastHeartbeatAt: timestamp("last_heartbeat_at").notNull().defaultNow(),
+    /** Substituída pelo mesmo dispositivo — silenciosa, não é bloqueio. */
+    supersededAt: timestamp("superseded_at"),
     revokedAt: timestamp("revoked_at"),
+    /** Um de `REVOKE_REASONS`. Só faz sentido com `revokedAt` preenchido. */
+    revokedReason: text("revoked_reason").$type<RevokeReason>(),
   },
-  (t) => [index("playback_sessions_user_idx").on(t.userId)],
+  (t) => [
+    index("playback_sessions_user_idx").on(t.userId),
+    // As sessões vivas de uma conta — é a leitura de todos os `startSession`.
+    index("playback_sessions_live_idx").on(t.userId, t.revokedAt, t.supersededAt),
+  ],
 );
 
 /*

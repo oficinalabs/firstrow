@@ -11,6 +11,7 @@ import { NextLiveCard } from "@/components/eventos/next-live-card";
 import { type ChannelProgram, type EventRow, splitProgram } from "@/components/eventos/program";
 import { ViewerFooter } from "@/components/eventos/viewer-footer";
 import { SITE_URL } from "@/components/marketing/dados";
+import { BackofficeLink } from "@/components/ui/backoffice-link";
 import { buttonVariants } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { SectionHeader } from "@/components/ui/section-header";
@@ -50,7 +51,7 @@ export default async function ChannelPage({ params }: ChannelParams) {
   }
 
   return (
-    <ViewerShell active="inicio" channel={channel}>
+    <ViewerShell active="inicio" channel={channel} backoffice={<BackofficeLink />}>
       <ChannelHeader channel={channel} />
       <div className="mx-auto flex w-full max-w-6xl flex-1 flex-col gap-7 px-4 pt-5 md:gap-8 md:px-8 md:pt-6">
         {rows === null ? (

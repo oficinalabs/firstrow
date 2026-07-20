@@ -21,13 +21,30 @@ export type ViewerNavKey = (typeof NAV_ITEMS)[number]["key"];
  * a liga escolhe o tom, o sistema garante que se lê (ver lib/colors.ts).
  * As páginas da plataforma — visão geral, bilhetes, conta — não passam canal
  * nenhum: a moldura fica só FirstRow, como no design da homepage.
+ *
+ * ────────────────────────────────────────────────────────────────────────────
+ *  PORQUE É QUE O ATALHO DO BACKOFFICE ENTRA POR PROP
+ * ────────────────────────────────────────────────────────────────────────────
+ *
+ * Este ficheiro NÃO PODE ler a sessão. Dois `error.tsx` são `"use client"` —
+ * o Next exige-o das error boundaries — e importam o `ViewerShell`, o que o
+ * arrasta para o bundle do browser. Um `getCurrentUser()` aqui dentro levava o
+ * `server/authz` (e o driver do Postgres) atrás.
+ *
+ * Por isso quem decide é o `<BackofficeLink />`, um componente de SERVIDOR que
+ * as páginas passam por aqui já montado. Para quem não tem poderes ele devolve
+ * `null` — o atalho não é escondido, não existe. As `loading.tsx` e as
+ * `error.tsx` simplesmente não o passam: um esqueleto não tem sessão para ler.
  */
 export function ViewerShell({
   active,
+  backoffice,
   channel,
   children,
 }: {
   active?: ViewerNavKey;
+  /** `<BackofficeLink />`. Só as páginas de servidor o passam — ver acima. */
+  backoffice?: React.ReactNode;
   channel?: Channel;
   children: React.ReactNode;
 }) {
@@ -62,6 +79,7 @@ export function ViewerShell({
                 {item.label}
               </Link>
             ))}
+            {backoffice}
           </nav>
         </div>
       </header>

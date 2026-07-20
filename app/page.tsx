@@ -8,6 +8,7 @@ import { ChannelRow } from "@/components/home/channel-row";
 import { buildOverview, type PlatformOverview } from "@/components/home/overview";
 import { UpcomingRow } from "@/components/home/upcoming-row";
 import { SITE_URL } from "@/components/marketing/dados";
+import { BackofficeLink } from "@/components/ui/backoffice-link";
 import { buttonVariants } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { SectionHeader } from "@/components/ui/section-header";
@@ -51,7 +52,7 @@ export default async function HomePage() {
   }
 
   return (
-    <ViewerShell active="inicio">
+    <ViewerShell active="inicio" backoffice={<BackofficeLink />}>
       <div className="mx-auto flex w-full max-w-6xl flex-1 flex-col px-4 md:px-8">
         {overview !== null && overview.live.length > 0 ? (
           <div className="flex flex-col gap-3 pt-5 md:pt-6">

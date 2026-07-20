@@ -102,6 +102,18 @@ export const events = pgTable(
       .notNull()
       .references(() => channels.id, { onDelete: "restrict" }),
     title: text("title").notNull(),
+    /*
+     * Texto livre do dono do canal sobre o evento. NULL = não escreveu nenhuma,
+     * que é diferente de "escreveu e apagou" só para nós — para o ecrã é o mesmo
+     * e a secção não aparece. Nullable e sem default: aditiva, sem tocar nas
+     * linhas que já existem.
+     *
+     * O limite de tamanho é do `lib/event-rules.ts` e imposto no servidor; a
+     * coluna é `text` para que uma descrição um pouco maior nunca seja um erro
+     * de base de dados (que rebentava a gravação inteira) em vez de um erro de
+     * campo com uma frase a explicar.
+     */
+    description: text("description"),
     startsAt: timestamp("starts_at").notNull(),
     priceCents: integer("price_cents").notNull(),
     // draft | live | ended

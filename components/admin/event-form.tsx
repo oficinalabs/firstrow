@@ -8,9 +8,11 @@ import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Field, FieldError, FieldHint, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
+import { Textarea } from "@/components/ui/textarea";
 import type { Channel } from "@/lib/channels";
 import {
   CHANNEL_REQUIRED_MESSAGE,
+  descriptionLength,
   EMPTY_EVENT_FORM,
   type EventCommitments,
   type EventDraft,
@@ -20,13 +22,22 @@ import {
   type EventFormValues,
   isInThePast,
   lisbonInstant,
+  MAX_DESCRIPTION_LENGTH,
+  normalizeDescription,
   PAST_START_MESSAGE,
   timeChangeConsequences,
   todayInLisbon,
   validateEventForm,
 } from "@/lib/event-rules";
+import { formatNumber } from "@/lib/format";
 
 const NO_ERRORS: EventFieldErrors = {};
+
+/** A partir de quantos caracteres livres é que o contador aparece. */
+const DESCRIPTION_COUNTER_FROM = 200;
+
+const DESCRIPTION_PLACEHOLDER =
+  "Quem se enfrenta, o formato, o que está em jogo. Duas ou três linhas chegam.";
 
 /*
  * Um campo fechado é `readOnly`, NÃO `disabled` — e isto não é cosmético.
@@ -182,6 +193,15 @@ export function EventForm(props: EventFormProps) {
    * regra que o servidor aplica — ver `validateEventForm`.
    */
   const alreadyPast = chosen !== null && (!editing || timeMoved) && isInThePast(chosen);
+
+  /*
+   * Quanto falta para o limite — contado com as MESMAS funções que o servidor
+   * usa para recusar, e sobre o texto já normalizado. Contar o texto em bruto
+   * dava um campo a dizer "faltam 0" com espaço de sobra depois de o servidor o
+   * limpar, e a recusa aparecia num sítio onde o contador dizia que cabia.
+   */
+  const descriptionLeft =
+    MAX_DESCRIPTION_LENGTH - descriptionLength(normalizeDescription(values.description));
 
   const verdict = isSubmitting ? NO_ERRORS : (clientErrors ?? state.errors);
   const errors: EventFieldErrors = Object.fromEntries(
@@ -340,8 +360,46 @@ export function EventForm(props: EventFormProps) {
                 <FieldHint>Hora de Lisboa.</FieldHint>
               )}
             </div>
-            {/* TODO(frente-d/roadmap): local, descrição e cartaz precisam de
-                colunas novas em events — ficam para quando o schema as tiver. */}
+            <Field>
+              <FieldLabel htmlFor="event-description">Descrição</FieldLabel>
+              <Textarea
+                id="event-description"
+                name="description"
+                value={values.description}
+                onChange={(e) => set("description", e.target.value)}
+                placeholder={DESCRIPTION_PLACEHOLDER}
+                rows={5}
+                /*
+                 * Conforto, não garantia: o browser trava aqui, e quem falar com
+                 * a server action à mão passa ao lado. Quem recusa a sério é o
+                 * `validateEventForm` no servidor. O valor é generoso de
+                 * propósito — o limite conta o texto NORMALIZADO, que é sempre
+                 * ≤ ao que se escreveu, e um `maxLength` justo cortava a meio de
+                 * uma colagem com `\r\n` que ainda ia encolher.
+                 */
+                maxLength={MAX_DESCRIPTION_LENGTH * 2}
+                aria-invalid={errors.description ? true : undefined}
+                aria-describedby={`${lockIds}-descricao`}
+              />
+              <FieldError>{errors.description}</FieldError>
+              {/*
+               * O contador só aparece perto do fim. Um "0 / 2000" permanente é
+               * ruído em cima de um campo que quase ninguém enche, e transforma
+               * uma caixa de texto livre num exercício de contagem.
+               */}
+              <FieldHint id={`${lockIds}-descricao`}>
+                {descriptionLeft < 0
+                  ? // Passar do limite é possível (o `maxLength` é folgado de
+                    // propósito), e aí o número tem de dizer quanto é preciso
+                    // CORTAR — "faltam -50 caracteres" não é uma frase.
+                    `${formatNumber(-descriptionLeft)} caracteres a mais.`
+                  : descriptionLeft <= DESCRIPTION_COUNTER_FROM
+                    ? `Faltam ${formatNumber(descriptionLeft)} caracteres.`
+                    : "Aparece na página do evento e no texto de partilha. Opcional."}
+              </FieldHint>
+            </Field>
+            {/* TODO(frente-d/roadmap): local e cartaz precisam de colunas novas
+                em events — ficam para quando o schema as tiver. */}
           </CardContent>
         </Card>
 

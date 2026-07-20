@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { DataTable } from "@/components/admin/data-table";
+import { EventTitleLink } from "@/components/admin/event-title-link";
 import { PageHeader } from "@/components/admin/page-header";
 import { buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -71,7 +72,12 @@ export default async function AdminDashboardPage() {
             {stats.nextEvent ? (
               <StatCard
                 label={stats.nextEvent.status === "live" ? "Agora no ar" : "Próxima live"}
-                value={stats.nextEvent.title}
+                // O nome do próximo evento abre-o. É o cartão em que se carrega
+                // quando se chega à dashboard para ir pôr a live no ar, e até
+                // aqui não levava a lado nenhum.
+                value={
+                  <EventTitleLink eventId={stats.nextEvent.id} title={stats.nextEvent.title} />
+                }
                 valueClassName="font-sans text-base font-bold"
                 hint={formatDateTime(stats.nextEvent.startsAt)}
               />

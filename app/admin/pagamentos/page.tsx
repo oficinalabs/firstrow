@@ -9,7 +9,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
 import { StatCard } from "@/components/ui/stat-card";
 import { formatDate, formatEuro, formatNumber, formatTime } from "@/lib/format";
-import { manageScope, requireUser } from "@/server/authz";
+import { manageScope, requireBackofficePage } from "@/server/authz";
 import { channelsInScope } from "@/server/channels";
 import { listPurchasesAtRisk, type PurchaseAtRisk, type PurchaseRisk } from "@/server/purchases";
 
@@ -53,7 +53,8 @@ function quando(instante: Date): string {
 }
 
 export default async function PaymentsPage() {
-  const user = await requireUser({ next: "/admin/pagamentos" });
+  // Gate próprio antes das queries: dinheiro por cobrar e emails de quem pagou.
+  const user = await requireBackofficePage("/admin/pagamentos");
   const scope = manageScope(user);
   const [compras, channels] = await Promise.all([
     listPurchasesAtRisk(scope),

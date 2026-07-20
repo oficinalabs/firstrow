@@ -10,7 +10,12 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
 import { eventHubPath } from "@/lib/event-rules";
 import { formatDate, formatEuro, formatNumber, formatTime } from "@/lib/format";
-import { canEnterBackoffice, canManageEvents, operateScope, requireUser } from "@/server/authz";
+import {
+  canManageAnyChannel,
+  canManageEvents,
+  operateScope,
+  requireBackofficePage,
+} from "@/server/authz";
 import { type ChannelsInScope, channelsInScope } from "@/server/channels";
 import { countSalesByEvent } from "@/server/events";
 import { type EventWithSales, listEventsWithSales } from "@/server/stats";
@@ -139,7 +144,17 @@ export default async function AdminEventsPage() {
   // Defesa em profundidade: o layout do backoffice já filtra, a página confirma.
   // Aqui não há um evento de onde tirar o canal — é uma lista — por isso o que
   // limita é o ÂMBITO: só entram os eventos dos canais desta pessoa.
-  const user = await requireUser({ next: "/admin/eventos" });
+  /*
+   * Gate próprio antes das queries. Esta lista exige `manage` e não `operate`,
+   * apesar de o ÂMBITO abaixo ser `operateScope`: as colunas são PPV,
+   * compradores e receita por evento — dinheiro. Quem só opera a porta entra
+   * pelo scanner, que tem o seu próprio seletor de eventos.
+   *
+   * (O âmbito continua `operateScope` porque um dono que também seja staff
+   * noutro canal tem de ver as duas listas. O gate diz QUEM abre o ecrã; o
+   * âmbito diz DE QUE canais ele fala. São perguntas diferentes.)
+   */
+  const user = await requireBackofficePage("/admin/eventos");
   const scope = operateScope(user);
 
   const [events, sales, channels] = await Promise.all([
@@ -160,7 +175,7 @@ export default async function AdminEventsPage() {
   const canManage = (event: EventWithSales) => canManageEvents(user, event.channelId);
   // Criar exige ser dono de algum canal — em qual é que ele nasce decide-se em
   // `resolveChannelForNewEvent`, e não aqui.
-  const canCreate = canEnterBackoffice(user);
+  const canCreate = canManageAnyChannel(user);
 
   return (
     <div className="mx-auto flex w-full max-w-5xl flex-col gap-5">

@@ -6,7 +6,7 @@ import { EventForm } from "@/components/admin/event-form";
 import { PageHeader } from "@/components/admin/page-header";
 import { buttonVariants } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
-import { canEnterBackoffice, requireUser } from "@/server/authz";
+import { canManageAnyChannel, requireUser } from "@/server/authz";
 import { listCreatableChannels } from "@/server/event-access";
 
 export const metadata: Metadata = { title: "Criar evento" };
@@ -21,7 +21,10 @@ export default async function NewEventPage() {
    * canal nasce decide-se na action, em `resolveChannelForNewEvent`.
    */
   const user = await requireUser({ next: "/admin/eventos/novo" });
-  if (!canEnterBackoffice(user)) notFound();
+  // `canManageAnyChannel` e não `canEnterBackoffice`: desde que o staff entra no
+  // backoffice, "estar cá dentro" deixou de querer dizer "gere um canal". Criar
+  // eventos custa dinheiro (provisiona vídeo), logo continua a pedir `owner`.
+  if (!canManageAnyChannel(user)) notFound();
 
   /*
    * Os canais onde esta pessoa pode mesmo criar. O formulário usa-os para

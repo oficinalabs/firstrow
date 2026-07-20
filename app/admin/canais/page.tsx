@@ -9,7 +9,7 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { tenantStyle } from "@/components/ui/tenant-scope";
 import { channelPath } from "@/lib/channels";
 import { formatNumber } from "@/lib/format";
-import { isPlatformAdmin, manageScope, requireUser } from "@/server/authz";
+import { isPlatformAdmin, manageScope, requireBackofficePage } from "@/server/authz";
 import { type ChannelSummary, listChannelsInScope } from "@/server/channels";
 
 export const dynamic = "force-dynamic";
@@ -30,7 +30,9 @@ export const metadata: Metadata = { title: "Canais" };
  * backoffice; isto é a defesa em profundidade que decide o que se vê.
  */
 export default async function ChannelsPage() {
-  const user = await requireUser({ next: "/admin/canais" });
+  // Gate próprio antes da query: que ligas existem é informação comercial, e
+  // gerir canais é `manage` — quem só opera a porta não decide marcas nem membros.
+  const user = await requireBackofficePage("/admin/canais");
   const channels = await listChannelsInScope(manageScope(user));
 
   // Criar canais de raiz é da FirstRow. Esconder o botão é cortesia — quem lá

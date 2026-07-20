@@ -2,7 +2,7 @@ import Link from "next/link";
 import { Scanner } from "@/components/tickets/scanner";
 import { EmptyState } from "@/components/ui/empty-state";
 import { formatDateTime } from "@/lib/format";
-import { operateScope, requireUser } from "@/server/authz";
+import { operateScope, requireBackofficePage } from "@/server/authz";
 import { permitEventOperation } from "@/server/event-access";
 import { listEventsInScope } from "@/server/events";
 import { getEventTicketStats } from "@/server/tickets";
@@ -19,13 +19,19 @@ export default async function AdminScannerPage({
   const { evento } = await searchParams;
 
   /*
-   * Validar bilhetes à porta é operar o evento — e é o canal DELE que decide.
-   * Um evento que não existe e um evento de outra liga caem os dois no seletor,
-   * de propósito: da porta não se distingue um do outro.
-   *
-   * (O layout do /admin ainda corta em `canEnterBackoffice`, que exige ser
-   * dono de um canal, por isso a equipa não chega aqui — ver
-   * docs/SEGURANCA-APP.md.)
+   * O gate da ZONA primeiro, antes de qualquer query: `/admin/scanner` é
+   * `operate`, ou seja `owner` OU `staff` de algum canal. É esta a página por
+   * causa da qual o backoffice abriu ao staff — até aqui, o único papel feito
+   * para validar bilhetes à porta era o único que não chegava ao scanner.
+   */
+  const user = await requireBackofficePage("/admin/scanner");
+
+  /*
+   * Passar o gate da zona não é poder validar ESTE evento: quem decide isso é o
+   * canal DELE, em `permitEventOperation`. Um evento que não existe e um evento
+   * de outra liga caem os dois no seletor, de propósito — da porta não se
+   * distingue um do outro, e é isso que impede o staff da liga A de descobrir o
+   * calendário da liga B a experimentar ids.
    */
   if (evento) {
     const permit = await permitEventOperation(evento);
@@ -42,7 +48,6 @@ export default async function AdminScannerPage({
     }
   }
 
-  const user = await requireUser({ next: "/admin/scanner" });
   const events = await listEventsInScope(operateScope(user));
   const comBilhetes = events.filter((e) => e.ticketPriceCents != null);
 

@@ -6,7 +6,7 @@ import { buttonVariants } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
 import { formatDate, formatEuro, formatNumber } from "@/lib/format";
-import { manageScope, requireUser } from "@/server/authz";
+import { manageScope, requireBackofficePage } from "@/server/authz";
 import { channelsInScope } from "@/server/channels";
 import { type BuyerRow, listBuyers } from "@/server/stats";
 
@@ -28,7 +28,10 @@ export const metadata: Metadata = { title: "Subscritores" };
  * distingue uma liga com 84 de duas com 42 cada.
  */
 export default async function SubscribersPage() {
-  const user = await requireUser({ next: "/admin/subscritores" });
+  // Gate próprio antes das queries: nomes e emails de compradores exigem
+  // `manage`. É a página que mais dependia do gate do layout — e o gate do
+  // layout, sozinho, não impede a query de correr.
+  const user = await requireBackofficePage("/admin/subscritores");
   const scope = manageScope(user);
   const [buyers, channels] = await Promise.all([listBuyers(scope), channelsInScope(scope)]);
 

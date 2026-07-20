@@ -42,13 +42,26 @@ com easing, ciclo longo, opacidade baixa para não estragar a visualização), m
 salto de posição que já existe. Sem depender só de JS: se o JS falhar, a animação CSS
 continua.
 
-**Honestidade sobre a marca de água, para ficar escrito:** ela vive no DOM, por cima
-do iframe. Quem abrir o inspetor apaga o `<span>` e fica com o vídeo limpo. Isto é
-inerente à abordagem — a Cloudflare não grava marcas de água no próprio vídeo em
-live. O valor real dela é (1) dissuadir o espectador comum de filmar o ecrã, e
-(2) identificar a conta em qualquer gravação partilhada *sem* o inspetor aberto.
-Contra o atacante técnico, as defesas são o login, a sessão única e o token por
-conta. Não vender às ligas mais do que isto.
+**Resistência a adulteração — investigado a 20/07, e o resultado muda o desenho.**
+
+Verificado contra a API real: a Cloudflare **tem** perfis de marca de água
+(`/stream/watermarks` responde 200 nesta conta) mas eles **só se aplicam a vídeos
+carregados**. O live input não tem sequer esse campo — devolve
+`uid, rtmps, srt, webRTC, recording, …` e nada de `watermark`. As gravações de live
+também não, porque não passam por um upload nosso. **Gravar a marca no vídeo do lado
+do servidor não é opção.** Marca por espectador exigiria transcodificar um vídeo por
+pessoa: impraticável a qualquer escala.
+
+Logo, a defesa possível é **detetar e reagir**: se o elemento for removido, escondido,
+tornado transparente, tapado ou movido para fora do ecrã, a reprodução **pára** e a
+sessão é revogada no servidor. Apagar a marca passa a custar o vídeo, e a tentativa
+fica registada para a liga poder banir a conta.
+
+O que isto **não** resolve, e tem de ficar escrito no código: quem editar o nosso JS
+contorna. O objetivo é tornar a remoção casual inútil e deixar rasto — não prometer o
+impossível. Contra o atacante determinado (que grava o ecrã na mesma), as defesas
+reais são o login obrigatório, a sessão única, o token por conta e a identificação
+forense de quem partilhou. **Nunca vender às ligas mais do que isto.**
 
 ---
 
@@ -169,13 +182,25 @@ selecionável. Nada de dashboards-de-brinquedo com animações gratuitas.
 
 ---
 
-## Decisões de produto ainda em aberto (para o Rui)
-1. **Chat anónimo lê?** Proposta: quem não comprou não vê o chat (é parte do
-   produto pago). Confirmar.
-2. **Likes públicos?** Proposta: contagem pública, quem gostou é privado.
-3. **Comentários: janela de tempo?** Proposta: abertos enquanto o VOD estiver
-   disponível (30 dias — decisão já tomada), fecham quando o VOD expira.
-4. **Upload: quem pode?** Proposta: dono do canal e platform_admin; staff não.
+## Decisões de produto (tomadas 20/07/2026)
+1. **Quem não comprou NÃO vê o chat** — faz parte do produto pago.
+2. **Likes:** contagem pública, quem gostou fica privado.
+3. **Comentários** fecham quando o VOD expira (30 dias).
+4. **Upload de imagens:** dono do canal e `platform_admin`; staff não.
+
+## Nota sobre papéis e rotas (pergunta recorrente)
+
+O dono da liga **entra** em `/admin` — e está certo. A rota é partilhada; **os dados
+é que são filtrados** (`manageScope(user)` → `inScope`). O dono da SmokingBars vê
+apenas números da SmokingBars: medido, âmbito vazio devolve zero linhas e um canal
+alheio responde byte a byte como um id inexistente.
+
+A alternativa — rotas separadas por papel — obrigava a duplicar cada página, e
+duplicação é onde as fugas nascem (já aconteceu aqui: dois sítios a decidir o mesmo
+acesso, um desatualizado, e nenhum VOD tocava).
+
+**O papel que vê tudo já existe: `platform_admin`.** O que falta não é o papel, é a
+vista global — é a Onda C2.
 
 ## Custos novos deste plano
 - R2: 0 € à escala atual (free tier 10 GB).

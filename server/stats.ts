@@ -6,15 +6,18 @@ import {
   desc,
   eq,
   gte,
+  inArray,
   isNotNull,
   isNull,
   lt,
   max,
+  type SQL,
   sql,
 } from "drizzle-orm";
+import type { AnyPgColumn } from "drizzle-orm/pg-core";
 import { db } from "@/db";
 import { user } from "@/db/auth-schema";
-import { channels, entitlements, events, playbackSessions } from "@/db/schema";
+import { channels, entitlements, events, playbackSessions, tickets } from "@/db/schema";
 import {
   type DeliveryEstimate,
   type EconomicsTotals,
@@ -77,6 +80,15 @@ export type RecentPayment = {
   id: string;
   createdAt: Date;
   buyerName: string;
+  /**
+   * O evento a que este pagamento pertence — para o título poder ser LINK.
+   *
+   * Sem isto, "Últimos pagamentos" mostrava o nome do evento como texto morto:
+   * a linha diz que alguém pagou e não havia como ir ver o quê. O destino é o
+   * hub do evento (`eventHubPath`), o mesmo a que já apontam o título na lista
+   * e o cartão da próxima live — um só destino, decidido num só sítio.
+   */
+  eventId: string;
   eventTitle: string;
   /** De que canal entrou este dinheiro — o dashboard nomeia-o quando há vários. */
   channelId: string;
@@ -233,6 +245,7 @@ export async function listRecentPayments(scope: ChannelScope, limit = 6): Promis
       id: entitlements.id,
       createdAt: entitlements.createdAt,
       buyerName: user.name,
+      eventId: events.id,
       eventTitle: events.title,
       channelId: events.channelId,
       amountCents: events.priceCents,
@@ -603,5 +616,752 @@ export async function getPlatformTotals(): Promise<PlatformTotals> {
     users: usersRow?.n ?? 0,
     events: eventsRow?.n ?? 0,
     revenueCents: revenueRow?.total ?? 0,
+  };
+}
+
+/*
+ * ============================================================================
+ *  A VISTA GLOBAL DA FIRSTROW — séries temporais para `/admin/plataforma`
+ * ============================================================================
+ *
+ * Tudo daqui para baixo alimenta a dashboard do `platform_admin`. Continua a
+ * levar `ChannelScope` — e não é cerimónia inútil por o gate de hoje garantir
+ * `{ all: true }`: é o que impede que alargar o gate amanhã abra uma fuga sem
+ * ninguém mexer nestas queries. A mesma decisão já tomada em `/admin/ganhos`.
+ *
+ * ────────────────────────────────────────────────────────────────────────────
+ *  BILHETES ENTRAM AQUI, MAS SEPARADOS DO PPV — E ISSO É O PONTO
+ * ────────────────────────────────────────────────────────────────────────────
+ *
+ * O extrato (`getMonthlyStatement`) conta HOJE só PPV: tem um
+ * `TODO(frente-d)` por cumprir. Se esta dashboard somasse PPV + bilhetes num
+ * único "receita", os dois ecrãs diziam números diferentes sobre o mesmo
+ * dinheiro — e isso é pior do que não ter dashboard nenhuma.
+ *
+ * A saída não é esconder os bilhetes (são dinheiro real que já entrou): é
+ * NUNCA os fundir. Cada balde traz `ppv*` e `ticket*` em campos separados, e a
+ * regra que daqui sai, verificada em teste, é:
+ *
+ *     soma dos `ppvCents`           ≡ `grossCents` do extrato
+ *     soma dos `ppvCommissionCents` ≡ `firstrowFeeCents` do extrato
+ *
+ * ao cêntimo, para o mesmo âmbito. Quando a Frente D juntar bilhetes ao
+ * extrato, é essa identidade que se estende — não se apaga.
+ *
+ * A COMISSÃO ARREDONDA-SE POR TRANSAÇÃO (`sum(round(...))`), como em
+ * `getMonthlyStatement` e em `lib/split.ts`. `round(sum(...))` divergia em
+ * cêntimos e era exatamente o tipo de diferença que ninguém consegue explicar.
+ */
+
+/** O passo do eixo do tempo. Amarrado ao período — ver `PERIODS`. */
+export type BucketUnit = "week" | "month";
+
+export type PeriodKey = "30d" | "90d" | "12m";
+
+/**
+ * Os períodos que a dashboard oferece, com o passo já decidido.
+ *
+ * O passo anda AGARRADO ao período de propósito: dois controlos independentes
+ * ("90 dias" × "por mês") produzem combinações que não dizem nada — três
+ * colunas — e obrigam quem lê a perceber porquê. Aqui há uma escolha só.
+ */
+export const PERIODS: Record<PeriodKey, { label: string; days: number; unit: BucketUnit }> = {
+  "30d": { label: "30 dias", days: 30, unit: "week" },
+  "90d": { label: "90 dias", days: 90, unit: "week" },
+  "12m": { label: "12 meses", days: 365, unit: "month" },
+};
+
+export const DEFAULT_PERIOD: PeriodKey = "90d";
+
+export function isPeriodKey(value: unknown): value is PeriodKey {
+  return typeof value === "string" && Object.hasOwn(PERIODS, value);
+}
+
+/** O período pedido no URL, ou o de referência. Nunca lança. */
+export function resolvePeriod(value: unknown): PeriodKey {
+  return isPeriodKey(value) ? value : DEFAULT_PERIOD;
+}
+
+const DAY_MS = 86_400_000;
+
+/**
+ * O instante em que o período começa: meia-noite de Lisboa, `days` dias atrás.
+ *
+ * Meia-noite e não "agora menos N×24h" porque os baldes são dias de calendário:
+ * um corte a meio do dia partia o primeiro balde em dois e a primeira coluna do
+ * gráfico aparecia sempre mais baixa do que as outras, sem ser por vender menos.
+ */
+function periodStart(period: PeriodKey, now = new Date()): Date {
+  const { days, unit } = PERIODS[period];
+  const { year, month, day } = lisbonParts(new Date(now.getTime() - (days - 1) * DAY_MS));
+  // Em meses, o período abre no dia 1 — senão o primeiro balde é um mês cortado.
+  return unit === "month" ? lisbonMidnightUtc(year, month, 1) : lisbonMidnightUtc(year, month, day);
+}
+
+// ── Baldes de calendário ────────────────────────────────────────────────────
+
+/*
+ * As chaves de balde são a DATA DE PAREDE de Lisboa em "YYYY-MM-DD" — o que o
+ * Postgres devolve de `date_trunc(unidade, … at time zone 'Europe/Lisbon')`.
+ *
+ * Do lado do JavaScript, gerá-las é aritmética de CALENDÁRIO e não de
+ * instantes: usa-se `Date.UTC` sobre a data de parede, sem fuso nenhum pelo
+ * meio. Misturar as duas coisas é onde nascem os erros de uma hora — em
+ * Portugal, uma semana atravessa a mudança de hora duas vezes por ano e um
+ * "somar 7 × 86400000 ms" a um instante devolve o domingo às 23:00.
+ */
+
+/** Data de parede (ms de `Date.UTC`) → "YYYY-MM-DD". */
+function wallKey(wallMs: number): string {
+  return new Date(wallMs).toISOString().slice(0, 10);
+}
+
+/** A data de parede de Lisboa de um instante, em ms de `Date.UTC`. */
+function wallMsOf(instant: Date): number {
+  const { year, month, day } = lisbonParts(instant);
+  return Date.UTC(year, month - 1, day);
+}
+
+/**
+ * Todos os baldes entre dois instantes, sem furos.
+ *
+ * Os furos preenchem-se de propósito: dentro de um período em que a plataforma
+ * esteve a funcionar, uma semana sem vendas É UM FACTO — ninguém comprou — e
+ * saltá-la no eixo desenhava uma linha contínua onde houve uma paragem. O que
+ * NÃO se faz é desenhar o gráfico quando não há uma única linha de dados: aí a
+ * página mostra o estado vazio, porque zeros sem histórico parecem um facto e
+ * não são.
+ */
+export function bucketKeysBetween(start: Date, end: Date, unit: BucketUnit): string[] {
+  const chaves: string[] = [];
+  const fim = wallMsOf(end);
+
+  if (unit === "month") {
+    const { year, month } = lisbonParts(start);
+    for (let ano = year, mes = month; Date.UTC(ano, mes - 1, 1) <= fim; ) {
+      chaves.push(wallKey(Date.UTC(ano, mes - 1, 1)));
+      if (mes === 12) {
+        ano += 1;
+        mes = 1;
+      } else {
+        mes += 1;
+      }
+    }
+    return chaves;
+  }
+
+  // Semana ISO: `date_trunc('week', …)` do Postgres devolve SEGUNDA-feira.
+  // `getUTCDay()` sobre a data de parede dá 0=domingo, por isso o recuo até
+  // segunda é `(dia + 6) % 7`.
+  const inicio = wallMsOf(start);
+  const recuo = (new Date(inicio).getUTCDay() + 6) % 7;
+  for (let ms = inicio - recuo * DAY_MS; ms <= fim; ms += 7 * DAY_MS) {
+    chaves.push(wallKey(ms));
+  }
+  return chaves;
+}
+
+/**
+ * A expressão SQL do balde de uma coluna de data.
+ *
+ * `date_trunc` sobre a hora de LISBOA, não sobre UTC: uma compra à meia-noite e
+ * meia de um domingo é do domingo para quem a fez e para quem lê o gráfico. Com
+ * `date_trunc` em UTC no verão (UTC+1) essa compra caía na semana anterior.
+ *
+ * ────────────────────────────────────────────────────────────────────────────
+ *  A UNIDADE É LITERAL NO TEXTO, E NÃO UM PARÂMETRO LIGADO — MEDIDO
+ * ────────────────────────────────────────────────────────────────────────────
+ *
+ * A primeira versão escrevia `date_trunc(${unit}, …)`, com a unidade ligada. É
+ * o instinto certo (parâmetros ligados não se injetam) e aqui **não compila**:
+ *
+ *     column "entitlements.created_at" must appear in the GROUP BY clause
+ *
+ * Porquê: a mesma expressão vai ao `select` e ao `group by`, e o drizzle
+ * numera os parâmetros por posição — sai `date_trunc($1, …)` num sítio e
+ * `date_trunc($4, …)` no outro. O Postgres compara as expressões do `group by`
+ * pela árvore, e dois parâmetros diferentes são dois nós diferentes: ele não
+ * tem como saber que `$1` e `$4` vão levar o mesmo valor. Com a unidade
+ * escrita no texto, as duas expressões ficam idênticas e a comparação passa.
+ * (É por isto que o `getMonthlyStatement`, que não liga parâmetro nenhum na
+ * expressão do mês, sempre funcionou.)
+ *
+ * `sql.raw` de uma constante NOSSA, exactamente como o `capSeconds` acima: o
+ * valor sai da união fechada `BucketUnit`, reescolhido aqui num `if` para que
+ * nem um `BucketUnit` inventado por um cast consiga pôr texto no SQL. O que
+ * vem do URL passa primeiro por `resolvePeriod`, que só devolve chaves de
+ * `PERIODS`.
+ */
+function bucketOf(column: AnyPgColumn, unit: BucketUnit): SQL<string> {
+  const unidade = sql.raw(unit === "month" ? "month" : "week");
+  return sql<string>`to_char(date_trunc('${unidade}', ${column} at time zone 'UTC' at time zone 'Europe/Lisbon'), 'YYYY-MM-DD')`;
+}
+
+const paidTicket = inArray(tickets.status, ["issued", "used"]);
+
+// ── Receita por período, canal a canal ──────────────────────────────────────
+
+export type RevenueBucket = {
+  /** Início do balde, data de parede de Lisboa ("2026-07-13"). */
+  bucket: string;
+  channelId: string;
+  ppvCents: number;
+  ppvPurchases: number;
+  ppvCommissionCents: number;
+  ticketCents: number;
+  ticketsSold: number;
+  ticketCommissionCents: number;
+};
+
+export type RevenueSeries = {
+  unit: BucketUnit;
+  commissionPct: number;
+  /** Todos os baldes do período, por ordem e sem furos. */
+  buckets: string[];
+  /** Canais com movimento no período — ordem estável (o mais antigo à cabeça). */
+  channelIds: string[];
+  rows: RevenueBucket[];
+  totals: Omit<RevenueBucket, "bucket" | "channelId">;
+};
+
+/**
+ * Receita por semana/mês e por canal.
+ *
+ * DUAS queries e um merge, e não um join só — a mesma armadilha de cardinalidade
+ * já documentada em `getPlatformEconomics` e em `listChannelsInScope`: PPV e
+ * bilhetes do mesmo evento multiplicavam-se um pelo outro e os totais saíam
+ * inflados sem dar erro nenhum.
+ */
+export async function getRevenueByPeriod(
+  scope: ChannelScope,
+  period: PeriodKey,
+  now = new Date(),
+): Promise<RevenueSeries> {
+  const pct = platformCommissionPct();
+  const { unit } = PERIODS[period];
+  const start = periodStart(period, now);
+  const mine = inChannelScope(scope);
+
+  // A comissão de cada transação, arredondada uma a uma antes de somar.
+  const feeOf = (priceColumn: AnyPgColumn) =>
+    sql<number>`coalesce(sum(round(${priceColumn} * ${pct}::numeric / 100)), 0)`.mapWith(Number);
+
+  const [ppvRows, ticketRows] = await Promise.all([
+    db
+      .select({
+        bucket: bucketOf(entitlements.createdAt, unit),
+        channelId: events.channelId,
+        cents: grossCents,
+        n: count(),
+        feeCents: feeOf(events.priceCents),
+      })
+      .from(entitlements)
+      .innerJoin(events, eq(entitlements.eventId, events.id))
+      .where(and(activeEntitlement, gte(entitlements.createdAt, start), mine))
+      .groupBy(bucketOf(entitlements.createdAt, unit), events.channelId),
+    db
+      .select({
+        bucket: bucketOf(tickets.createdAt, unit),
+        channelId: events.channelId,
+        cents: sql<number>`coalesce(sum(${tickets.priceCents}), 0)`.mapWith(Number),
+        n: count(),
+        feeCents: feeOf(tickets.priceCents),
+      })
+      .from(tickets)
+      // O join a `events` é o âmbito: `tickets` não tem canal. Sem ele, esta
+      // query respondia com os bilhetes da plataforma toda.
+      .innerJoin(events, eq(tickets.eventId, events.id))
+      .where(and(paidTicket, gte(tickets.createdAt, start), mine))
+      .groupBy(bucketOf(tickets.createdAt, unit), events.channelId),
+  ]);
+
+  const porChave = new Map<string, RevenueBucket>();
+  const vazio = (bucket: string, channelId: string): RevenueBucket => ({
+    bucket,
+    channelId,
+    ppvCents: 0,
+    ppvPurchases: 0,
+    ppvCommissionCents: 0,
+    ticketCents: 0,
+    ticketsSold: 0,
+    ticketCommissionCents: 0,
+  });
+  const linha = (bucket: string, channelId: string) => {
+    const chave = `${bucket}·${channelId}`;
+    const atual = porChave.get(chave) ?? vazio(bucket, channelId);
+    porChave.set(chave, atual);
+    return atual;
+  };
+
+  for (const r of ppvRows) {
+    const alvo = linha(r.bucket, r.channelId);
+    alvo.ppvCents += r.cents;
+    alvo.ppvPurchases += r.n;
+    alvo.ppvCommissionCents += r.feeCents;
+  }
+  for (const r of ticketRows) {
+    const alvo = linha(r.bucket, r.channelId);
+    alvo.ticketCents += r.cents;
+    alvo.ticketsSold += r.n;
+    alvo.ticketCommissionCents += r.feeCents;
+  }
+
+  const rows = [...porChave.values()].sort(
+    (a, b) => a.bucket.localeCompare(b.bucket) || a.channelId.localeCompare(b.channelId),
+  );
+
+  const totals = rows.reduce(
+    (acc, r) => ({
+      ppvCents: acc.ppvCents + r.ppvCents,
+      ppvPurchases: acc.ppvPurchases + r.ppvPurchases,
+      ppvCommissionCents: acc.ppvCommissionCents + r.ppvCommissionCents,
+      ticketCents: acc.ticketCents + r.ticketCents,
+      ticketsSold: acc.ticketsSold + r.ticketsSold,
+      ticketCommissionCents: acc.ticketCommissionCents + r.ticketCommissionCents,
+    }),
+    {
+      ppvCents: 0,
+      ppvPurchases: 0,
+      ppvCommissionCents: 0,
+      ticketCents: 0,
+      ticketsSold: 0,
+      ticketCommissionCents: 0,
+    },
+  );
+
+  return {
+    unit,
+    commissionPct: pct,
+    buckets: bucketKeysBetween(start, now, unit),
+    channelIds: [...new Set(rows.map((r) => r.channelId))],
+    rows,
+    totals,
+  };
+}
+
+// ── Vendas por evento: PPV vs bilhetes ──────────────────────────────────────
+
+export type EventSalesRow = {
+  eventId: string;
+  title: string;
+  channelId: string;
+  startsAt: Date;
+  ppvBuyers: number;
+  ppvCents: number;
+  ticketsSold: number;
+  ticketCents: number;
+  /** PPV + bilhetes, já arredondada por transação. */
+  commissionCents: number;
+};
+
+/**
+ * O que cada evento vendeu, pelos dois canais de venda que existem.
+ *
+ * Outra vez duas queries e um merge, pela razão do costume: um evento com 100
+ * acessos e 30 bilhetes numa query agrupada dava 3000 de cada.
+ */
+export async function listSalesByEvent(
+  scope: ChannelScope,
+  period: PeriodKey,
+  now = new Date(),
+): Promise<{ commissionPct: number; rows: EventSalesRow[] }> {
+  const pct = platformCommissionPct();
+  const start = periodStart(period, now);
+  const mine = inChannelScope(scope);
+
+  const [ppvRows, ticketRows, eventRows] = await Promise.all([
+    db
+      .select({
+        eventId: entitlements.eventId,
+        buyers: count(),
+        cents: grossCents,
+        feeCents:
+          sql<number>`coalesce(sum(round(${events.priceCents} * ${pct}::numeric / 100)), 0)`.mapWith(
+            Number,
+          ),
+      })
+      .from(entitlements)
+      .innerJoin(events, eq(entitlements.eventId, events.id))
+      .where(and(activeEntitlement, gte(entitlements.createdAt, start), mine))
+      .groupBy(entitlements.eventId),
+    db
+      .select({
+        eventId: tickets.eventId,
+        sold: count(),
+        cents: sql<number>`coalesce(sum(${tickets.priceCents}), 0)`.mapWith(Number),
+        feeCents:
+          sql<number>`coalesce(sum(round(${tickets.priceCents} * ${pct}::numeric / 100)), 0)`.mapWith(
+            Number,
+          ),
+      })
+      .from(tickets)
+      .innerJoin(events, eq(tickets.eventId, events.id))
+      .where(and(paidTicket, gte(tickets.createdAt, start), mine))
+      .groupBy(tickets.eventId),
+    db
+      .select({
+        id: events.id,
+        title: events.title,
+        channelId: events.channelId,
+        startsAt: events.startsAt,
+      })
+      .from(events)
+      .where(mine),
+  ]);
+
+  const ppv = new Map(ppvRows.map((r) => [r.eventId, r]));
+  const bilhetes = new Map(ticketRows.map((r) => [r.eventId, r]));
+
+  const rows = eventRows
+    .map((e) => {
+      const p = ppv.get(e.id);
+      const b = bilhetes.get(e.id);
+      return {
+        eventId: e.id,
+        title: e.title,
+        channelId: e.channelId,
+        startsAt: e.startsAt,
+        ppvBuyers: p?.buyers ?? 0,
+        ppvCents: p?.cents ?? 0,
+        ticketsSold: b?.sold ?? 0,
+        ticketCents: b?.cents ?? 0,
+        commissionCents: (p?.feeCents ?? 0) + (b?.feeCents ?? 0),
+      };
+    })
+    // Um evento que não vendeu nada no período não tem nada para mostrar — só
+    // empurrava para fora do gráfico os que venderam. Mesma regra de
+    // `getPlatformEconomics`.
+    .filter((r) => r.ppvBuyers > 0 || r.ticketsSold > 0)
+    .sort((a, b) => b.startsAt.getTime() - a.startsAt.getTime());
+
+  return { commissionPct: pct, rows };
+}
+
+// ── Espectadores em simultâneo ──────────────────────────────────────────────
+
+/*
+ * ============================================================================
+ *  A CURVA DO PICO — e porque é que ela é AMOSTRADA, e não exata
+ * ============================================================================
+ *
+ * Contar quantas pessoas estavam a ver AO MESMO TEMPO é contar sobreposições de
+ * intervalos. Há duas maneiras de o fazer, e escolher errado dá dois números
+ * diferentes para a mesma pergunta no mesmo ecrã:
+ *
+ *   VARRIMENTO (+1 no início, −1 no fim, máximo da soma corrida) — exato, mas
+ *   só dá o PICO. Não dá curva nenhuma para desenhar.
+ *
+ *   AMOSTRAGEM (contar sessões vivas em instantes igualmente espaçados) — dá a
+ *   curva, e o pico é o máximo dela.
+ *
+ * Usa-se a AMOSTRAGEM para as duas coisas, e é uma decisão deliberada: com o
+ * varrimento a dar o pico e a amostragem a dar a curva, o número grande no topo
+ * do cartão podia dizer 14 enquanto a linha por baixo nunca passava de 12 — e
+ * quem lê não tem como saber qual está certo. Um só cálculo garante que o
+ * cartão e a curva NUNCA se desmentem.
+ *
+ * O que se perde diz-se no ecrã: um pico mais curto do que o intervalo de
+ * amostragem pode passar entre duas amostras. Com o passo escolhido abaixo
+ * (nunca mais de 5 min, e 30 s em eventos curtos) e um heartbeat de 20 s, uma
+ * sessão só desaparece do gráfico se durar menos do que o passo — e uma sessão
+ * dessas também não pesa na fatura da Cloudflare.
+ */
+
+/** Alvo de pontos na curva. Acima disto o gráfico vira ruído e o payload cresce. */
+const CONCURRENCY_POINTS = 120;
+
+/** Passos possíveis, em segundos. O primeiro que couber no alvo é o escolhido. */
+const CONCURRENCY_STEPS = [30, 60, 120, 300, 600, 1800, 3600] as const;
+
+export type ConcurrencyPoint = { at: Date; viewers: number };
+
+export type EventConcurrency = {
+  eventId: string;
+  /** Vazio quando o evento não tem uma única sessão — ver o estado vazio. */
+  points: ConcurrencyPoint[];
+  /** O máximo da curva. Igual a `max(points.viewers)`, por construção. */
+  peak: number;
+  /** Distância entre amostras, em segundos — o ecrã tem de a poder confessar. */
+  stepSeconds: number;
+  sessions: number;
+};
+
+/**
+ * A curva de espectadores em simultâneo de UM evento.
+ *
+ * Sem âmbito, como `getEventSales` e `countActiveViewers`: quem chama já
+ * decidiu de que evento se fala. Nesta dashboard, quem decide é
+ * `listEventsWithConcurrency`, que já corre com âmbito.
+ */
+export async function getEventConcurrency(eventId: string): Promise<EventConcurrency> {
+  /*
+   * ⚠️  AS DATAS SAEM DAQUI COMO TEXTO, E ISSO NÃO É UM CAPRICHO.
+   *
+   * Um campo `sql<Date>` num `select` NÃO passa pelo conversor do drizzle — só
+   * as colunas mapeadas passam. O que sobra é o parser do driver, e o
+   * postgres.js lê um `timestamp` (sem fuso) no fuso do PROCESSO. Como as
+   * nossas colunas guardam hora UTC e a máquina corre em Lisboa, cada ida e
+   * volta por um `Date` roubava uma hora — duas, na ida e na volta. Medido: a
+   * curva começava às 19:00 quando a primeira sessão tinha aberto às 21:00.
+   *
+   * `to_char` com o formato escrito à mão tira o driver da equação: o que
+   * atravessa a fronteira é uma cadeia sem ambiguidade nenhuma. O formato com
+   * espaço serve para voltar a entrar no SQL; o ISO com "Z" é o que o
+   * `new Date()` do JavaScript lê como UTC, sem olhar ao fuso da máquina.
+   */
+  const [janela] = await db
+    .select({
+      inicioSql: sql<
+        string | null
+      >`to_char(min(${playbackSessions.startedAt}), 'YYYY-MM-DD HH24:MI:SS')`,
+      fimSql: sql<string | null>`to_char(max(${sessionEndsAt}), 'YYYY-MM-DD HH24:MI:SS')`,
+      spanSeconds:
+        sql<number>`coalesce(extract(epoch from (max(${sessionEndsAt}) - min(${playbackSessions.startedAt}))), 0)`.mapWith(
+          Number,
+        ),
+      sessions: count(),
+    })
+    .from(playbackSessions)
+    .where(eq(playbackSessions.eventId, eventId));
+
+  const inicio = janela?.inicioSql ?? null;
+  const fim = janela?.fimSql ?? null;
+  const sessions = janela?.sessions ?? 0;
+
+  if (!inicio || !fim || sessions === 0) {
+    return { eventId, points: [], peak: 0, stepSeconds: CONCURRENCY_STEPS[0], sessions: 0 };
+  }
+
+  const spanSeconds = Math.max(1, janela?.spanSeconds ?? 1);
+  const stepSeconds =
+    CONCURRENCY_STEPS.find((passo) => spanSeconds / passo <= CONCURRENCY_POINTS) ??
+    CONCURRENCY_STEPS[CONCURRENCY_STEPS.length - 1];
+
+  /*
+   * `generate_series` gera os instantes de amostragem e o `left join` conta as
+   * sessões VIVAS em cada um. É `left`, e não `inner`, para um instante sem
+   * ninguém a ver aparecer como zero em vez de desaparecer do eixo — um vale
+   * apagado transformava duas subidas separadas numa meseta que nunca houve.
+   *
+   * A condição é a de um intervalo fechado: começou antes (ou em) `t` e ainda
+   * não tinha acabado em `t`.
+   *
+   * As pontas entram como o TEXTO que saiu da query da janela — nunca por um
+   * `Date` pelo meio, pela razão explicada acima. O cast é para `timestamp`
+   * (sem fuso) porque a coluna também o é e guarda hora UTC; um `timestamptz`
+   * reinterpretava tudo no fuso da sessão e deslocava a curva uma hora no verão.
+   */
+  const pontos = await db.execute<{ at: string; viewers: number }>(sql`
+    select
+      to_char(amostra.at, 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as at,
+      count(sessao.id)::int as viewers
+    from generate_series(
+      ${inicio}::timestamp,
+      ${fim}::timestamp,
+      ${`${stepSeconds} seconds`}::interval
+    ) as amostra(at)
+    left join ${playbackSessions} as sessao
+      on sessao.event_id = ${eventId}
+     and sessao.started_at <= amostra.at
+     and least(
+           sessao.last_heartbeat_at,
+           coalesce(sessao.revoked_at, sessao.last_heartbeat_at)
+         ) >= amostra.at
+    group by amostra.at
+    order by amostra.at
+  `);
+
+  const points = [...pontos].map((p) => ({ at: new Date(p.at), viewers: Number(p.viewers) }));
+  return {
+    eventId,
+    points,
+    peak: points.reduce((max, p) => Math.max(max, p.viewers), 0),
+    stepSeconds,
+    sessions,
+  };
+}
+
+export type EventWithSessions = {
+  eventId: string;
+  title: string;
+  channelId: string;
+  startsAt: Date;
+  sessions: number;
+};
+
+/** Os eventos que têm sessões de visionamento — os únicos com curva para desenhar. */
+export async function listEventsWithConcurrency(scope: ChannelScope): Promise<EventWithSessions[]> {
+  return db
+    .select({
+      eventId: events.id,
+      title: events.title,
+      channelId: events.channelId,
+      startsAt: events.startsAt,
+      sessions: count(playbackSessions.id),
+    })
+    .from(events)
+    .innerJoin(playbackSessions, eq(playbackSessions.eventId, events.id))
+    .where(inChannelScope(scope))
+    .groupBy(events.id)
+    .orderBy(desc(events.startsAt));
+}
+
+// ── Registos novos e conversão ──────────────────────────────────────────────
+
+export type SignupBucket = {
+  bucket: string;
+  signups: number;
+  /** Dos que se registaram neste balde, quantos já compraram alguma coisa. */
+  converted: number;
+};
+
+export type SignupSeries = {
+  unit: BucketUnit;
+  buckets: string[];
+  rows: SignupBucket[];
+  totals: { signups: number; converted: number };
+};
+
+/**
+ * Registos novos por período e quantos deles compraram — **conversão por coorte**.
+ *
+ * ⚠️  SEM ÂMBITO, e é a segunda função deste ficheiro assim (a outra é
+ * `getPlatformTotals`). Só pode ser chamada atrás de `isPlatformAdmin`.
+ *
+ * Não leva âmbito porque não PODE: uma conta não nasce dentro de um canal. O
+ * registo é da plataforma, e atribuí-lo ao canal do primeiro evento que a
+ * pessoa comprou era inventar uma origem que não está guardada em lado nenhum.
+ * Dar um âmbito falso a esta query era pior do que dizer que ela é global.
+ *
+ * ────────────────────────────────────────────────────────────────────────────
+ *  PORQUÊ COORTE, E NÃO "COMPRAS A DIVIDIR POR REGISTOS"
+ * ────────────────────────────────────────────────────────────────────────────
+ *
+ * O rácio fácil — compradores do mês ÷ registos do mês — mistura gente: quem
+ * comprou este mês pode ter-se registado há seis. Em meses de campanha o
+ * número passa de 100 %, o que só mostra que a conta não quer dizer nada.
+ *
+ * Aqui a pergunta é outra e responde-se: **das pessoas que se registaram nesta
+ * semana, quantas chegaram a comprar?** Cada conta é contada no balde em que
+ * nasceu, uma só vez, e "comprou" é para sempre — por isso as coortes recentes
+ * aparecem naturalmente mais baixas (ainda não tiveram tempo), e o ecrã diz-o.
+ */
+export async function getSignupsByPeriod(
+  period: PeriodKey,
+  now = new Date(),
+): Promise<SignupSeries> {
+  const { unit } = PERIODS[period];
+  const start = periodStart(period, now);
+  const bucket = bucketOf(user.createdAt, unit);
+
+  /*
+   * As colunas vão INTERPOLADAS (`${user.id}`), nunca escritas à mão dentro do
+   * texto. O drizzle rende um fragmento cru sem qualificar a tabela, e um `id`
+   * escrito à mão aqui dentro era lido como o `id` da tabela de dentro — o bug
+   * medido em `listChannelsInScope`, que devolvia zero em tudo sem dar erro.
+   */
+  const jaComprou = sql`(
+    exists (
+      select 1 from ${entitlements}
+       where ${entitlements.userId} = ${user.id}
+         and ${entitlements.status} = 'active'
+    ) or exists (
+      select 1 from ${tickets}
+       where ${tickets.userId} = ${user.id}
+         and ${tickets.status} in ('issued', 'used')
+    )
+  )`;
+
+  const rows = await db
+    .select({
+      bucket,
+      signups: count(),
+      converted: sql<number>`count(*) filter (where ${jaComprou})`.mapWith(Number),
+    })
+    .from(user)
+    .where(gte(user.createdAt, start))
+    .groupBy(bucket)
+    .orderBy(bucket);
+
+  return {
+    unit,
+    buckets: bucketKeysBetween(start, now, unit),
+    rows,
+    totals: rows.reduce(
+      (acc, r) => ({ signups: acc.signups + r.signups, converted: acc.converted + r.converted }),
+      { signups: 0, converted: 0 },
+    ),
+  };
+}
+
+// ── Saúde ───────────────────────────────────────────────────────────────────
+
+/**
+ * Sessões cortadas por motivo.
+ *
+ * ⚠️  CONTA `revoked_at` E NUNCA `superseded_at`, e a diferença é toda.
+ * Até à Frente N, recarregar a página do MESMO browser contava como sessão
+ * bloqueada: 7 "bloqueios" no teste real eram uma pessoa só, num browser só, a
+ * fugir do token que expirava. A métrica que existia para detetar partilha de
+ * conta estava a medir um bug nosso.
+ *
+ * Agora a reconexão do mesmo dispositivo é `superseded_at` — silenciosa, e fora
+ * desta conta. `revoked_at` ficou a querer dizer o que sempre devia:
+ *
+ *   other_device — outro dispositivo na mesma conta. É ISTO a partilha suspeita.
+ *   watermark    — a marca de água foi mexida. É adulteração, não partilha.
+ *   no_access    — o acesso deixou de ser válido. Não é nenhuma das outras.
+ *
+ * Somar os três num número só apagava a única distinção que interessa a quem
+ * quer decidir se bane uma conta. Por isso saem separados.
+ */
+export type BlockedByReason = { reason: string; total: number };
+
+export type PlatformHealth = {
+  blocked: BlockedByReason[];
+  blockedTotal: number;
+  /** Sessões substituídas em silêncio — o contra-número, para o zero se ler. */
+  superseded: number;
+};
+
+export async function getPlatformHealth(
+  scope: ChannelScope,
+  period: PeriodKey,
+  now = new Date(),
+): Promise<PlatformHealth> {
+  const start = periodStart(period, now);
+  const mine = inChannelScope(scope);
+
+  const [blockedRows, [supersededRow]] = await Promise.all([
+    db
+      .select({
+        reason: sql<string>`coalesce(${playbackSessions.revokedReason}, 'desconhecido')`,
+        total: count(),
+      })
+      .from(playbackSessions)
+      // O join a `events` é o âmbito: `playback_sessions` não tem canal.
+      .innerJoin(events, eq(playbackSessions.eventId, events.id))
+      .where(
+        and(isNotNull(playbackSessions.revokedAt), gte(playbackSessions.revokedAt, start), mine),
+      )
+      .groupBy(playbackSessions.revokedReason),
+    db
+      .select({ n: count() })
+      .from(playbackSessions)
+      .innerJoin(events, eq(playbackSessions.eventId, events.id))
+      .where(
+        and(
+          isNotNull(playbackSessions.supersededAt),
+          gte(playbackSessions.supersededAt, start),
+          mine,
+        ),
+      ),
+  ]);
+
+  const blocked = [...blockedRows].sort((a, b) => b.total - a.total);
+  return {
+    blocked,
+    blockedTotal: blocked.reduce((n, r) => n + r.total, 0),
+    superseded: supersededRow?.n ?? 0,
   };
 }

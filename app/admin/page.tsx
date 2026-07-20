@@ -132,8 +132,18 @@ export default async function AdminDashboardPage() {
                     cell: () => <span className="text-muted-foreground">Acesso à live</span>,
                   },
                   {
+                    // O nome do evento abre o evento — a mesma regra do resto
+                    // do backoffice. O `-my-2` devolve à célula o espaço que o
+                    // alvo de toque de 44px lhe tira (ver `EventTitleLink`).
                     header: "Evento",
-                    cell: (p) => <span className="text-muted-foreground">{p.eventTitle}</span>,
+                    cell: (p) => (
+                      <EventTitleLink
+                        eventId={p.eventId}
+                        title={p.eventTitle}
+                        muted
+                        className="-my-2 font-normal"
+                      />
+                    ),
                   },
                   { header: "Valor", numeric: true, cell: (p) => formatEuro(p.amountCents) },
                 ]}

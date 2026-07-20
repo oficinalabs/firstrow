@@ -13,6 +13,13 @@ export type ReciboProps = {
   numeroRecibo?: string;
   emailConta: string;
   urlEvento: string;
+  /**
+   * O texto de consentimento EXATO que a pessoa viu e aceitou no checkout.
+   * Reproduzido aqui porque a secção 6 de `docs/legal/CONTEUDO-PAGINAS.md` o
+   * exige — a prova de consentimento inclui o email de confirmação repetir o que
+   * foi aceite. Ausente só se, por alguma razão, não houver registo da compra.
+   */
+  textoConsentido?: string;
 };
 
 // Recibo de compra (MB WAY). O acesso é da conta — não há link para partilhar.
@@ -26,7 +33,11 @@ export default function Recibo({
   numeroRecibo,
   emailConta,
   urlEvento,
+  textoConsentido,
 }: ReciboProps) {
+  // O texto guardado separa parágrafos por linha em branco (ver
+  // lib/legal/consentimentos.ts) — reproduz-se com a mesma divisão.
+  const consentimento = textoConsentido?.split("\n\n").filter(Boolean) ?? [];
   const meta = [
     numeroRecibo ? `nº ${numeroRecibo}` : null,
     telemovel ? formatPhone(telemovel) : null,
@@ -75,6 +86,30 @@ export default function Recibo({
         Ver o evento
       </Button>
 
+      {consentimento.length > 0 ? (
+        <Section
+          style={{
+            ...email.surface.detailBox,
+            marginTop: 18,
+            padding: "14px 16px",
+          }}
+        >
+          <Text style={email.text.eyebrow}>O que confirmaste na compra</Text>
+          {consentimento.map((paragrafo, i) => (
+            <Text
+              key={paragrafo}
+              style={{
+                ...email.text.note,
+                marginTop: i === 0 ? 8 : 10,
+                color: email.color.foreground,
+              }}
+            >
+              {paragrafo}
+            </Text>
+          ))}
+        </Section>
+      ) : null}
+
       <Text style={{ ...email.text.note, marginTop: 16 }}>
         O acesso é da tua conta ({emailConta}) — não há link para partilhar. Este endereço não
         recebe respostas: para qualquer dúvida, fala diretamente com {canalNome}.
@@ -93,4 +128,6 @@ Recibo.PreviewProps = {
   numeroRecibo: "FR-2026-08412",
   emailConta: "rui.m@gmail.com",
   urlEvento: "https://joinfirstrow.com/eventos/sb-clash-14",
+  textoConsentido:
+    "Este acesso é a uma transmissão em direto, com data e hora marcadas. Por ser um serviço de lazer com data marcada, a compra é considerada definitiva assim que a confirmas — não há direito de arrependimento de 14 dias, tal como acontece com um bilhete de concerto.\n\nJá percebi: depois de confirmar o pagamento, não posso cancelar esta compra por arrependimento.",
 } satisfies ReciboProps;

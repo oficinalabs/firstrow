@@ -11,11 +11,24 @@ import { cn } from "@/lib/utils";
 type Status = "idle" | "submitting" | "pending" | "issued" | "error";
 
 /*
- * CTA de compra de bilhete físico (MB WAY) para a página de evento — a Frente B
- * monta <TicketCta eventId={…} priceCents={…} /> no slot de bilhetes.
+ * CTA de compra de bilhete físico (MB WAY) para a página de evento.
  * Espelha o BuyButton: telemóvel → pendente → poll até o webhook emitir o QR.
+ *
+ * `consentVersao` é a versão do texto informativo mostrado por cima (ver
+ * TicketPurchaseCard) — vai no pedido para o servidor guardar a prova com a
+ * redação certa. O bilhete não tem checkbox (opção A da secção 6), por isso não
+ * há nada a marcar aqui: o texto é informativo e a compra é definitiva por ter
+ * data marcada.
  */
-export function TicketCta({ eventId, priceCents }: { eventId: string; priceCents: number }) {
+export function TicketCta({
+  eventId,
+  priceCents,
+  consentVersao,
+}: {
+  eventId: string;
+  priceCents: number;
+  consentVersao: string;
+}) {
   const [phone, setPhone] = useState("");
   const [status, setStatus] = useState<Status>("idle");
   const [message, setMessage] = useState("");
@@ -34,7 +47,7 @@ export function TicketCta({ eventId, priceCents }: { eventId: string; priceCents
     const res = await fetch(`/api/tickets/checkout/${eventId}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ phone }),
+      body: JSON.stringify({ phone, consentVersao }),
     });
 
     if (!res.ok) {

@@ -1,6 +1,8 @@
 import type { MetadataRoute } from "next";
 import { SITE_URL } from "@/components/marketing/dados";
 import { channelPath } from "@/lib/channels";
+import { PAGINAS_LEGAIS } from "@/lib/legal/paginas";
+import { ROTA_AJUDA, rotaLegal } from "@/lib/legal/tipos";
 import { listChannels } from "@/server/channels";
 
 // Os canais vêm da base de dados, por isso o sitemap não pode ficar congelado
@@ -24,5 +26,13 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     { url: `${SITE_URL}/vod`, changeFrequency: "weekly", priority: 0.6 },
     { url: `${SITE_URL}/sobre`, changeFrequency: "monthly", priority: 0.8 },
     { url: `${SITE_URL}/criadores`, changeFrequency: "monthly", priority: 0.8 },
+    // Páginas legais e ajuda — indexáveis, mudam pouco. Saem de PAGINAS_LEGAIS
+    // para não ficarem esquecidas quando se acrescenta uma nova.
+    { url: `${SITE_URL}${ROTA_AJUDA}`, changeFrequency: "monthly", priority: 0.5 },
+    ...PAGINAS_LEGAIS.map((pagina) => ({
+      url: `${SITE_URL}${rotaLegal(pagina.slug)}`,
+      changeFrequency: "yearly" as const,
+      priority: 0.3,
+    })),
   ];
 }

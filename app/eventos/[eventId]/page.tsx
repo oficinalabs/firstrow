@@ -12,6 +12,7 @@ import { LiveBadge } from "@/components/ui/live-badge";
 import { ViewerShell } from "@/components/ui/viewer-shell";
 import { channelPath } from "@/lib/channels";
 import { formatDateTime, formatEuro } from "@/lib/format";
+import { copiaCliente } from "@/lib/legal/consentimentos";
 import { requireUser } from "@/server/auth-helper";
 import { getChannelById } from "@/server/channels";
 import { hasActiveEntitlement } from "@/server/entitlements";
@@ -46,6 +47,11 @@ export default async function EventPage({ params }: { params: Promise<{ eventId:
   const [user, channel] = await Promise.all([requireUser(), getChannelById(event.channelId)]);
   const entitled = user ? await hasActiveEntitlement(user.id, eventId) : false;
   const isLive = event.status === "live";
+
+  // Texto informativo do bilhete (opção A da secção 6) — só é preciso quando o
+  // evento vende bilhetes. `bilhete` está sempre no histórico, mas guardamos o
+  // resultado para o JSX não o pedir duas vezes.
+  const ticketConsent = event.ticketPriceCents != null ? copiaCliente("bilhete") : null;
 
   return (
     <ViewerShell active="inicio" channel={channel ?? undefined}>
@@ -92,8 +98,12 @@ export default async function EventPage({ params }: { params: Promise<{ eventId:
             }
           />
 
-          {event.ticketPriceCents != null && (
-            <TicketPurchaseCard eventId={eventId} priceCents={event.ticketPriceCents} />
+          {event.ticketPriceCents != null && ticketConsent && (
+            <TicketPurchaseCard
+              eventId={eventId}
+              priceCents={event.ticketPriceCents}
+              consent={ticketConsent}
+            />
           )}
 
           <HowItWorksCard title="Como funciona o acesso" lines={ACCESS_LINES} />

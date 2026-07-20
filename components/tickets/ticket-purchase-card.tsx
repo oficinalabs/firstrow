@@ -1,19 +1,28 @@
+import { ConsentGate } from "@/components/checkout/consent-gate";
 import { TicketCta } from "@/components/tickets/ticket-cta";
 import { Card } from "@/components/ui/card";
 import { formatEuro } from "@/lib/format";
+import type { CopiaCliente } from "@/lib/legal/consentimentos";
 
 /*
  * Bloco de compra do bilhete físico na página de evento — separado do acesso à
  * live (é outra compra, outro pagamento MB WAY). A página monta-o só quando o
  * evento vende bilhetes (event.ticketPriceCents != null), a seguir ao cartão de
  * acesso da Frente B.
+ *
+ * O `consent` (opção A da secção 6) é informativo, sem checkbox: mostra-se o
+ * texto antes do botão e passa-se a versão ao CTA para o servidor guardar a
+ * prova. O `ConsentGate` renderiza-se aqui, no servidor, porque sem checkbox
+ * não há estado — é só texto.
  */
 export function TicketPurchaseCard({
   eventId,
   priceCents,
+  consent,
 }: {
   eventId: string;
   priceCents: number;
+  consent: CopiaCliente;
 }) {
   return (
     <Card className="flex flex-col gap-3 p-4">
@@ -29,7 +38,8 @@ export function TicketPurchaseCard({
           {formatEuro(priceCents)}
         </span>
       </div>
-      <TicketCta eventId={eventId} priceCents={priceCents} />
+      <ConsentGate copy={consent} />
+      <TicketCta eventId={eventId} priceCents={priceCents} consentVersao={consent.versao} />
     </Card>
   );
 }

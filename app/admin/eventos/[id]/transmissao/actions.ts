@@ -6,6 +6,7 @@ import { z } from "zod";
 import { db } from "@/db";
 import { events } from "@/db/schema";
 import { permitEventOperation } from "@/server/event-access";
+import { linkEventRecording } from "@/server/recordings";
 
 const inputSchema = z.object({
   eventId: z.string().min(1),
@@ -33,6 +34,20 @@ export async function setEventStatus(input: unknown): Promise<{ error?: string }
     .where(eq(events.id, eventId))
     .returning({ id: events.id });
   if (updated.length === 0) return { error: "Este evento já não existe." };
+
+  /*
+   * Terminar é o momento de ir buscar a gravação. Quase sempre é cedo demais —
+   * a Cloudflare ainda a está a processar — e é por isso que a página de
+   * transmissão volta a tentar sozinha. Aqui é só a primeira oportunidade.
+   *
+   * Nunca falha a ação por causa disto: o estado do evento é o que a pessoa
+   * pediu, e uma gravação por ligar resolve-se na próxima visita.
+   */
+  if (status === "ended") {
+    await linkEventRecording(eventId).catch((error) => {
+      console.error(`[gravacoes] ao terminar ${eventId}:`, error);
+    });
+  }
 
   revalidatePath("/admin");
   revalidatePath("/admin/eventos");

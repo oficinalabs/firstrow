@@ -1,5 +1,6 @@
 import { and, eq } from "drizzle-orm";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import type { EventDraft } from "@/lib/event-rules";
 
 /*
  * A Cloudflare fica de fora do teste: `createEvent` provisiona lá um live input
@@ -55,9 +56,12 @@ const PEDIDOS_SIMULTANEOS = 8;
 const RONDAS = 10;
 
 /** Um rascunho válido, sem bilhetes de porta — o caso mínimo que a guarda vê. */
-function rascunhoDe(title: string, startsAt: string) {
+function rascunhoDe(title: string, startsAt: string): EventDraft {
   return {
     title,
+    // A guarda de duplicados é sobre canal + título + hora; a descrição não
+    // entra na chave, e um rascunho sem ela é o caso mínimo.
+    description: null,
     startsAt: new Date(startsAt),
     priceCents: 750,
     ticketPriceCents: null,

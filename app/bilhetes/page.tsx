@@ -2,6 +2,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { QrCard } from "@/components/tickets/qr-card";
 import { TicketRow } from "@/components/tickets/ticket-row";
+import { BackofficeLink } from "@/components/ui/backoffice-link";
 import { buttonVariants } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { ViewerShell } from "@/components/ui/viewer-shell";
@@ -19,7 +20,7 @@ export default async function BilhetesPage() {
   const usados = bilhetes.filter((t) => t.status === "used");
 
   return (
-    <ViewerShell active="bilhetes">
+    <ViewerShell active="bilhetes" backoffice={<BackofficeLink />}>
       <section className="mx-auto flex w-full max-w-md flex-1 flex-col gap-4 px-4 py-6 pb-10">
         <h1 className="font-display text-xl font-extrabold tracking-display">Os meus bilhetes</h1>
 

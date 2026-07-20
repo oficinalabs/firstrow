@@ -29,6 +29,18 @@ const MAX_PRICE_CENTS = 100_000;
 const MAX_TICKET_CAPACITY = 100_000;
 
 /**
+ * Tamanho máximo da descrição, **contado depois de normalizada** (ver
+ * `normalizeDescription`) e em pontos de código, não em unidades UTF-16 — senão
+ * um emoji gastava dois e o contador do ecrã discordava do servidor.
+ *
+ * 2000 dá para o cartaz escrito de uma batalha (alinhamento, regras, formato)
+ * sem transformar a página do evento num artigo. Não é o limite da coluna: a
+ * coluna é `text` de propósito, para que passar daqui seja um erro de CAMPO,
+ * com frase, e não um erro de base de dados que rebenta a gravação inteira.
+ */
+export const MAX_DESCRIPTION_LENGTH = 2000;
+
+/**
  * Folga para o passado. O relógio do browser e o do servidor nunca são o mesmo,
  * e entre validar e gravar passa-se um pedido — sem isto, marcar um evento para
  * "daqui a 10 segundos" era recusado a meio do caminho.
@@ -50,10 +62,116 @@ export function isEventStatus(value: unknown): value is EventStatus {
   return typeof value === "string" && (EVENT_STATUSES as readonly string[]).includes(value);
 }
 
+/**
+ * O ecrã de um evento no backoffice — o HUB dele.
+ *
+ * Não há `/admin/eventos/<id>` (página de detalhe) e não é um esquecimento: o
+ * que se quer ao carregar num evento é o que ele está a fazer AGORA — as
+ * credenciais do OBS, o botão de pôr no ar, quem está a ver. É a página de
+ * transmissão, e é para lá que apontam o título na lista, o título na dashboard
+ * e as revalidações depois de gravar.
+ *
+ * Existe como função pela mesma razão que o `channelPath` em lib/channels.ts:
+ * o caminho estava escrito à mão em cinco sítios, e o dia em que mudar são
+ * cinco sítios para acertar — com o compilador calado nos que ficarem para trás.
+ */
+export function eventHubPath(eventId: string): string {
+  return `/admin/eventos/${eventId}/transmissao`;
+}
+
 const PRICE_HINT = "Preço em euros — por exemplo, 7,50.";
+
+// ── Descrição: texto de quem escreve, HTML de quem lê ───────────────────────
+
+/*
+ * ============================================================================
+ *  A DESCRIÇÃO É TEXTO DE UTILIZADOR QUE VAI PARAR A UMA PÁGINA PÚBLICA
+ * ============================================================================
+ *
+ * O QUE NOS PROTEGE, e é o mais importante desta secção: **em lado nenhum isto
+ * é interpretado como HTML.** A descrição sai sempre como filho de texto de um
+ * elemento React, que escapa `<`, `>`, `&` e as aspas por construção. Não há
+ * `dangerouslySetInnerHTML` em nenhum dos sítios onde ela aparece, e não pode
+ * passar a haver — um `<script>` escrito no campo tem de continuar a ler-se
+ * como as nove letras que são.
+ *
+ * As QUEBRAS DE LINHA aceitam-se (uma descrição de batalha tem parágrafos), e é
+ * exactamente aqui que a tentação é perigosa: o atalho habitual é trocar `\n`
+ * por `<br>` e injetar com `dangerouslySetInnerHTML`, o que abre a porta a todo
+ * o resto do HTML de uma vez. Em vez disso, o `\n` fica `\n` e quem o desenha é
+ * o CSS (`whitespace-pre-line`). Zero HTML no caminho, e o mesmo resultado no
+ * ecrã.
+ *
+ * O QUE ESTA NORMALIZAÇÃO FAZ, então, não é anti-XSS — é higiene de texto:
+ *
+ *  - `\r\n` e `\r` (Windows, colagens antigas) viram `\n`, senão o mesmo texto
+ *    ficava guardado de duas maneiras e o contador de caracteres mentia;
+ *  - caracteres de controlo (C0/C1, DEL) desaparecem: não se veem, contam para
+ *    o limite e passam por sítios que não são HTML — logs, CSV de exportação,
+ *    cabeçalhos — onde um `\u0000` ou um `\u001B` não é inofensivo;
+ *  - os invisíveis de formatação Unicode também: o zero-width serve para
+ *    disfarçar palavras e os de sobreposição de direção (U+202E e companhia)
+ *    conseguem inverter visualmente o resto da linha, o que é uma ferramenta de
+ *    engano em cima de um preço ou de uma data;
+ *  - três ou mais quebras seguidas passam a uma linha em branco, para ninguém
+ *    empurrar o resto da página para fora do ecrã com Enter.
+ */
+
+/** C0, DEL e C1 — tudo o que não se vê. `\t` e `\n` ficam de fora de propósito. */
+// biome-ignore lint/suspicious/noControlCharactersInRegex: apanhá-los é o objetivo
+const CONTROL_CHARACTERS = /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F-\u009F]/g;
+
+/** Invisíveis de formatação: zero-width, marcas e sobreposições de direção. */
+const INVISIBLE_FORMAT = /[\u200B-\u200F\u202A-\u202E\u2060-\u2064\u2066-\u2069\uFEFF]/g;
+
+/** O texto como fica guardado. Ver a secção acima para o porquê de cada passo. */
+export function normalizeDescription(input: string): string {
+  return (
+    input
+      .replace(/\r\n?/g, "\n")
+      .replace(/\t/g, " ")
+      .replace(CONTROL_CHARACTERS, "")
+      .replace(INVISIBLE_FORMAT, "")
+      // Espaço pendurado no fim da linha não se vê e conta para o limite.
+      .replace(/[ \u00A0]+$/gm, "")
+      .replace(/\n{3,}/g, "\n\n")
+      .trim()
+  );
+}
+
+/**
+ * Quantos caracteres é que isto gasta do limite.
+ *
+ * Em pontos de código: `"🥊".length` é 2 em JavaScript e 1 para quem escreve.
+ * A função é a mesma no contador do formulário e na recusa do servidor — dois
+ * cálculos diferentes davam um campo que dizia "restam 3" e era rejeitado.
+ */
+export function descriptionLength(text: string): number {
+  return [...text].length;
+}
+
+/**
+ * A descrição reduzida a uma linha, para onde não há parágrafos: o texto de
+ * partilha e as meta tags. Corta numa fronteira de palavra e assina o corte com
+ * uma reticência, para nunca parecer que a frase acabou ali.
+ */
+export function summarizeDescription(text: string | null, limit: number): string {
+  if (!text) return "";
+  const flat = text.replace(/\s+/g, " ").trim();
+  if (descriptionLength(flat) <= limit) return flat;
+  const cut = [...flat].slice(0, limit - 1).join("");
+  const lastSpace = cut.lastIndexOf(" ");
+  return `${(lastSpace > limit / 2 ? cut.slice(0, lastSpace) : cut).trimEnd()}…`;
+}
 
 export const eventFormSchema = z.object({
   title: z.string().trim().min(3, "Dá um título ao evento (pelo menos 3 caracteres)."),
+  /*
+   * Sem restrição de formato aqui: é texto livre, e o que dele se guarda passa
+   * primeiro por `normalizeDescription` — o limite mede o texto NORMALIZADO,
+   * por isso não pode ser verificado antes disso. Ver `validateEventForm`.
+   */
+  description: z.string(),
   date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Escolhe a data."),
   time: z.string().regex(/^\d{2}:\d{2}(:\d{2})?$/, "Escolhe a hora."),
   price: z
@@ -110,6 +228,8 @@ export const CHANNEL_REQUIRED_MESSAGE = "Escolhe o canal onde o evento vai nasce
 /** Um evento pronto a gravar: já validado, já em cêntimos, já em instante UTC. */
 export type EventDraft = {
   title: string;
+  /** Já normalizada. `null` = não tem descrição (o campo ficou em branco). */
+  description: string | null;
   startsAt: Date;
   priceCents: number;
   /** `null` = este evento não vende bilhetes à porta. */
@@ -309,6 +429,11 @@ export function readEventFormValues(input: unknown): EventFormValues {
   const text = (key: keyof EventFormValues) => (typeof raw[key] === "string" ? raw[key] : "");
   return {
     title: text("title"),
+    // EM BRUTO, tal como foi escrito: é este objeto que volta ao formulário
+    // depois de uma recusa, e normalizá-lo aqui era mexer no que a pessoa
+    // escreveu por baixo do cursor dela. Quem normaliza é `validateEventForm`,
+    // e só para o que vai para a base de dados.
+    description: text("description"),
     date: text("date"),
     time: text("time"),
     price: text("price"),
@@ -338,6 +463,7 @@ function inputToCents(value: string): number {
 export function eventToDraft(event: typeof events.$inferSelect): EventDraft {
   return {
     title: event.title,
+    description: event.description,
     startsAt: event.startsAt,
     priceCents: event.priceCents,
     ticketPriceCents: event.ticketPriceCents,
@@ -361,6 +487,8 @@ export function eventToFormValues(event: EventDraft): EventFormValues {
 
   return {
     title: event.title,
+    // NULL na coluna e campo vazio no ecrã são a mesma coisa para quem edita.
+    description: event.description ?? "",
     date: `${part("year")}-${part("month")}-${part("day")}`,
     time: `${part("hour")}:${part("minute")}`,
     price: centsToInput(event.priceCents),
@@ -398,6 +526,7 @@ export const EMPTY_EVENT_FORM: EventFormState = {
   message: "",
   values: {
     title: "",
+    description: "",
     date: "",
     time: "",
     price: "",
@@ -439,6 +568,7 @@ export function validateEventForm(
       values,
       errors: {
         title: fields.title?.[0],
+        description: fields.description?.[0],
         date: fields.date?.[0],
         time: fields.time?.[0],
         price: fields.price?.[0],
@@ -451,6 +581,25 @@ export function validateEventForm(
   const startsAt = lisbonInstant(parsed.data.date, parsed.data.time);
   if (!startsAt) {
     return { ok: false, values, errors: { startsAt: "Esta data não existe — confirma o dia." } };
+  }
+
+  /*
+   * O limite mede o texto DEPOIS de normalizado, e é aqui — no validador que o
+   * servidor corre em cada pedido — que ele é imposto. O `maxLength` do
+   * `<textarea>` é conforto: quem falar com a server action à mão não passa por
+   * ele. Contar antes de normalizar dava recusas absurdas ("2003 caracteres"
+   * num texto que, tirados os invisíveis e os `\r`, tem 1998).
+   */
+  const description = normalizeDescription(parsed.data.description);
+  const descriptionSize = descriptionLength(description);
+  if (descriptionSize > MAX_DESCRIPTION_LENGTH) {
+    return {
+      ok: false,
+      values,
+      errors: {
+        description: `Descrição a mais — o máximo é ${formatNumber(MAX_DESCRIPTION_LENGTH)} caracteres e escreveste ${formatNumber(descriptionSize)}.`,
+      },
+    };
   }
 
   /*
@@ -554,6 +703,10 @@ export function validateEventForm(
     values,
     draft: {
       title: parsed.data.title,
+      // Vazio é NULL na coluna: "não escreveu descrição" e "escreveu e apagou"
+      // são a mesma coisa, e uma cadeia vazia guardada era um terceiro estado a
+      // ter de ser tratado em todo o lado que a lê.
+      description: description || null,
       startsAt: finalStartsAt,
       priceCents,
       ticketPriceCents,

@@ -3,6 +3,7 @@ import Link from "next/link";
 import { EventCard } from "@/components/eventos/event-card";
 import { type EventRow, splitProgram } from "@/components/eventos/program";
 import { ViewerFooter } from "@/components/eventos/viewer-footer";
+import { BackofficeLink } from "@/components/ui/backoffice-link";
 import { buttonVariants } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { SectionHeader } from "@/components/ui/section-header";
@@ -51,7 +52,7 @@ export default async function VodPage({ searchParams }: VodParams) {
     : { href: "/", label: "‹ Voltar ao início" };
 
   return (
-    <ViewerShell active="inicio" channel={channel ?? undefined}>
+    <ViewerShell active="inicio" channel={channel ?? undefined} backoffice={<BackofficeLink />}>
       <div className="mx-auto flex w-full max-w-6xl flex-1 flex-col px-4 pt-5 md:px-8 md:pt-6">
         <SectionHeader
           eyebrow={channel?.name}

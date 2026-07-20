@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import { AccountSection, DataRow } from "@/components/auth/account-section";
 import { LemonLink } from "@/components/auth/lemon-link";
 import { SignOutButton } from "@/components/auth/sign-out-button";
+import { BackofficeLink } from "@/components/ui/backoffice-link";
 import { EmptyState } from "@/components/ui/empty-state";
 import { ViewerShell } from "@/components/ui/viewer-shell";
 import { formatDate, formatEuro } from "@/lib/format";
@@ -21,7 +22,7 @@ export default async function ContaPage() {
   const purchases = await listUserPurchases(user.id);
 
   return (
-    <ViewerShell active="conta">
+    <ViewerShell active="conta" backoffice={<BackofficeLink />}>
       {/* Conta é uma superfície de espectador → tema dark do ViewerShell
           (fundação: "espectador = dark por defeito"). O mock desenha-a em
           papel; ver nota no PR sobre uma variante light do shell. */}

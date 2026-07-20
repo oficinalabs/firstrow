@@ -3,12 +3,13 @@ import Link from "next/link";
 import { DataTable } from "@/components/admin/data-table";
 import { type DeleteBlock, DeleteEventDialog } from "@/components/admin/delete-event-dialog";
 import { EventStatusBadge } from "@/components/admin/event-status-badge";
+import { EventTitleLink } from "@/components/admin/event-title-link";
 import { PageHeader } from "@/components/admin/page-header";
 import { buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
+import { eventHubPath } from "@/lib/event-rules";
 import { formatDate, formatEuro, formatNumber, formatTime } from "@/lib/format";
-import { cn } from "@/lib/utils";
 import { canEnterBackoffice, canManageEvents, operateScope, requireUser } from "@/server/authz";
 import { type ChannelsInScope, channelsInScope } from "@/server/channels";
 import { countSalesByEvent } from "@/server/events";
@@ -52,10 +53,18 @@ function EventsTable({
         { header: "Estado", cell: (e) => <EventStatusBadge status={e.status} /> },
         {
           header: "Evento",
+          // O nome abre o evento. O "Abrir" no fim da linha continua lá — é o
+          // que diz que a linha tem para onde ir a quem não experimenta clicar
+          // no texto —, mas deixou de ser o único caminho.
           cell: (e) => (
-            <span className={cn("font-semibold", e.status === "ended" && "text-muted-foreground")}>
-              {e.title}
-            </span>
+            <EventTitleLink
+              eventId={e.id}
+              title={e.title}
+              muted={e.status === "ended"}
+              // Ver a nota do alvo de toque em `EventTitleLink`: isto devolve à
+              // célula o `py-2` que ela já tem, e a linha fica nos 44px.
+              className="-my-2"
+            />
           ),
         },
         /*
@@ -93,7 +102,7 @@ function EventsTable({
           cell: (e) => (
             <span className="flex items-center justify-end gap-3.5">
               <Link
-                href={`/admin/eventos/${e.id}/transmissao`}
+                href={eventHubPath(e.id)}
                 className="font-sans text-xs font-semibold text-foreground underline-offset-4 hover:underline"
               >
                 {e.status === "ended" ? "Ver" : "Abrir"}

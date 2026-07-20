@@ -166,6 +166,7 @@ export async function createEvent(draft: EventDraft, channelId: string): Promise
       id,
       channelId,
       title: draft.title,
+      description: draft.description,
       startsAt: draft.startsAt,
       priceCents: draft.priceCents,
       ticketPriceCents: draft.ticketPriceCents,
@@ -456,6 +457,9 @@ export async function updateEvent(eventId: string, draft: EventDraft): Promise<U
       .update(events)
       .set({
         title: draft.title,
+        // A descrição não fecha com as vendas: adiar um evento tem consequências
+        // para quem pagou, corrigir o texto que o descreve não tem nenhuma.
+        description: draft.description,
         startsAt: draft.startsAt,
         priceCents: draft.priceCents,
         ticketPriceCents: draft.ticketPriceCents,

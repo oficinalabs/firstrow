@@ -6,11 +6,13 @@ import { PosterPlaceholder } from "@/components/eventos/poster-placeholder";
 import { PurchaseCard } from "@/components/eventos/purchase-card";
 import { ViewerFooter } from "@/components/eventos/viewer-footer";
 import { TicketPurchaseCard } from "@/components/tickets/ticket-purchase-card";
+import { BackofficeLink } from "@/components/ui/backoffice-link";
 import { Badge } from "@/components/ui/badge";
 import { buttonVariants } from "@/components/ui/button";
 import { LiveBadge } from "@/components/ui/live-badge";
 import { ViewerShell } from "@/components/ui/viewer-shell";
 import { channelPath } from "@/lib/channels";
+import { summarizeDescription } from "@/lib/event-rules";
 import { formatDateTime, formatEuro } from "@/lib/format";
 import { copiaCliente } from "@/lib/legal/consentimentos";
 import { requireUser } from "@/server/auth-helper";
@@ -20,6 +22,27 @@ import { getEvent } from "@/server/events";
 
 export const dynamic = "force-dynamic";
 
+/**
+ * Tamanho do resumo que vai nas meta tags.
+ *
+ * ~200 é o que o WhatsApp, o Instagram e a pesquisa mostram antes de cortarem
+ * eles próprios — e um corte deles é a meio de uma palavra. Cortamos nós, numa
+ * fronteira de palavra e com reticência (ver `summarizeDescription`).
+ */
+const SHARE_SUMMARY_LENGTH = 200;
+
+/*
+ * O TEXTO DE PARTILHA. Quando alguém cola o link do evento no WhatsApp ou no
+ * Instagram, é isto que aparece: título + descrição. Enquanto não houver botão
+ * de partilhar (A4), este é o texto de partilha que existe de facto — e é o
+ * mesmo texto que um botão nativo passaria a usar.
+ *
+ * A descrição entra aqui como VALOR de um atributo, não como marcação: o Next
+ * escapa o conteúdo das meta tags, e o resumo já vem sem quebras de linha nem
+ * caracteres de controlo (ver `normalizeDescription`). Um cabeçalho HTTP ou uma
+ * meta tag com um `\n` lá dentro é que seria um problema — e não pode chegar cá
+ * um.
+ */
 export async function generateMetadata({
   params,
 }: {
@@ -27,7 +50,21 @@ export async function generateMetadata({
 }): Promise<Metadata> {
   const { eventId } = await params;
   const event = await getEvent(eventId);
-  return { title: event?.title ?? "Evento" };
+  if (!event) return { title: "Evento" };
+
+  const summary = summarizeDescription(event.description, SHARE_SUMMARY_LENGTH);
+
+  return {
+    title: event.title,
+    // Sem descrição escrita não se inventa uma: uma meta tag vazia é melhor do
+    // que uma frase gerada que promete o que a página não diz.
+    ...(summary ? { description: summary } : {}),
+    openGraph: {
+      title: event.title,
+      ...(summary ? { description: summary } : {}),
+      type: "video.other",
+    },
+  };
 }
 
 const ACCESS_LINES = [
@@ -54,7 +91,7 @@ export default async function EventPage({ params }: { params: Promise<{ eventId:
   const ticketConsent = event.ticketPriceCents != null ? copiaCliente("bilhete") : null;
 
   return (
-    <ViewerShell active="inicio" channel={channel ?? undefined}>
+    <ViewerShell active="inicio" channel={channel ?? undefined} backoffice={<BackofficeLink />}>
       <div className="mx-auto flex w-full max-w-xl flex-1 flex-col px-4 pt-4 md:pt-6">
         {channel ? (
           <Link
@@ -75,6 +112,22 @@ export default async function EventPage({ params }: { params: Promise<{ eventId:
           <h1 className="font-display text-2xl font-extrabold tracking-display text-balance md:text-3xl">
             {event.title}
           </h1>
+
+          {/*
+           * A descrição, como a liga a escreveu.
+           *
+           * `{event.description}` é um filho de TEXTO: o React escapa-o, por
+           * isso um `<script>` escrito no backoffice sai como as nove letras
+           * que são. Não há `dangerouslySetInnerHTML` aqui — e a tentação de o
+           * pôr, para converter `\n` em `<br>`, resolve-se com
+           * `whitespace-pre-line`, que desenha as quebras sem nenhum HTML pelo
+           * meio. Ver a nota longa em lib/event-rules.ts.
+           */}
+          {event.description ? (
+            <p className="text-2sm leading-relaxed whitespace-pre-line text-muted-foreground">
+              {event.description}
+            </p>
+          ) : null}
 
           <PurchaseCard
             event={event}

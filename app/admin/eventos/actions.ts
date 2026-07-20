@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 import {
   type EventFormState,
   eventEditRules,
+  eventHubPath,
   eventToDraft,
   validateEventForm,
 } from "@/lib/event-rules";
@@ -36,7 +37,7 @@ function refreshEventScreens(eventId?: string) {
   revalidatePath("/admin");
   revalidatePath("/admin/eventos");
   if (eventId) {
-    revalidatePath(`/admin/eventos/${eventId}/transmissao`);
+    revalidatePath(eventHubPath(eventId));
     revalidatePath(`/admin/eventos/${eventId}/editar`);
     revalidatePath(`/admin/eventos/${eventId}/bilhetes`);
     // O que muda num evento muda também no que o público vê dele.
@@ -133,7 +134,7 @@ export async function createEventAction(
 
   refreshEventScreens(created.id);
   // Fora do try: o redirect do Next funciona por exceção e não é um erro.
-  redirect(`/admin/eventos/${created.id}/transmissao`);
+  redirect(eventHubPath(created.id));
 }
 
 /**

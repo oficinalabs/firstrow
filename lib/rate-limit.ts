@@ -107,6 +107,12 @@ export const RATE_LIMITS = {
   ticketValidate: { max: 30, windowMs: 60_000 },
   /** Iniciar pagamentos: evita encher a Eupago de referências órfãs. */
   checkout: { max: 8, windowMs: 60_000 },
+  /**
+   * Mensagens do chat. Limitado por CONTA (ver `CHAT_MESSAGES_PER_MINUTE` em
+   * `server/chat.ts`): por IP punia quatro telemóveis atrás do mesmo NAT — uma
+   * casa a ver a mesma batalha — e não travava quem trocasse de rede.
+   */
+  chat: { max: 12, windowMs: 60_000 },
 } as const satisfies Record<string, RateLimitPolicy>;
 
 // ── Armazenamento ───────────────────────────────────────────────────────────

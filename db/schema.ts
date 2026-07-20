@@ -306,3 +306,131 @@ export const purchaseConsents = pgTable(
     index("purchase_consents_ticket_idx").on(t.ticketId),
   ],
 );
+
+/*
+ * ============================================================================
+ *  CONVERSA DO EVENTO — uma tabela, duas vidas
+ * ============================================================================
+ *
+ * `chat_messages` é o chat ao vivo E os comentários do VOD. Não são duas
+ * tabelas porque não são duas coisas: é a mesma conversa, sobre o mesmo evento,
+ * com as mesmas pessoas e a mesma moderação — só muda o ritmo com que chega ao
+ * ecrã (ver `server/chat.ts`). Duas tabelas obrigavam a duplicar a regra de
+ * acesso, a moderação e a UI, e a decidir, em cada uma delas, o mesmo outra vez.
+ *
+ * QUEM ESCREVE E QUEM LÊ é decidido por `canWatchEvent` — a MESMA função que o
+ * player usa. Não há aqui, nem em `server/chat.ts`, uma segunda opinião sobre
+ * quem tem acesso: já custou caro a esta plataforma ter dois sítios a responder
+ * à mesma pergunta.
+ */
+export const chatMessages = pgTable(
+  "chat_messages",
+  {
+    id: text("id").primaryKey(),
+    eventId: text("event_id")
+      .notNull()
+      .references(() => events.id, { onDelete: "cascade" }),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    body: text("body").notNull(),
+    /**
+     * O evento estava `live` quando isto foi escrito?
+     *
+     * Guardado no momento da escrita, e não deduzido depois, porque depois já
+     * não dá: quando o evento passa a `ended` nada regista a hora da passagem,
+     * por isso nenhuma query consegue separar o que foi dito durante a
+     * transmissão do que foi comentado a seguir. É essa separação que a página
+     * do VOD mostra ("Durante a transmissão" / os comentários por baixo).
+     */
+    duringLive: boolean("during_live").notNull().default(false),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    /** Soft-delete: a mensagem desaparece do ecrã, a linha fica para auditoria. */
+    deletedAt: timestamp("deleted_at"),
+    /**
+     * Quem apagou. `set null` e não `cascade`: apagar a conta de um moderador
+     * não pode ressuscitar as mensagens que ele apagou.
+     */
+    deletedBy: text("deleted_by").references(() => user.id, { onDelete: "set null" }),
+  },
+  (t) => [
+    /*
+     * O índice do polling. A leitura é sempre
+     *   where event_id = ? and (created_at, id) > (?, ?) order by created_at, id
+     * — o par (created_at, id) é o cursor, e é um PAR de propósito: só com
+     * `created_at` duas mensagens do mesmo milissegundo (que numa batalha
+     * acontecem) faziam o cursor saltar uma delas para sempre.
+     */
+    index("chat_messages_event_idx").on(t.eventId, t.createdAt, t.id),
+    /*
+     * As mensagens apagadas DEPOIS de o cliente as ter recebido. Sem isto, um
+     * apagar de moderação só se via em quem entrasse a seguir: quem já tinha a
+     * mensagem no ecrã continuava a vê-la, porque o polling só traz o que é
+     * novo. Ver `deletedSince` em `server/chat.ts`.
+     */
+    index("chat_messages_deleted_idx").on(t.eventId, t.deletedAt),
+  ],
+);
+
+/*
+ * Silenciar uma conta NESTE evento — a outra metade da moderação.
+ *
+ * Por evento e não por canal: o castigo é proporcional ao sítio onde a pessoa
+ * se portou mal, e não a segue para o resto da plataforma. Uma linha por
+ * (evento, conta), reescrita a cada novo silenciamento — o histórico de quantas
+ * vezes já foi silenciada não é o que a moderação precisa de saber ao vivo.
+ *
+ * NÃO existe filtro automático de linguagem, e é decisão de produto: isto é
+ * battle rap, os palavrões são o género. A moderação é humana e é da liga.
+ */
+export const chatTimeouts = pgTable(
+  "chat_timeouts",
+  {
+    id: text("id").primaryKey(),
+    eventId: text("event_id")
+      .notNull()
+      .references(() => events.id, { onDelete: "cascade" }),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    /** Até quando. Uma data no passado é o mesmo que não estar silenciado. */
+    until: timestamp("until").notNull(),
+    createdBy: text("created_by").references(() => user.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (t) => [
+    // Um silenciamento por pessoa por evento: silenciar outra vez estende o
+    // prazo em vez de acumular linhas que ninguém sabe somar.
+    uniqueIndex("chat_timeouts_event_user_uq").on(t.eventId, t.userId),
+  ],
+);
+
+/*
+ * Gosto num evento. Um por conta, alternável.
+ *
+ * Decisão do dono: a CONTAGEM é pública, QUEM gostou é privado. Por isso não há
+ * (nem deve passar a haver) nenhuma leitura que devolva a lista de pessoas —
+ * `server/chat.ts` só expõe o total e "eu gostei?". Anónimo vê a contagem e não
+ * vota.
+ *
+ * O índice único é o que faz o "um por conta" ser verdade mesmo com dois
+ * cliques em simultâneo: a segunda inserção não passa, em vez de somar dois.
+ */
+export const eventLikes = pgTable(
+  "event_likes",
+  {
+    id: text("id").primaryKey(),
+    eventId: text("event_id")
+      .notNull()
+      .references(() => events.id, { onDelete: "cascade" }),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("event_likes_event_user_uq").on(t.eventId, t.userId),
+    // A contagem pública é `count(*) where event_id = ?`.
+    index("event_likes_event_idx").on(t.eventId),
+  ],
+);

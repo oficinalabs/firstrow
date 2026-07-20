@@ -75,6 +75,68 @@ const CAPABILITIES: Capability[] = [
 
 const isSet = (nome: string) => (process.env[nome] ?? "").trim() !== "";
 
+/** Acima disto, o armazenamento contratado começa a ser um problema a prazo. */
+const AVISO_ARMAZENAMENTO = 0.8;
+
+/*
+ * ============================================================================
+ *  A CONTA CLOUDFLARE CONSEGUE MESMO TRANSMITIR?
+ * ============================================================================
+ *
+ * O resto deste ficheiro pergunta "está configurado?". Isto pergunta "funciona?"
+ * — e a diferença custou uma noite inteira.
+ *
+ * O Cloudflare Stream é pago e sem plano gratuito. Numa conta sem subscrição, as
+ * credenciais existem, a API deixa criar live inputs e devolve URL e chave com
+ * bom aspeto — mas o ingest é recusado, e nem o OBS nem o Streamlabs dizem
+ * porquê: ficam os dois em "a tentar reconectar". A verificação de variáveis
+ * dava tudo verde, porque as variáveis ESTAVAM lá.
+ *
+ * Uma chamada, dois segundos, e a resposta aparece. Não há razão para isto não
+ * viver no produto.
+ */
+export async function reportStreamSubscription(): Promise<void> {
+  // Sem credenciais não vale a pena perguntar — a falta delas já é relatada
+  // acima, e uma segunda queixa sobre a mesma causa só faz ruído.
+  if (!isSet("CLOUDFLARE_ACCOUNT_ID") || !isSet("CLOUDFLARE_STREAM_API_TOKEN")) return;
+
+  const { getStreamAccountStatus } = await import("@/server/cloudflare-stream");
+  const estado = await getStreamAccountStatus();
+
+  if (!estado) {
+    console.warn(
+      "[stream] não deu para confirmar a subscrição da Cloudflare neste arranque. " +
+        "Não é impeditivo — mas se uma transmissão for recusada sem explicação, começa por aqui.",
+    );
+    return;
+  }
+
+  if (!estado.podeTransmitir) {
+    console.error(
+      [
+        "",
+        "┌─ Cloudflare Stream SEM SUBSCRIÇÃO ─────────────────────────────",
+        "│  As credenciais estão configuradas, mas a conta não tem plano.",
+        "│  Criar eventos funciona e as chaves parecem boas — o INGEST é",
+        "│  recusado, e o OBS só diz 'a tentar reconectar'.",
+        "│",
+        "│  Ativa o Stream no painel da Cloudflare. As credenciais atuais",
+        "│  passam a funcionar; não é preciso recriar eventos nem chaves.",
+        "└───────────────────────────────────────────────────────────────",
+      ].join("\n"),
+    );
+    return;
+  }
+
+  if (estado.minutosUsados >= estado.minutosLimite * AVISO_ARMAZENAMENTO) {
+    console.warn(
+      `[stream] armazenamento Cloudflare em ${Math.round(estado.minutosUsados)} de ` +
+        `${estado.minutosLimite} minutos. Cada evento acumula — sem folga, as gravações ` +
+        "novas deixam de caber.",
+    );
+  }
+}
+
 /**
  * Escreve o relatório de arranque. Chamada uma vez pelo `instrumentation.ts`.
  *

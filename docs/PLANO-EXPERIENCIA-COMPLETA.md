@@ -63,6 +63,36 @@ impossível. Contra o atacante determinado (que grava o ecrã na mesma), as defe
 reais são o login obrigatório, a sessão única, o token por conta e a identificação
 forense de quem partilhou. **Nunca vender às ligas mais do que isto.**
 
+### Estado a 21/07 — ecrã inteiro FECHADO (menos iPhone)
+
+O ecrã inteiro deixou de ser o maior buraco. O pedido passou a ser feito à **moldura**
+(o `<div>` que contém o iframe *e* a marca), não ao iframe, e o `allowFullScreen` saiu.
+Efeito lateral bem-vindo, medido: sem esse atributo o player da Cloudflare **esconde
+sozinho** o botão de ecrã inteiro dele — não fica botão morto.
+
+**Um segundo buraco da mesma família foi encontrado e fechado: o Picture-in-Picture.**
+Em PiP o vídeo salta para uma janela do sistema e a marca também não vai. E há uma
+subtileza que só a medição apanhou: **omitir não chega** — a allowlist por omissão do
+PiP é `*` (ao contrário do fullscreen, que é `self`), por isso é preciso
+`picture-in-picture 'none'` explícito.
+
+Medido no browser, na página real: marca visível em ecrã inteiro em Chrome, Firefox,
+WebKit e Android; os três ataques (apagar, `opacity:0`, tapar) passam a ser detetados
+DENTRO do ecrã inteiro, entre 0,0 s e 2,2 s — antes nenhum era, porque a vigia estava
+desligada lá. O vídeo não hesita ao entrar: zero eventos `pause`/`waiting`/`stalled`.
+
+**O que continua aberto: iPhone.** No WebKit com perfil de iPhone o `requestFullscreen`
+por elemento **não existe**; dentro do iframe, `video.webkitEnterFullscreen` existe e
+**não** é governado pela Permissions Policy. Não dá para impedir nem sequer para
+*observar* (o leitor nativo não acende `fullscreenElement`). A decisão tomada: o botão
+só é desenhado onde a API existe (deteção de funcionalidade, não user-agent — o iPad
+diz-se um Mac e suporta), e **não se bloqueia o que não se consegue ver**. Uma proteção
+inaplicável é promessa falsa, e é pior uma liga julgar-se coberta do que saber que não
+está.
+
+Por verificar: Safari real num Mac, e o PiP pela API própria
+(`webkitSetPresentationMode`).
+
 ---
 
 ## Onda A — a página de ver (live e VOD)

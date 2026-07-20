@@ -18,7 +18,16 @@ import { formatTime } from "@/lib/format";
  * decidir). Variáveis necessárias: RESEND_API_KEY e (opcional) EMAIL_FROM.
  */
 
-const FROM = process.env.EMAIL_FROM ?? "FirstRow <no-reply@joinfirstrow.com>";
+/*
+ * O remetente por defeito tem de ser um domínio VERIFICADO no Resend, senão o
+ * envio falha do lado deles e nós só vemos silêncio.
+ *
+ * Estava `joinfirstrow.com` — um domínio que nunca chegou a ser comprado, quanto
+ * mais verificado. Como defeito, era uma armadilha: bastava o `EMAIL_FROM` faltar
+ * ou vir com uma letra trocada na Vercel para nenhum recibo sair, sem erro
+ * visível. O plano gratuito do Resend só permite um domínio e é `arestadigital.pt`.
+ */
+const FROM = process.env.EMAIL_FROM ?? "FirstRow <no-reply@arestadigital.pt>";
 
 let client: Resend | null = null;
 

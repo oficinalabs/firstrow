@@ -38,7 +38,7 @@ export function LinksLegais() {
           </Link>
         </li>
         <li>
-          {/* Suporte ao cliente = suporte@arestadigital.pt (ver decisoes.ts).
+          {/* Suporte ao cliente = support@arestadigital.pt (ver decisoes.ts).
               É diferente do ola@ do marketing, que é contacto B2B de criadores. */}
           <a href={`mailto:${EMAIL_SUPORTE}`} className={LIGACAO}>
             Suporte

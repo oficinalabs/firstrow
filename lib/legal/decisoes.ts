@@ -14,15 +14,14 @@
  */
 
 /*
- * ⚠️ PENDENTE DE CRIAÇÃO — a caixa de correio `suporte@arestadigital.pt` ainda
- * NÃO existe. O Rui tem de a criar antes do lançamento; até lá, um email
- * enviado para este endereço não chega a ninguém.
+ * Caixa criada e a reencaminhar (19/07/2026).
  *
- * O endereço já aparece no site porque foi a decisão tomada — o que falta é a
- * caixa do outro lado, não a decisão. Deixado aqui, comentado, para não cair no
- * esquecimento entre "decidido" e "a funcionar".
+ * É `support@` — em INGLÊS. A redação original dizia `suporte@`, à portuguesa,
+ * e a caixa que existe é a outra: um endereço errado numa página legal manda
+ * quem reclama para o vazio, e essa é a página onde isso menos pode acontecer.
+ * Fica escrito porque a diferença de uma letra não se vê a reler.
  */
-export const EMAIL_SUPORTE = "suporte@arestadigital.pt";
+export const EMAIL_SUPORTE = "support@arestadigital.pt";
 
 /**
  * Ligação de suporte já em marcação inline (ver `components/legal/texto-inline`),

@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { canEnterBackoffice, getCurrentUser, manageScope } from "@/server/authz";
+import { canManageAnyChannel, getCurrentUser, manageScope } from "@/server/authz";
 import { type ReconcileReport, reconcilePending } from "@/server/reconcile";
 
 export type VerificacaoResult = { relatorio: ReconcileReport } | { error: string };
@@ -28,7 +28,14 @@ export type VerificacaoResult = { relatorio: ReconcileReport } | { error: string
  */
 export async function verificarPagamentos(): Promise<VerificacaoResult> {
   const user = await getCurrentUser();
-  if (!user || !canEnterBackoffice(user)) {
+  /*
+   * `canManageAnyChannel` e não `canEnterBackoffice`, e a diferença é o ponto
+   * todo: `canEnterBackoffice` alargou para deixar o staff chegar ao scanner.
+   * Se esta linha tivesse ficado presa ao nome antigo, alargar a PORTA do
+   * backoffice punha quem valida bilhetes a disparar reconciliações de
+   * pagamentos. O gate desta action é dinheiro, logo é `owner`.
+   */
+  if (!user || !canManageAnyChannel(user)) {
     return { error: "Não tens permissão para isto." };
   }
 

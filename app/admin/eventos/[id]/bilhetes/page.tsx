@@ -5,7 +5,7 @@ import { Card } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
 import { StatCard } from "@/components/ui/stat-card";
 import { formatDate, formatEuro, formatNumber, formatTime } from "@/lib/format";
-import { operateScope } from "@/server/authz";
+import { canManageEvents, operateScope } from "@/server/authz";
 import { channelsInScope } from "@/server/channels";
 import { requireEventOperator } from "@/server/event-access";
 import { getEventTicketStats, listTicketsByEvent, shortCode } from "@/server/tickets";
@@ -28,6 +28,9 @@ export default async function AdminEventoBilhetesPage({
     channelsInScope(operateScope(user)),
   ]);
   const porUsar = stats.vendidos - stats.entraram;
+  // O papel NESTE canal, não o papel da pessoa: quem é dono de uma liga e
+  // equipa noutra vê a receita numa e não na outra.
+  const canManage = canManageEvents(user, event.channelId);
   // De que liga são estes compradores — só quando há mais do que uma (a lista
   // leva nomes e emails, e exporta-se para CSV logo ali ao lado).
   const channel = channels.many ? channels.byId.get(event.channelId) : undefined;
@@ -49,12 +52,17 @@ export default async function AdminEventoBilhetesPage({
             ) : null}
           </div>
           <div className="flex gap-2.5">
-            <a
-              href={`/admin/eventos/${id}/bilhetes/export`}
-              className={buttonVariants({ variant: "secondary", size: "sm" })}
-            >
-              Exportar CSV
-            </a>
+            {/* O export é `canManageEvents` do lado do servidor (responde 404 a
+                quem não seja dono). Mostrá-lo à equipa da porta era oferecer um
+                botão que não faz nada — esconder é cortesia, o gate é lá. */}
+            {canManage ? (
+              <a
+                href={`/admin/eventos/${id}/bilhetes/export`}
+                className={buttonVariants({ variant: "secondary", size: "sm" })}
+              >
+                Exportar CSV
+              </a>
+            ) : null}
             <Link href={`/admin/scanner?evento=${id}`} className={buttonVariants({ size: "sm" })}>
               Abrir scanner de porta
             </Link>
@@ -69,7 +77,19 @@ export default async function AdminEventoBilhetesPage({
         />
       ) : (
         <>
-          <div className="grid grid-cols-2 gap-3.5 lg:grid-cols-4">
+          {/*
+           * Vendidos / entraram / por usar são OPERACIONAIS — é o que quem está
+           * à porta precisa de saber para gerir a fila e a lotação. A receita
+           * não é: é o dinheiro da liga, e este ecrã abre-se com
+           * `canOperateEvents`, ou seja também à equipa.
+           *
+           * Medido com sessão de staff: antes disto, o corpo desta página
+           * trazia "Receita bilhetes" e o valor. A grelha passa a três colunas
+           * quando a receita não entra, para não deixar um buraco no sítio dela.
+           */}
+          <div
+            className={`grid grid-cols-2 gap-3.5 ${canManage ? "lg:grid-cols-4" : "lg:grid-cols-3"}`}
+          >
             <StatCard
               label="Vendidos"
               value={formatNumber(stats.vendidos)}
@@ -77,7 +97,9 @@ export default async function AdminEventoBilhetesPage({
                 event.ticketCapacity != null ? `/${formatNumber(event.ticketCapacity)}` : undefined
               }
             />
-            <StatCard label="Receita bilhetes" value={formatEuro(stats.receitaCents)} />
+            {canManage ? (
+              <StatCard label="Receita bilhetes" value={formatEuro(stats.receitaCents)} />
+            ) : null}
             <StatCard
               label="Já entraram"
               value={formatNumber(stats.entraram)}

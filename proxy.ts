@@ -1,8 +1,11 @@
 import { getSessionCookie } from "better-auth/cookies";
 import { type NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
+import { BACKOFFICE_ROOT, gateForPath } from "@/lib/backoffice-zones";
 import {
+  backofficeHomeFor,
   canEnterBackoffice,
+  canOpenBackofficePath,
   DEFAULT_ROLE,
   loadMemberships,
   ROLES,
@@ -129,18 +132,67 @@ export default async function proxy(req: NextRequest) {
     const role: Role = isRole(bruto) ? bruto : DEFAULT_ROLE;
 
     /*
-     * `canEnterBackoffice` e não `canManageEvents`: aqui não há canal nenhum de
-     * onde partir — `/admin` não o tem no URL. A pergunta que este sítio pode
-     * responder é "esta pessoa gere ALGUM canal?"; de que canal é que se fala
-     * decide-se lá dentro, ecrã a ecrã, a partir do evento ou do âmbito.
+     * O corte é POR CAMINHO, e não uma porta única.
+     *
+     * Aqui não há canal nenhum de onde partir — `/admin` não o tem no URL — mas
+     * há o CAMINHO, e o caminho já diz que papel a zona exige:
+     * `/admin/scanner` chega-lhe operar um canal; `/admin/ganhos` exige geri-lo.
+     * A tabela está em `lib/backoffice-zones.ts` e é a MESMA que as páginas
+     * usam (`requireBackofficePage`) e que a sidebar usa para se filtrar. Um
+     * segundo sítio a decidir isto era um segundo sítio para divergir — já
+     * aconteceu nesta plataforma, e o resultado foi um recurso que não abria
+     * para ninguém.
+     *
+     * De que CANAL é que se fala continua a decidir-se lá dentro, ecrã a ecrã,
+     * a partir do evento ou do âmbito: isto abre a zona, não o conteúdo.
      *
      * Custa a leitura das filiações além da sessão. Continua a ser só em
      * `/admin/**`, que é meia dúzia de pessoas — a mesma troca já explicada
      * para a leitura da sessão.
      */
     const memberships = await loadMemberships(session.user.id);
+    const subject = { role, memberships };
 
-    if (!canEnterBackoffice({ role, memberships })) {
+    if (!canOpenBackofficePath(subject, pathname)) {
+      /*
+       * ZONAS `platform`: a recusa é da PÁGINA, e é um 404 de propósito.
+       *
+       * `/admin/plataforma` responde `notFound()` a quem não é da FirstRow —
+       * "quem não é da FirstRow não precisa sequer de saber que este ecrã
+       * existe" (docs/SEGURANCA-APP.md). Um `redirect("/sem-acesso")` aqui
+       * dizia-lhe o contrário: que o caminho existe e que lhe está vedado, que
+       * é exatamente o que o 404 esconde.
+       *
+       * Deixar passar é seguro porque estas páginas travam-se a si próprias
+       * SEQUENCIALMENTE — `isPlatformAdmin` antes da primeira query, no corpo
+       * da página. O problema do App Router é um LAYOUT não conseguir travar a
+       * página que corre em paralelo com ele; uma página a travar-se a si
+       * mesma, antes de ler seja o que for, não tem esse problema.
+       *
+       * A exceção da exceção: isto só vale para quem JÁ entra no backoffice.
+       * Um espectador não tem nada que esconder-lhe — nunca soube que estas
+       * páginas existem — e deixá-lo passar só o punha a receber a moldura do
+       * backoffice antes de o layout o travar. Vai pela porta normal.
+       *
+       * Há um teste que lê o código destas páginas e falha se o gate próprio
+       * desaparecer — sem ele, esta linha passava a ser um buraco.
+       */
+      if (gateForPath(pathname) === "platform" && canEnterBackoffice(subject)) {
+        return NextResponse.next();
+      }
+
+      /*
+       * Quem tem backoffice, mas não ESTE, vai para o que tem em vez de levar
+       * com uma recusa. O caso real: o staff da porta carrega no atalho
+       * "Backoffice" (ou escreve `/admin`) e o que quer é o scanner — mandá-lo
+       * para `/sem-acesso` seria dizer-lhe "não podes" a caminho da única coisa
+       * que pode. Só na RAIZ: quem pediu `/admin/ganhos` pediu aquilo, e
+       * atirá-lo para outro ecrã sem explicação era pior do que a recusa.
+       */
+      const casa = backofficeHomeFor(subject);
+      if (casa && pathname === BACKOFFICE_ROOT) {
+        return NextResponse.redirect(new URL(casa, req.nextUrl));
+      }
       return NextResponse.redirect(new URL("/sem-acesso", req.nextUrl));
     }
 

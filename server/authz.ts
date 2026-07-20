@@ -6,6 +6,13 @@ import { db } from "@/db";
 import { DEFAULT_ROLE, ROLES, type Role, user as userTable } from "@/db/auth-schema";
 import { CHANNEL_ROLES, type ChannelRole, channelMembers } from "@/db/schema";
 import { auth, authCapabilities } from "@/lib/auth";
+import {
+  BACKOFFICE_GATES,
+  BACKOFFICE_ROOT,
+  type BackofficeGate,
+  gateForPath,
+  SCANNER_PATH,
+} from "@/lib/backoffice-zones";
 
 /*
  * ============================================================================
@@ -40,6 +47,9 @@ import { auth, authCapabilities } from "@/lib/auth";
  *     const user = await requireUser({ next: "/conta" });
  *     const user = await requireRole(["platform_admin"], { next: "/admin" });
  *
+ *   Páginas do backoffice — o papel vem da ZONA (lib/backoffice-zones.ts):
+ *     const user = await requireBackofficePage("/admin/subscritores");
+ *
  *   Ecrãs de um evento — o canal vem do evento, e a resposta é 404 se não for
  *   teu (ver `server/event-access.ts`, que é onde isto deve ser feito):
  *     const { user, event } = await requireEventManager(id, "/admin/...");
@@ -50,6 +60,8 @@ import { auth, authCapabilities } from "@/lib/auth";
  *   Predicados puros (sem I/O, servem cliente e servidor):
  *     isPlatformAdmin(user) · canManageEvents(user, channelId)
  *     canOperateEvents(user, channelId) · channelRoleOf(user, channelId)
+ *     canManageAnyChannel(user) · canEnterBackoffice(user)
+ *     canOpenBackofficePath(user, pathname) · backofficeHomeFor(user)
  *
  * PORQUE É QUE OS PREDICADOS CONTINUAM PUROS (e não `async`)
  * Ler a base de dados dentro de um predicado obrigava a `await` em todo o lado,
@@ -161,21 +173,105 @@ export function canOperateEvents(user: Subject, channelId: string): boolean {
 }
 
 /**
+ * Gere ALGUM canal — sem dizer qual.
+ *
+ * É a pergunta que se pode fazer onde não há canal no URL: `/admin/ganhos`,
+ * `/admin/subscritores`, o botão de criar evento, a action de reconciliação.
+ * Tudo isto é dinheiro ou dados de compradores, logo é `owner` e nunca `staff`.
+ *
+ * ⚠️ ISTO CHAMAVA-SE `canEnterBackoffice` E MUDOU DE NOME, não de regra.
+ * O `canEnterBackoffice` passou a ser mais largo (deixa entrar o staff, que
+ * precisa do scanner). Se estas chamadas tivessem ficado presas ao nome antigo,
+ * alargar a porta abria de repente a contabilidade a quem valida bilhetes.
+ * Separar os nomes obrigou o compilador a fazer a pergunta em cada sítio.
+ */
+export function canManageAnyChannel(user: Subject): boolean {
+  if (isPlatformAdmin(user)) return true;
+  return user?.memberships.some((m) => m.role === "owner") ?? false;
+}
+
+/**
  * Abre a porta do backoffice — e só a porta.
  *
- * O `/admin` não tem canal no URL, por isso o corte do `proxy.ts` não pode ser
- * por canal: a pergunta aqui é "esta pessoa gere ALGUM canal?". Quem passa
- * ainda tem de passar no gate por canal de cada ecrã lá dentro, que é onde se
- * decide de que eventos é que se fala.
+ * `owner` **ou** `staff`: o `staff` existe precisamente para validar bilhetes à
+ * porta, e o scanner vive em `/admin/scanner`. Enquanto isto exigiu `owner`, o
+ * único papel feito para o scanner era o único que não lhe chegava.
  *
- * `owner` e não `staff`, de propósito: quase nenhuma página daqui para dentro
- * tem gate próprio, por isso este é o gate efetivo de `/admin/ganhos` e
- * `/admin/subscritores` — dinheiro e dados pessoais de compradores. Ver a nota
- * em `app/admin/layout.tsx`.
+ * Passar aqui NÃO é ver o backoffice: é só não levar com a porta na cara. O que
+ * cada ecrã exige está em `lib/backoffice-zones.ts` e é aplicado por
+ * `canOpenBackofficePath` — no `proxy.ts` (que corta a sério) e no gate de cada
+ * página. Quem só opera vê o scanner e os ecrãs do evento; dinheiro e
+ * compradores continuam a pedir `canManageAnyChannel`.
+ *
+ * É também a pergunta do atalho "Backoffice" no header do site
+ * (`components/ui/backoffice-link.tsx`): mostrar o atalho a quem tem alguma
+ * coisa lá dentro, esconder-lho a quem não tem.
  */
 export function canEnterBackoffice(user: Subject): boolean {
   if (isPlatformAdmin(user)) return true;
-  return user?.memberships.some((m) => m.role === "owner") ?? false;
+  return user?.memberships.some((m) => isChannelRole(m.role)) ?? false;
+}
+
+/**
+ * Traduz um gate de zona no predicado que lhe corresponde.
+ *
+ * É o único sítio onde `BackofficeGate` vira "sim/não" — a tabela de caminhos
+ * (`lib/backoffice-zones.ts`) diz DE QUE gate se precisa, isto diz QUEM o tem.
+ */
+export function satisfiesGate(user: Subject, gate: BackofficeGate): boolean {
+  switch (gate) {
+    case "platform":
+      return isPlatformAdmin(user);
+    case "manage":
+      return canManageAnyChannel(user);
+    case "operate":
+      return canEnterBackoffice(user);
+  }
+}
+
+/**
+ * Pode esta pessoa abrir este caminho de `/admin`?
+ *
+ * A MESMA função no `proxy.ts` e no gate das páginas, de propósito: são os dois
+ * pontos que decidem o mesmo acesso, e escrevê-lo duas vezes era pedir que um
+ * dia divergissem. O proxy é quem corta a sério (no App Router o layout
+ * renderiza em paralelo com a página); a página repete por defesa em
+ * profundidade, para o caso de o matcher do proxy falhar.
+ */
+export function canOpenBackofficePath(user: Subject, pathname: string): boolean {
+  return satisfiesGate(user, gateForPath(pathname));
+}
+
+/**
+ * Todos os gates que esta pessoa satisfaz.
+ *
+ * Serve a navegação lateral, que é um componente de CLIENTE e não pode chamar
+ * predicados que arrastam o `db`. Vai por prop, já resolvida no servidor, e a
+ * sidebar filtra os itens com a MESMA tabela de `lib/backoffice-zones.ts` que o
+ * proxy usa. Assim a lista de links não pode divergir do que a porta deixa
+ * abrir — e ninguém leva com um item que acaba em `/sem-acesso`.
+ *
+ * Esconder um item é cortesia, não segurança: quem for lá à mão leva com o gate
+ * na mesma, primeiro no `proxy.ts` e depois na página.
+ */
+export function satisfiedGates(user: Subject): BackofficeGate[] {
+  return BACKOFFICE_GATES.filter((gate) => satisfiesGate(user, gate));
+}
+
+/**
+ * Onde é que o backoffice desta pessoa começa.
+ *
+ * Quem gere um canal entra pelo painel; quem só opera entra pelo scanner, que é
+ * o que veio cá fazer. `null` para quem não tem nada lá dentro.
+ *
+ * Serve o atalho do header (para apontar já ao sítio certo, sem um salto pelo
+ * meio) e o `proxy.ts` (para quem escreve `/admin` à mão não levar com uma
+ * recusa por uma página que nunca pediu).
+ */
+export function backofficeHomeFor(user: Subject): string | null {
+  if (canManageAnyChannel(user)) return BACKOFFICE_ROOT;
+  if (canEnterBackoffice(user)) return SCANNER_PATH;
+  return null;
 }
 
 /** Os canais onde esta pessoa gere eventos. Vazio para quem não gere nenhum. */
@@ -354,5 +450,30 @@ export async function requireRole(
   if (!roles.includes(user.role)) {
     throw new ForbiddenError(roles, user.role);
   }
+  return user;
+}
+
+/**
+ * O gate de uma página do backoffice — sessão + o papel que a ZONA exige.
+ *
+ * UMA função e não um `if` copiado por página: o mesmo gate aparecia em cinco
+ * ecrãs de dinheiro, e cinco cópias da mesma regra é como uma delas fica para
+ * trás no dia em que a regra mudar. O que cada caminho exige está na tabela de
+ * `lib/backoffice-zones.ts`, que é a MESMA que o `proxy.ts` lê.
+ *
+ * Devolve o utilizador já resolvido — quem chama não repete `requireUser`.
+ *
+ * ⚠️ Isto é a SEGUNDA linha, não a primeira. No App Router a página começa a
+ * correr as queries antes de um gate de layout a poder travar, e o que impede
+ * os dados de irem no payload é a ordem AQUI DENTRO (gate antes das queries)
+ * mais o corte do `proxy.ts`, que trava o pedido antes de a página existir.
+ * Por isso chama-se isto na PRIMEIRA linha da página, antes de qualquer query.
+ */
+export async function requireBackofficePage(pathname: string): Promise<AuthUser> {
+  const user = await requireUser({ next: pathname });
+  // `/sem-acesso` e não `notFound()`: quem chega aqui já passou a porta do
+  // backoffice, portanto já sabe que ele existe — esconder a página não esconde
+  // nada e deixava a pessoa sem perceber o que se passou.
+  if (!canOpenBackofficePath(user, pathname)) redirect("/sem-acesso");
   return user;
 }

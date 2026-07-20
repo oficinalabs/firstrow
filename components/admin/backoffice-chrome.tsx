@@ -2,17 +2,11 @@
 
 import { usePathname } from "next/navigation";
 import { type BackofficeNavItem, BackofficeShell } from "@/components/ui/backoffice-shell";
+import { type BackofficeGate, gateForPath, SCANNER_PATH } from "@/lib/backoffice-zones";
 import type { Channel } from "@/lib/channels";
 
 /*
- * Navegação completa do backoffice. Scanner e Bilhetes são páginas da Frente D
- * — o item fica na sidebar desde já, como no design.
- *
- * "Canais" aparece a toda a gente que entra aqui, e não só à FirstRow: o gate
- * do `/admin` já exige ser `owner` de algum canal (`canEnterBackoffice`), por
- * isso quem chega tem sempre pelo menos um canal para gerir. O que muda com o
- * papel é o que a página mostra lá dentro — a FirstRow vê todos, um dono vê o
- * seu (`manageScope`) — e quem pode CRIAR canais, que é só a FirstRow.
+ * Navegação completa do backoffice.
  *
  * Fica depois de "Eventos" de propósito: o trabalho do dia-a-dia é o evento;
  * o canal mexe-se uma vez e volta-se lá raramente.
@@ -20,6 +14,20 @@ import type { Channel } from "@/lib/channels";
  * "Pagamentos" fica encostado a "Ganhos" porque são a mesma pergunta em dois
  * tempos: os Ganhos são o dinheiro que entrou, os Pagamentos são o que ficou a
  * meio. Vem primeiro porque é o que precisa de alguém — o extrato só se lê.
+ *
+ * ────────────────────────────────────────────────────────────────────────────
+ *  A LISTA NÃO SE FILTRA A OLHO — filtra-se pela tabela das zonas
+ * ────────────────────────────────────────────────────────────────────────────
+ *
+ * Cada item é classificado por `gateForPath`, a MESMA função que o `proxy.ts`
+ * usa para decidir se corta o pedido. Não há aqui uma segunda opinião sobre
+ * quem vê o quê: se a tabela disser que `/admin/ganhos` é `manage`, o item
+ * desaparece exatamente para quem a porta recusaria.
+ *
+ * Antes isto era um `isPlatformAdmin` à parte, que só sabia responder por
+ * "Plataforma". Com o staff a entrar, a lista passou a ter de esconder também
+ * dinheiro e compradores — e uma segunda regra escrita à mão aqui era a
+ * candidata óbvia a divergir da porta.
  */
 const NAV: BackofficeNavItem[] = [
   { label: "Dashboard", href: "/admin" },
@@ -28,31 +36,48 @@ const NAV: BackofficeNavItem[] = [
   { label: "Subscritores", href: "/admin/subscritores" },
   { label: "Pagamentos", href: "/admin/pagamentos" },
   { label: "Ganhos", href: "/admin/ganhos" },
-  { label: "Scanner", href: "/admin/scanner" },
+  { label: "Scanner", href: SCANNER_PATH },
+  // Só para a FirstRow: totais da plataforma inteira, sem âmbito de canal.
+  { label: "Plataforma", href: "/admin/plataforma" },
 ];
-
-// Só para a FirstRow: mostra totais da plataforma inteira, sem âmbito de canal.
-const PLATFORM_NAV: BackofficeNavItem = { label: "Plataforma", href: "/admin/plataforma" };
 
 /**
  * Shell da fundação + item ativo derivado do pathname (prefixo mais longo).
  *
- * `isPlatformAdmin` chega por prop, decidido no servidor (`app/admin/layout.tsx`).
- * Esconder o link é cortesia, não segurança — quem lá for à mão leva `notFound()`
- * da própria página; isto só evita pôr na sidebar de um dono de liga um item
- * que ele não pode abrir.
+ * `gates` chega por prop, decidido no servidor (`app/admin/layout.tsx`):
+ * componentes de cliente não podem chamar predicados que arrastam o `db`.
+ * Esconder um link é cortesia, não segurança — quem lá for à mão leva com o
+ * gate na mesma, primeiro no `proxy.ts` e depois na própria página.
  */
 export function BackofficeChrome({
-  isPlatformAdmin = false,
+  gates,
   channel,
   children,
 }: {
-  isPlatformAdmin?: boolean;
+  gates: readonly BackofficeGate[];
   channel?: Channel;
   children: React.ReactNode;
 }) {
   const pathname = usePathname();
-  const nav = isPlatformAdmin ? [...NAV, PLATFORM_NAV] : NAV;
+
+  /*
+   * O SCANNER NÃO LEVA MOLDURA, e não é preciosismo.
+   *
+   * Usa-se de pé, à porta do recinto, com pouca luz e uma mão só. Dentro da
+   * moldura ficava com a barra da FirstRow por cima, o padding do `main` à
+   * volta e uma costura clara à roda de um ecrã que é escuro de propósito —
+   * tudo espaço roubado ao alvo da câmara e ao contraste, no único ecrã do
+   * produto que se usa com o telemóvel na mão e a fila à espera.
+   *
+   * Fica aqui, e não num route group, porque o gate e o corte do `proxy.ts`
+   * têm de continuar a apanhar `/admin/scanner` — tirá-lo de debaixo de
+   * `/admin` mudava o caminho e com ele a proteção.
+   */
+  if (pathname === SCANNER_PATH || pathname.startsWith(`${SCANNER_PATH}/`)) {
+    return <>{children}</>;
+  }
+
+  const nav = NAV.filter((item) => gates.includes(gateForPath(item.href)));
   const active = nav
     .filter((item) => pathname === item.href || pathname.startsWith(`${item.href}/`))
     .sort((a, b) => b.href.length - a.href.length)[0];

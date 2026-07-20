@@ -69,22 +69,6 @@ describe("quem NÃO recebe o atalho", () => {
     expect(await render()).toBeNull();
   });
 
-  it("staff de um canal — o portão do /admin também lhe fecha", async () => {
-    /*
-     * O plano dizia "qualquer filiação em channel_members". Não é o que o
-     * produto faz: `canEnterBackoffice` exige `owner`, porque `/admin/ganhos` e
-     * `/admin/subscritores` não têm gate próprio (ver app/admin/layout.tsx). Dar
-     * o link ao staff era dar-lhe um atalho que acaba em `/sem-acesso`.
-     *
-     * Este teste é o que segura as duas pontas juntas: no dia em que o staff
-     * puder entrar, ele fica vermelho e obriga a decidir de propósito.
-     */
-    getCurrentUserMock.mockResolvedValue(
-      utilizador("viewer", [{ channelId: "c1", role: "staff" }]),
-    );
-    expect(await render()).toBeNull();
-  });
-
   it("papel desconhecido na base de dados não é acesso", async () => {
     // Uma conta com um papel de antes da migração multi-canal, ou o schema à
     // frente do código. O menos poderoso, nunca o mais.
@@ -123,6 +107,30 @@ describe("quem recebe o atalho", () => {
     expect(elemento?.props.href).toBe("/admin");
   });
 
+  it("staff de um canal — e o atalho aponta ao SCANNER, não ao painel", async () => {
+    /*
+     * ISTO ERA O CONTRÁRIO, E A MUDANÇA FOI DE PROPÓSITO.
+     *
+     * Enquanto o `/admin` exigiu `owner`, dar o atalho ao staff era dar-lhe um
+     * botão que acabava em `/sem-acesso` — por isso o teste antigo exigia
+     * `null`, e deixou escrito que ficaria vermelho no dia em que o staff
+     * pudesse entrar. Foi o que aconteceu: as páginas de dinheiro passaram a ter
+     * gate próprio (`requireBackofficePage`) e só então a porta aliviou.
+     *
+     * O destino é o que interessa aqui. `backofficeHomeFor` manda cada um para
+     * o que veio fazer: quem gere, para o painel; quem opera a porta, para o
+     * scanner. Um atalho para `/admin` obrigava o staff a saltar por um ecrã que
+     * não pode ver para chegar ao único que pode.
+     */
+    getCurrentUserMock.mockResolvedValue(
+      utilizador("viewer", [{ channelId: "c1", role: "staff" }]),
+    );
+
+    const elemento = await render();
+    expect(elemento).not.toBeNull();
+    expect(elemento?.props.href).toBe("/admin/scanner");
+  });
+
   it("dono num canal e staff noutro — basta ser dono de algum", async () => {
     getCurrentUserMock.mockResolvedValue(
       utilizador("viewer", [
@@ -131,7 +139,9 @@ describe("quem recebe o atalho", () => {
       ]),
     );
 
-    expect(await render()).not.toBeNull();
+    // E vai ao PAINEL, não ao scanner: gerir um canal é o poder maior dos dois,
+    // e é ele que decide a casa de quem tem os dois papéis.
+    expect((await render())?.props.href).toBe("/admin");
   });
 
   it("o alvo de toque tem os 44px e o foco é o global", async () => {

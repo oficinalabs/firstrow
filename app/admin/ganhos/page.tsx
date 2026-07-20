@@ -8,7 +8,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
 import { TableCell, TableRow } from "@/components/ui/table";
 import { formatEuro, formatNumber } from "@/lib/format";
-import { isPlatformAdmin, manageScope, requireUser } from "@/server/authz";
+import { isPlatformAdmin, manageScope, requireBackofficePage } from "@/server/authz";
 import { channelsInScope } from "@/server/channels";
 import {
   getMonthlyStatement,
@@ -51,7 +51,9 @@ export const metadata: Metadata = { title: "Ganhos" };
  * de não revelar.
  */
 export default async function EarningsPage() {
-  const user = await requireUser({ next: "/admin/ganhos" });
+  // Defesa em profundidade: o proxy já corta, mas uma página de dinheiro não
+  // pode depender só dele — se um dia a porta alargar, esta linha segura.
+  const user = await requireBackofficePage("/admin/ganhos");
   const scope = manageScope(user);
   const [{ commissionPct, rows }, channels, economics] = await Promise.all([
     getMonthlyStatement(scope),

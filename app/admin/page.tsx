@@ -8,7 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
 import { StatCard } from "@/components/ui/stat-card";
 import { formatDate, formatDateTime, formatEuro, formatNumber, formatTime } from "@/lib/format";
-import { manageScope, requireUser } from "@/server/authz";
+import { manageScope, requireBackofficePage } from "@/server/authz";
 import { channelsInScope } from "@/server/channels";
 import { getDashboardStats, listRecentPayments, type RecentPayment } from "@/server/stats";
 
@@ -32,7 +32,10 @@ function paymentWhen(createdAt: Date): string {
  * pessoa: quem não gere nenhum recebe zeros, não a receita de toda a gente.
  */
 export default async function AdminDashboardPage() {
-  const user = await requireUser({ next: "/admin" });
+  // Gate PRÓPRIO, e antes de qualquer query: este ecrã é receita do mês e
+  // pagamentos recentes, logo exige gerir um canal (`manage`), não só operar.
+  // Sem ele, abrir a porta do backoffice ao staff da porta dava-lhe isto.
+  const user = await requireBackofficePage("/admin");
   const scope = manageScope(user);
 
   const [stats, payments, channels] = await Promise.all([

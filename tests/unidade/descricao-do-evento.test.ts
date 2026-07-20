@@ -207,6 +207,11 @@ describe("nenhum ecrã injeta a descrição como HTML", () => {
    */
   const FICHEIROS = [
     "app/eventos/[eventId]/page.tsx",
+    // A página de VER passou a mostrar a descrição ao lado do vídeo. É o mesmo
+    // texto de utilizador, no mesmo produto, e por isso a mesma proibição: se
+    // ficasse de fora desta lista, o segundo sítio a desenhá-la era o sítio por
+    // onde a regra se perdia.
+    "app/eventos/[eventId]/ver/page.tsx",
     "components/admin/event-form.tsx",
     "lib/event-rules.ts",
   ];
@@ -218,11 +223,13 @@ describe("nenhum ecrã injeta a descrição como HTML", () => {
     expect(fonte).not.toMatch(/dangerouslySetInnerHTML\s*[=:]/);
   });
 
-  it("a página do evento desenha as quebras com CSS, não com marcação", () => {
-    const fonte = readFileSync(
-      new URL("../../app/eventos/[eventId]/page.tsx", import.meta.url),
-      "utf8",
-    );
+  const DESENHAM_A_DESCRICAO = [
+    "app/eventos/[eventId]/page.tsx",
+    "app/eventos/[eventId]/ver/page.tsx",
+  ];
+
+  it.each(DESENHAM_A_DESCRICAO)("%s desenha as quebras com CSS, não com marcação", (ficheiro) => {
+    const fonte = readFileSync(new URL(`../../${ficheiro}`, import.meta.url), "utf8");
 
     expect(fonte).toContain("whitespace-pre-line");
     expect(fonte).toContain("{event.description}");

@@ -1,4 +1,4 @@
-import { and, desc, eq, gt } from "drizzle-orm";
+import { and, desc, eq, gt, isNull, lt, or } from "drizzle-orm";
 import { db } from "@/db";
 import { user } from "@/db/auth-schema";
 import { entitlements, events, tickets } from "@/db/schema";
@@ -102,6 +102,56 @@ export async function hasLiveCharge(kind: PurchaseKind, id: string): Promise<boo
     )
     .limit(1);
   return rows.length > 0;
+}
+
+/**
+ * Reserva, de forma ATÓMICA, o direito de criar UMA cobrança para esta compra.
+ *
+ * É o `hasLiveCharge` feito guarda em vez de pergunta. Ler "há cobrança viva?" e
+ * agir a seguir não chega: dois cliques simultâneos liam ambos "não há" e
+ * cobravam os dois — medido, 11 em 12 rondas a cobrar a dobrar. Aqui a condição
+ * da janela e o carimbo vão no MESMO `UPDATE`: o Postgres tranca a linha,
+ * serializa os pedidos, e só o primeiro encontra a janela aberta. O segundo vê
+ * o carimbo que o primeiro acabou de pôr e não mexe em nada. É a mesma correção
+ * do último dono e dos eventos duplicados — a guarda vive dentro da escrita.
+ *
+ * Devolve `true` a quem ganhou o slot (pode falar com a Eupago) e `false` a quem
+ * chegou tarde (recusa com 409). Passada a janela, o slot volta a estar livre.
+ */
+export async function reserveCharge(kind: PurchaseKind, id: string): Promise<boolean> {
+  const table = kind === "entitlement" ? entitlements : tickets;
+  const [row] = await db
+    .update(table)
+    .set({ chargeRequestedAt: new Date() })
+    .where(
+      and(
+        eq(table.id, id),
+        or(
+          isNull(table.chargeRequestedAt),
+          lt(table.chargeRequestedAt, new Date(Date.now() - CHARGE_WINDOW_MS)),
+        ),
+      ),
+    )
+    .returning({ id: table.id });
+  return Boolean(row);
+}
+
+/**
+ * Devolve o slot que `reserveCharge` reservou, quando a cobrança acabou por não
+ * acontecer — a Eupago falhou, ou a prova de consentimento falhou antes dela.
+ *
+ * Sem isto, uma falha prendia a retentativa durante toda a janela por nada: a
+ * pessoa via um erro e não podia voltar a tentar durante 5,5 minutos. Só o
+ * pedido que GANHOU a reserva chega aqui (os outros já receberam 409), por isso
+ * repor o carimbo a NULL é seguro — não há outra reserva a atropelar.
+ */
+export async function releaseCharge(kind: PurchaseKind, id: string): Promise<void> {
+  const table = kind === "entitlement" ? entitlements : tickets;
+  try {
+    await db.update(table).set({ chargeRequestedAt: null }).where(eq(table.id, id));
+  } catch (error) {
+    console.error(`[compras] não libertei a reserva de ${kind} ${id}:`, error);
+  }
 }
 
 /* ------------------------------------------------------------------ *

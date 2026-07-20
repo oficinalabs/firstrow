@@ -193,30 +193,88 @@
   }
 }
 
-/* Watermark do player: roda de posição a cada 90s (4 posições × 90s = 360s). */
-@keyframes wm-hop {
+/*
+ * ============================================================================
+ *  MARCA DE ÁGUA DO PLAYER — movimento
+ * ============================================================================
+ *
+ * Duas animações a correr ao mesmo tempo no mesmo elemento, cada uma a mexer
+ * em propriedades diferentes (uma no `transform`, outra no `top`/`left`), que
+ * é o que lhes permite coexistir sem uma apagar a outra:
+ *
+ *   wm-drift — deriva CONTÍNUA e lenta. É o que se pediu: a marca nunca está
+ *              parada. Um circuito fechado de quatro pontos em 41 s, a ~1 px/s.
+ *
+ *              `linear` e um circuito, e não `ease-in-out` + `alternate`: com
+ *              `alternate` a marca PARA nos extremos (mediu-se: dois ciclos de
+ *              amostragem com o mesmo `translate` a cada 41 s). Pouco, mas
+ *              parado é parado — e "parada de vez em quando" foi exatamente o
+ *              defeito que isto veio corrigir. Num circuito fechado a
+ *              velocidade nunca chega a zero e o fim encaixa no princípio, por
+ *              isso também não há salto.
+ *   wm-hop   — o salto de posição, que continua a existir para a marca não ser
+ *              previsível (uma marca que só deriva à volta do mesmo sítio é
+ *              uma marca que se recorta uma vez). Cinco posições em 313 s
+ *              (~63 s cada); 313 e 41 são primos entre si, por isso o salto
+ *              nunca apanha a deriva sempre na mesma fase.
+ *
+ * As posições ficam todas na metade esquerda/central: a marca é larga (email +
+ * "FirstRow"), e um salto para a direita empurrava-a para fora do vídeo num
+ * ecrã de telemóvel — onde o `overflow: hidden` a cortava ao meio.
+ *
+ * A rotação vive AQUI dentro, e não numa classe à parte: enquanto uma animação
+ * mexe no `transform`, o valor dela ganha a qualquer `rotate` de fora.
+ *
+ * Estes nomes são o que resta de fixo (os `@keyframes` têm de ser globais). A
+ * classe do elemento é aleatória a cada montagem e os estilos vão em `style` —
+ * ver `components/player/watermark.tsx`. Não há aqui um seletor que apague a
+ * marca de alguém.
+ *
+ * Sem `prefers-reduced-motion`: a deriva são poucos píxeis por segundo, longe
+ * do que provoca desconforto vestibular, e desligá-la por preferência do
+ * sistema seria publicar a receita para a parar.
+ */
+@keyframes wm-drift {
   0% {
-    top: 12%;
-    left: 8%;
+    transform: translate(-5%, -2%) rotate(-12deg);
   }
   25% {
-    top: 68%;
-    left: 58%;
+    transform: translate(5%, -1%) rotate(-10deg);
   }
   50% {
-    top: 30%;
-    left: 22%;
+    transform: translate(6%, 2%) rotate(-8deg);
   }
   75% {
-    top: 76%;
-    left: 12%;
+    transform: translate(-4%, 3%) rotate(-10deg);
   }
   100% {
-    top: 12%;
-    left: 8%;
+    transform: translate(-5%, -2%) rotate(-12deg);
   }
 }
 
-.wm-hop {
-  animation: wm-hop 360s step-end infinite;
+@keyframes wm-hop {
+  0% {
+    top: 12%;
+    left: 6%;
+  }
+  20% {
+    top: 68%;
+    left: 44%;
+  }
+  40% {
+    top: 30%;
+    left: 20%;
+  }
+  60% {
+    top: 78%;
+    left: 10%;
+  }
+  80% {
+    top: 46%;
+    left: 38%;
+  }
+  100% {
+    top: 12%;
+    left: 6%;
+  }
 }

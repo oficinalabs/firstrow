@@ -1,15 +1,336 @@
-import Image from "next/image";
+"use client";
 
-// Watermark dinâmica por espectador: marca + email sobre o vídeo (dissuasor +
-// rastreável), mono 13px a 30%, roda de posição a cada 90s (wm-hop em
-// globals.css). Ver docs/SEGURANCA-E-ANTIPIRATARIA.md.
-export function Watermark({ label }: { label: string }) {
+import Image from "next/image";
+import { useEffect, useRef, useState } from "react";
+import { type Caixa, molduraUtil, porqueFalha } from "@/components/player/watermark-check";
+
+/*
+ * ============================================================================
+ *  MARCA DE ÁGUA POR ESPECTADOR — o que ela faz, e o que ela NUNCA vai fazer
+ * ============================================================================
+ *
+ * Marca + email por cima do vídeo: dissuade quem filma o ecrã e identifica a
+ * conta em qualquer gravação que apareça a circular.
+ *
+ * ────────────────────────────────────────────────────────────────────────────
+ *  HONESTIDADE, PARA NINGUÉM VENDER ISTO ÀS LIGAS COMO O QUE NÃO É
+ * ────────────────────────────────────────────────────────────────────────────
+ *
+ * A marca vive no DOM, por cima de um iframe de outro domínio. Não está
+ * gravada no vídeo, e não pode estar: a Cloudflare tem perfis de marca de água
+ * mas só se aplicam a vídeos CARREGADOS — o live input não tem sequer esse
+ * campo, e as gravações de direto herdam-no vazio. Marca por espectador
+ * exigiria transcodificar um vídeo por pessoa, o que a esta escala não existe.
+ *
+ * Logo, a defesa possível não é "impedir": é **detetar e reagir**. Se a marca
+ * sair do ecrã, a reprodução pára e a sessão é revogada no servidor (ver
+ * `app/api/playback/[eventId]/marca/route.ts`). Remover a marca passa a custar
+ * o vídeo, e fica registo com a conta à frente.
+ *
+ * O QUE ISTO NÃO APANHA — e não há volta a dar deste lado:
+ *
+ *  • Quem edita o nosso JS. O vigia é código nosso a correr no browser dele.
+ *    Quem lhe puser um breakpoint, ou bloquear o pedido de aviso, ou correr a
+ *    página com o JS desligado (fica sem player, mas ainda assim), passa. O
+ *    alvo é a remoção casual pelo inspetor — que é 99% de quem tenta.
+ *  • Ecrã inteiro. Quando o player da Cloudflare entra em ecrã inteiro, o
+ *    elemento em ecrã inteiro é o iframe, e nada que esteja FORA dele é
+ *    desenhado por cima — a marca desaparece sem ninguém lhe tocar. Não é
+ *    contornável a partir do documento de fora, por isso o vigia suspende-se
+ *    em ecrã inteiro (senão cortava a reprodução de quem só carregou no botão
+ *    de sempre). No telemóvel é pior: o iOS entrega o vídeo ao leitor nativo,
+ *    fora do DOM. **É o maior buraco desta abordagem e continua aberto.**
+ *  • Filmar o ecrã com um telemóvel. Nunca foi o alvo — aí a marca não impede,
+ *    identifica. É para isso que ela tem o email lá dentro.
+ *
+ * ────────────────────────────────────────────────────────────────────────────
+ *  MOVIMENTO
+ * ────────────────────────────────────────────────────────────────────────────
+ *
+ * Duas animações CSS ao mesmo tempo (`app/globals.css`): uma deriva contínua e
+ * lenta, e o salto de posição de vez em quando. Em CSS, e não em JS, para que
+ * matar o vigia não pare a marca — a coisa continua a mexer-se na mesma.
+ *
+ * As classes que ligam as animações são geradas a cada montagem em vez de
+ * serem um nome fixo. Um nome fixo é um alvo de uma linha: bastava
+ * `.wm-hop { display: none }` numa extensão de bloqueio, ou um filtro
+ * partilhado num fórum, e ficava toda a gente sem marca sem sequer abrir o
+ * inspetor. Com o nome a mudar, essa regra tem de ser reescrita a cada visita.
+ */
+
+/** Quantas verificações seguidas falhadas antes de cortar. */
+const FALHAS_PARA_CORTAR = 2;
+
+/** De quanto em quanto tempo o vigia olha (com ruído, ver abaixo). */
+const INTERVALO_MS = 2500;
+
+export type WatermarkProps = {
+  /** O texto que identifica a conta — hoje o email do espectador. */
+  label: string;
+  /**
+   * Chamado quando a marca deixou de estar visível. Recebe o que falhou, para
+   * o registo do servidor. Sem isto, o vigia só observa e não reage.
+   */
+  onTampered?: (motivo: string) => void;
+};
+
+export function Watermark({ label, onTampered }: WatermarkProps) {
+  /*
+   * Âncora única por montagem, e mesmo essa sem estilos agarrados a ela.
+   *
+   * Aleatória e não `useId()`: o `useId` do React é sequencial (`r0`, `r1`),
+   * o que é quase tão fixo como um nome escrito à mão. Aleatório é seguro aqui
+   * porque a marca só existe depois do primeiro play — nunca é desenhada no
+   * servidor, logo não há hidratação para desencontrar.
+   */
+  const [classeMarca] = useState(() => `wm-${Math.random().toString(36).slice(2, 10)}`);
+
+  const marcaRef = useRef<HTMLSpanElement>(null);
+  const avisado = useRef(false);
+  const falhas = useRef(0);
+  // Em ref para o vigia não ser remontado a cada render de quem o hospeda.
+  const aoAdulterar = useRef(onTampered);
+  aoAdulterar.current = onTampered;
+
+  useEffect(() => {
+    const marca = marcaRef.current;
+    if (!marca) return;
+    const moldura = marca.parentElement?.parentElement ?? null;
+
+    const cortar = (motivo: string) => {
+      if (avisado.current) return;
+      avisado.current = true;
+      aoAdulterar.current?.(motivo);
+    };
+
+    const falhou = (motivo: string) => {
+      /*
+       * O nó DESAPARECEU: corta já. Não há estado de página nenhum em que o
+       * elemento se desligue do documento e volte — quando o componente
+       * desmonta a sério, a limpeza deste efeito corre primeiro e o vigia já
+       * cá não está. Logo, isto é sempre alguém a apagá-lo.
+       */
+      if (motivo === "removida") return cortar(motivo);
+
+      falhas.current += 1;
+      /*
+       * Para o resto, duas falhas seguidas e não uma. Um falso positivo aqui
+       * corta o vídeo a quem pagou — o erro caro é esse, não deixar passar um
+       * segundo de marca escondida. Uma medição isolada apanha transições de
+       * layout, mudanças de orientação e o instante entre dois frames.
+       */
+      if (falhas.current >= FALHAS_PARA_CORTAR) cortar(motivo);
+    };
+
+    /*
+     * ⚠️ REENTRÂNCIA — o erro que travou o browser e não se via a ler o código.
+     *
+     * O teste de "quem está por cima" mexe no `style` da própria marca (ver
+     * `quemTapa`). Como o observador de mutações vigia `style` em toda a
+     * subárvore, essa mexida chamava o observador, que chamava a verificação,
+     * que voltava a mexer no `style`… Ciclo infinito, síncrono: a página
+     * ficava congelada e o vídeo nunca chegava a aparecer. Foi assim que
+     * apareceu, ao medir — o código lia-se bem.
+     *
+     * Duas trancas, porque uma só deixava fresta: o sinalizador impede a
+     * chamada de dentro da chamada, e o `takeRecords()` deita fora os registos
+     * que nós próprios acabámos de gerar antes de o observador os ver.
+     */
+    let aVerificar = false;
+    let observador: MutationObserver | null = null;
+
+    const verificar = () => {
+      if (avisado.current || aVerificar) return;
+
+      /*
+       * Ecrã inteiro: o iframe passa a ser o elemento em ecrã inteiro e nada
+       * cá fora é desenhado. Não é adulteração, é o botão de sempre — e é
+       * também, assumidamente, a maior falha desta abordagem (ver o cabeçalho).
+       */
+      if (document.fullscreenElement) {
+        falhas.current = 0;
+        return;
+      }
+
+      /*
+       * A moldura sem tamanho: a página está a mudar de layout, o elemento pai
+       * foi escondido por um menu, o telemóvel rodou. Isto é estado da página,
+       * não ataque — comparar contra a MOLDURA é o que impede o vigia de
+       * disparar por causa do nosso próprio layout.
+       *
+       * NOTA: não se usa `document.hidden`. Foi o que aqui esteve, e mediu-se
+       * que desligava o vigia por completo — num separador em segundo plano
+       * (`visibilityState: "hidden"`) apagar a marca deixava de ter
+       * consequência. Além disso era uma âncora de uma linha para quem
+       * quisesse desligar isto de propósito. Um separador escondido não é
+       * motivo para deixar de olhar: o `getBoundingClientRect` continua a
+       * responder a verdade.
+       */
+      const molduraRect = moldura?.getBoundingClientRect();
+      if (!molduraRect || !molduraUtil(molduraRect)) {
+        falhas.current = 0;
+        return;
+      }
+
+      aVerificar = true;
+      try {
+        const motivo = examinar(marca, molduraRect, label);
+        if (motivo) falhou(motivo);
+        else falhas.current = 0;
+      } finally {
+        observador?.takeRecords();
+        aVerificar = false;
+      }
+    };
+
+    /*
+     * DUAS VIAS, porque uma só não chega.
+     *
+     * O observador de mutações apanha o caso instantâneo (apagar o nó, mexer
+     * no `style`) sem esperar pelo relógio. A verificação periódica apanha o
+     * que não é mutação nenhuma no nó: uma folha de estilo injetada, uma
+     * classe do PAI, um elemento novo por cima, ou o nó movido para fora do
+     * enquadramento. "Existe no DOM" não é a pergunta — a pergunta é "está a
+     * ser desenhado onde deve, com que tamanho e por baixo de quê".
+     */
+    observador = new MutationObserver(() => {
+      if (!marca.isConnected) falhou("removida");
+      else verificar();
+    });
+    if (moldura) {
+      observador.observe(moldura, {
+        childList: true,
+        subtree: true,
+        attributes: true,
+        attributeFilter: ["style", "class", "hidden"],
+      });
+    }
+
+    /*
+     * Ritmo com ruído: um intervalo certinho é previsível, e previsível é
+     * contornável (esconder entre batidas). O ruído é barato e tira essa
+     * certeza a quem tentar.
+     */
+    let temporizador: ReturnType<typeof setTimeout>;
+    const agendar = () => {
+      temporizador = setTimeout(
+        () => {
+          verificar();
+          agendar();
+        },
+        INTERVALO_MS + Math.random() * 1500,
+      );
+    };
+
+    // A primeira medição espera pelo layout — antes disso o rect é 0×0.
+    const arranque = setTimeout(() => {
+      verificar();
+      agendar();
+    }, 1200);
+
+    return () => {
+      observador?.disconnect();
+      clearTimeout(arranque);
+      clearTimeout(temporizador);
+    };
+  }, [label]);
+
   return (
     <div className="pointer-events-none absolute inset-0 overflow-hidden select-none">
-      <span className="wm-hop absolute inline-flex -rotate-12 items-center gap-1.5 whitespace-nowrap font-mono text-2sm text-bar-foreground/30">
+      {/*
+       * Estilos em `style` e não em classes utilitárias, de propósito. Um
+       * conjunto de classes estáveis (`.font-mono.-rotate-12.text-2sm`) é um
+       * seletor que qualquer um escreve uma vez e partilha num fórum. Assim a
+       * única âncora é a classe aleatória — e essa não tem estilos agarrados,
+       * por isso apagá-la também não faz nada.
+       *
+       * Os `@keyframes` ficam em `app/globals.css`: o movimento é CSS puro e
+       * continua mesmo que o vigia lá em cima seja morto.
+       */}
+      <span
+        ref={marcaRef}
+        className={classeMarca}
+        style={{
+          position: "absolute",
+          display: "inline-flex",
+          alignItems: "center",
+          gap: "0.375rem",
+          whiteSpace: "nowrap",
+          fontFamily: "var(--font-mono)",
+          fontSize: "var(--text-2sm)",
+          color: "color-mix(in oklab, var(--color-bar-foreground) 30%, transparent)",
+          transform: "rotate(-12deg)",
+          animation: "wm-drift 41s linear infinite, wm-hop 313s step-end infinite",
+        }}
+      >
         <Image src="/brand/firstrow-watermark.svg" alt="" width={16} height={16} />
         {label} · FirstRow
       </span>
     </div>
   );
+}
+
+/**
+ * Lê o DOM e pergunta a `porqueFalha` se aquilo é aceitável.
+ *
+ * A leitura é aqui porque só um browser sabe o que é um `opacity` calculado ou
+ * quem está desenhado por cima de quem; a decisão está em `watermark-check.ts`
+ * porque é lá que vivem os limiares, e limiares querem-se testados.
+ */
+function examinar(marca: HTMLElement, moldura: DOMRect, label: string): string | null {
+  if (!marca.isConnected) return "removida";
+
+  const estilo = getComputedStyle(marca);
+  const rect = marca.getBoundingClientRect();
+
+  return porqueFalha(
+    {
+      ligada: true,
+      texto: marca.textContent ?? "",
+      display: estilo.display,
+      visibility: estilo.visibility,
+      opacidade: Number.parseFloat(estilo.opacity),
+      caixa: caixa(rect),
+      moldura: caixa(moldura),
+      // Só se pergunta quem tapa depois de o resto passar: é o teste caro
+      // (força recálculo de estilo) e o mais raro de disparar.
+      tapadaPor: quemTapa(marca, rect),
+    },
+    label,
+  );
+}
+
+const caixa = (r: DOMRect): Caixa => ({
+  left: r.left,
+  top: r.top,
+  width: r.width,
+  height: r.height,
+});
+
+/**
+ * Alguém desenhou por cima? Devolve o nome do elemento que tapa, ou `null`.
+ *
+ * `elementsFromPoint` devolve a pilha do ponto, do topo para baixo — o que
+ * aparecer ANTES da marca está desenhado por cima dela. O truque do
+ * `pointerEvents` é preciso porque a camada da marca é `pointer-events: none`
+ * (tem de ser: senão os controlos do player deixavam de receber cliques), e
+ * elementos assim são ignorados por esta API. Ligamo-lo e desligamo-lo dentro
+ * da mesma tarefa síncrona, onde nenhum clique se pode intrometer.
+ */
+function quemTapa(marca: HTMLElement, rect: DOMRect): string | null {
+  const anterior = marca.style.pointerEvents;
+  marca.style.pointerEvents = "auto";
+  const pilha = document.elementsFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2);
+  marca.style.pointerEvents = anterior;
+
+  const indice = pilha.findIndex((el) => el === marca || marca.contains(el));
+  // Não está na pilha: ou está fora da janela (já testado) ou está tapada por
+  // algo que a API nem enumerou. Conservador — não inventamos um culpado.
+  if (indice === -1) return null;
+
+  for (const acima of pilha.slice(0, indice)) {
+    if (acima.contains(marca)) continue; // um antepassado não tapa o filho
+    return acima.tagName.toLowerCase();
+  }
+  return null;
 }

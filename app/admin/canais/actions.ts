@@ -1,9 +1,11 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import type { ChannelDraft } from "@/components/admin/channel-rules";
 import { type ChannelFieldErrors, validateChannelForm } from "@/components/admin/channel-rules";
 import { CHANNEL_ROLES, type ChannelRole } from "@/db/schema";
 import { channelPath } from "@/lib/channels";
+import { deleteImageByUrl, isOwnPublicUrl } from "@/lib/r2";
 import { permitChannelCreation, permitChannelManagement } from "@/server/channel-access";
 import {
   memberChangeMessage,
@@ -46,6 +48,63 @@ function refreshChannelScreens(slugs: readonly string[]) {
   for (const slug of new Set(slugs)) revalidatePath(channelPath(slug));
 }
 
+/*
+ * ============================================================================
+ *  AS IMAGENS TÊM DE SER NOSSAS
+ * ============================================================================
+ *
+ * `validateChannelForm` responde "consegue-se servir?" — é uma pergunta pura,
+ * corre no browser, e não sabe (nem pode saber) qual é o bucket. A segunda
+ * pergunta é a que interessa à segurança e só tem resposta deste lado:
+ * **este URL saiu do nosso upload?**
+ *
+ * Sem isto, um pedido feito à mão — sem passar pelo formulário — gravava
+ * `https://qualquer-sitio.pt/x.png` na coluna `logo_url`. O `next/image` não o
+ * servia (não está em `remotePatterns`), e o resultado era a página do canal a
+ * rebentar no render. Uma liga ficava sem página por causa de um POST.
+ *
+ * Um caminho interno ("/brand/…") continua a passar: são as imagens que vieram
+ * no repositório, servidas por nós, e recusá-las agora apagava logos que já
+ * estão em produção.
+ */
+const FOREIGN_IMAGE = "Esta imagem não é nossa — carrega-a outra vez pelo botão.";
+
+const IMAGE_FIELDS = ["logoUrl", "bannerUrl"] as const;
+
+function foreignImages(draft: ChannelDraft): ChannelFieldErrors | null {
+  const errors: ChannelFieldErrors = {};
+  for (const field of IMAGE_FIELDS) {
+    const value = draft[field];
+    // Chegado aqui, o valor é um caminho interno ou um URL https — o schema já
+    // recusou tudo o resto. Logo, o que não começa por "/" é absoluto.
+    if (value && !value.startsWith("/") && !isOwnPublicUrl(value)) {
+      errors[field] = FOREIGN_IMAGE;
+    }
+  }
+  return Object.keys(errors).length > 0 ? errors : null;
+}
+
+/**
+ * Apaga do R2 as imagens que este canal deixou de usar.
+ *
+ * Corre DEPOIS de a gravação ter corrido bem, e só aí: apagar antes (ou no
+ * momento do upload) era arriscar deixar a página do canal a apontar para um
+ * objeto que já não existe se a gravação falhasse a seguir — ou se a pessoa
+ * fechasse o separador sem guardar.
+ *
+ * Falhar a limpeza nunca desfaz a gravação. `deleteImageByUrl` só regista no
+ * log; o pior caso é um objeto órfão a ocupar uns KB.
+ */
+type WithImages = Pick<ChannelDraft, "logoUrl" | "bannerUrl">;
+
+async function forgetReplacedImages(before: WithImages, after: WithImages): Promise<void> {
+  await Promise.all(
+    IMAGE_FIELDS.filter((field) => before[field] && before[field] !== after[field]).map((field) =>
+      deleteImageByUrl(before[field]),
+    ),
+  );
+}
+
 /** Traduz a recusa da camada de dados para o campo (ou o alerta) certo. */
 function refusal(saved: Extract<ChannelSaved, { ok: false }>): ChannelActionResult {
   return saved.reason === "slug-taken"
@@ -68,6 +127,9 @@ export async function createChannelAction(input: unknown): Promise<ChannelAction
 
   const checked = validateChannelForm(input);
   if (!checked.ok) return { ok: false, errors: checked.errors };
+
+  const foreign = foreignImages(checked.draft);
+  if (foreign) return { ok: false, errors: foreign };
 
   let saved: ChannelSaved;
   try {
@@ -101,6 +163,9 @@ export async function updateChannelAction(
   const checked = validateChannelForm(input);
   if (!checked.ok) return { ok: false, errors: checked.errors };
 
+  const foreign = foreignImages(checked.draft);
+  if (foreign) return { ok: false, errors: foreign };
+
   let saved: ChannelSaved;
   try {
     saved = await updateChannel(channelId, checked.draft);
@@ -109,6 +174,10 @@ export async function updateChannelAction(
     return { ok: false, message: "Não deu para guardar o canal. Tenta outra vez daqui a pouco." };
   }
   if (!saved.ok) return refusal(saved);
+
+  // `permit.channel` é o canal ANTES desta escrita — é dele que saem as imagens
+  // que deixaram de ser usadas. Só depois de a gravação ter corrido bem.
+  await forgetReplacedImages(permit.channel, saved.channel);
 
   // O endereço de antes vai à lista de propósito: se mudou, a página velha tem
   // de deixar de servir o que já não é verdade.

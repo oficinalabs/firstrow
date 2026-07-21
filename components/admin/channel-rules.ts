@@ -19,23 +19,52 @@ const RESERVED_SLUGS = new Set(["novo", "admin", "api", "conta", "bilhetes", "ca
 const SLUG_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 
 /*
- * Só caminhos internos ("/brand/logo.svg") — e é de propósito.
+ * ============================================================================
+ *  O QUE SERVE DE IMAGEM DE CANAL
+ * ============================================================================
  *
- * O `next/image` recusa domínios que não estejam em `images.remotePatterns`, e o
- * next.config.ts não tem nenhum configurado: aceitar "https://…" aqui deixava
- * gravar um logo que rebentava a página do canal ao renderizar. Enquanto não
- * houver upload (ou domínios autorizados), o que se aceita é o que se consegue
- * servir. Ver relatório — é decisão de infra, não deste formulário.
+ * Duas formas, e as duas se conseguem servir:
  *
- * O `(?!\/)` não é detalhe: "//dominio.pt/x.png" começa por "/" mas é um URL
- * relativo ao protocolo, ou seja, um pedido a um servidor de fora disfarçado de
- * caminho interno.
+ *  · caminho interno — "/brand/logo.svg", das imagens que já vieram no repo;
+ *  · URL https — o que o upload devolve, do bucket R2.
+ *
+ * O `next/image` recusa domínios que não estejam em `images.remotePatterns`, e
+ * é por isso que aceitar "https://" era, até haver upload, gravar um logo que
+ * rebentava a página do canal ao renderizar. O `next.config.ts` passou a ter lá
+ * o domínio público do R2 — e é por isso que isto pode alargar.
+ *
+ * ⚠️ **A FORMA NÃO É A PROVENIÊNCIA.** Isto responde "consegue-se servir?", que
+ * é uma pergunta pura e corre igual no browser. "É NOSSO?" só se responde no
+ * servidor, onde `R2_PUBLIC_URL` existe — e é lá que se responde, em
+ * `app/admin/canais/actions.ts`, antes de qualquer escrita. Não são duas cópias
+ * da mesma regra: são duas perguntas diferentes, e a segunda é a que conta.
+ *
+ * O `(?!\/)` no caminho interno não é detalhe: "//dominio.pt/x.png" começa por
+ * "/" mas é um URL relativo ao protocolo, ou seja, um pedido a um servidor de
+ * fora disfarçado de caminho interno.
  */
 const IMAGE_PATTERN = /^\/(?!\/)[A-Za-z0-9\-._~/]*$/;
 
 /** Um caminho de imagem interno, sem saltos para fora da pasta pública. */
 function isInternalImagePath(value: string): boolean {
   return IMAGE_PATTERN.test(value) && !value.includes("..");
+}
+
+/**
+ * Um URL https absoluto e bem formado. `http://` fica de fora: uma imagem em
+ * claro numa página em https dá aviso de conteúdo misto em todos os browsers.
+ */
+function isHttpsUrl(value: string): boolean {
+  try {
+    return new URL(value).protocol === "https:";
+  } catch {
+    return false;
+  }
+}
+
+/** Serve de imagem de canal? (forma apenas — ver o aviso acima) */
+export function isServableImage(value: string): boolean {
+  return isInternalImagePath(value) || isHttpsUrl(value);
 }
 
 const MAX_NAME = 60;
@@ -73,17 +102,11 @@ export const channelFormSchema = z.object({
   logoUrl: z
     .string()
     .trim()
-    .refine(
-      (value) => value === "" || isInternalImagePath(value),
-      "Caminho da imagem no site — por exemplo, /brand/liga-do-norte.svg.",
-    ),
+    .refine((value) => value === "" || isServableImage(value), "Carrega o logo outra vez."),
   bannerUrl: z
     .string()
     .trim()
-    .refine(
-      (value) => value === "" || isInternalImagePath(value),
-      "Caminho da imagem no site — por exemplo, /brand/liga-do-norte-banner.jpg.",
-    ),
+    .refine((value) => value === "" || isServableImage(value), "Carrega o banner outra vez."),
   accentColor: hexColor("Cor em hexadecimal — por exemplo, #6CC24A."),
   // Vazio = a liga só tem uma cor, que é diferente de ter uma cor errada.
   accentColorSecondary: z
@@ -252,8 +275,8 @@ export function previewChannel(values: ChannelFormValues): ChannelDraft {
     slug: values.slug.trim() || slugify(name) || "canal",
     name,
     tagline: values.tagline.trim() || "Uma linha sobre a liga",
-    logoUrl: isInternalImagePath(values.logoUrl.trim()) ? values.logoUrl.trim() : null,
-    bannerUrl: isInternalImagePath(values.bannerUrl.trim()) ? values.bannerUrl.trim() : null,
+    logoUrl: isServableImage(values.logoUrl.trim()) ? values.logoUrl.trim() : null,
+    bannerUrl: isServableImage(values.bannerUrl.trim()) ? values.bannerUrl.trim() : null,
     accentColor: parseHexColor(values.accentColor) ?? DEFAULT_ACCENT,
     accentColorSecondary: parseHexColor(values.accentColorSecondary),
     initials: initialsFrom(name),

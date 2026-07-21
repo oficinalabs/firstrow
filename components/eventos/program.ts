@@ -25,3 +25,22 @@ export function splitProgram(rows: EventRow[], now: Date = new Date()): ChannelP
 
   return { liveNow, nextLive: upcoming[0] ?? null, upcoming, archive };
 }
+
+/*
+ * O caminho da miniatura de um evento — a MESMA função para todos os cartões.
+ *
+ * Aponta à NOSSA rota, não à Cloudflare: o URL da Cloudflare leva um token
+ * assinado que abre o vídeo pago inteiro (medido — ver `server/cloudflare-stream.ts`),
+ * e estes cartões são públicos. A rota assina e vai buscar o JPEG do lado do
+ * servidor; o browser só vê este caminho, sem token nenhum.
+ *
+ * Sem gravação (rascunho, ou ao vivo antes de existir VOD) → `null`: o cartão
+ * mostra o placeholder em vez de uma imagem partida. Na prática só os eventos do
+ * arquivo (terminados e com `cfVodUid`) chegam aos cartões, mas a função não
+ * assume isso — devolve `null` e o cartão trata do resto.
+ */
+export function eventThumbnailPath(event: Pick<EventRow, "id" | "cfVodUid">): string | null {
+  // Fora de /api de propósito: aí o `next.config.ts` força `no-store` e a
+  // miniatura (pública, igual para todos) não podia ser cacheada. Ver a rota.
+  return event.cfVodUid ? `/eventos/${event.id}/thumbnail` : null;
+}

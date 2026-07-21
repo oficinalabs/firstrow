@@ -33,7 +33,7 @@ Tudo corre dentro da pasta `firstrow/`. Os comandos assumem que estás lá: `cd 
 ## Parte 4 — Testar de ponta a ponta
 17. Para o webhook da Eupago chegar ao teu PC, abre um **túnel**: `npx cloudflared tunnel --url http://localhost:3000` (ou `ngrok http 3000`). Mete o URL público em `NEXT_PUBLIC_APP_URL` e reinicia o `pnpm dev`.
 18. Entra com a conta **admin** → `/admin/eventos` → cria um evento (título, data, preço). Recebes o **servidor + chave RTMP**.
-19. No **OBS**: Definições → Transmissão → Serviço "Personalizado" → Servidor = o rtmps, Chave = a stream key → "Iniciar transmissão".
+19. No **OBS**: Definições → Transmissão → Serviço "Personalizado" → Servidor = o rtmps, Chave = a stream key → "Iniciar transmissão". Antes disso, confirma a **qualidade de saída** (1080p/30fps/~4500 kbps): a Cloudflare entrega no máximo a resolução com que o OBS codifica — ver `docs/QUALIDADE-VIDEO-OBS.md`.
 20. Como espectador (outro browser/conta): `/eventos/{id}` → comprar → confirma no **MB WAY sandbox** → `/eventos/{id}/ver` → live + watermark.
 21. Testa a **concorrência**: abre `/ver` em dois sítios com a MESMA conta → o primeiro deve cortar.
 

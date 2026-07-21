@@ -87,7 +87,10 @@ export default async function PlatformPage({
       listSalesByEvent(scope, period),
       getSignupsByPeriod(period),
       getPlatformHealth(scope, period),
-      getPlatformEconomics(scope),
+      // O MESMO `period` das outras: era a única query desta página sem janela
+      // temporal, e por isso os cartões de custo e margem falavam de um
+      // intervalo diferente do dos cartões ao lado deles.
+      getPlatformEconomics(scope, period),
       channelsInScope(scope),
       listEventsWithConcurrency(scope),
       listPurchasesAtRisk(scope),
@@ -140,12 +143,12 @@ export default async function PlatformPage({
           hint="o que a FirstRow leva no período"
         />
         <StatCard
-          label="Custo de vídeo · est."
+          label={`Custo de vídeo · est. · ${PERIODS[period].label}`}
           value={formatEuro(economics.totals.videoCostEurCents)}
-          hint={`${formatNumber(economics.totals.minutes)} min entregues · desde o início`}
+          hint={`${formatNumber(economics.totals.minutes)} min entregues`}
         />
         <StatCard
-          label="Margem · est."
+          label={`Margem · est. · ${PERIODS[period].label}`}
           value={formatEuro(economics.totals.marginCents)}
           hint={
             economics.totals.costShare === null
@@ -163,10 +166,12 @@ export default async function PlatformPage({
       </div>
 
       {/*
-        O custo de vídeo e a margem acima são DESDE O INÍCIO, e não do período:
-        `getPlatformEconomics` conta evento a evento sem janela temporal. Dizê-lo
-        na pista do cartão é o mínimo — dois cartões lado a lado com períodos
-        diferentes e sem aviso seriam uma comparação falsa.
+        Os quatro cartões acima falam agora do MESMO intervalo: `getPlatformEconomics`
+        passou a levar o período, como as outras queries desta página. Até aqui o
+        custo de vídeo e a margem eram desde o início e os dois cartões da
+        esquerda seguiam o seletor — dois períodos lado a lado, com a diferença
+        confessada em letra pequena. Uma comissão de 90 dias sobre um custo de
+        vídeo de sempre não é um rácio de coisa nenhuma.
       */}
       <RevenueSection revenue={revenue} channels={channels} />
 

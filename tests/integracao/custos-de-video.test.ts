@@ -7,6 +7,7 @@ import { DEFAULT_USD_TO_EUR, MAX_SESSION_MINUTES } from "@/lib/video-costs";
 import { getDeliveryByEvent, getMonthlyStatement, getPlatformEconomics } from "@/server/stats";
 import { limparBase, temBaseDeDados } from "../apoio/base-de-dados";
 import {
+  criarBilhete,
   criarCanal,
   criarEntitlement,
   criarEvento,
@@ -440,12 +441,25 @@ describe.skipIf(!temBaseDeDados())("o caso da SmokingBars, ao cêntimo", () => {
    *
    * O preço escolhido é o que faz a diferença aparecer: a 8,55 €, 10 % dá 85,5
    * cêntimos — meio cêntimo, o sítio exato onde as duas fórmulas se separam.
+   *
+   * ⚠️  A COMPARAÇÃO É CONTRA A PARCELA PPV DO EXTRATO, e isso é deliberado.
+   * A economia por evento é PPV e SÓ PPV: existe para comparar a comissão do
+   * streaming com o que o streaming custou a entregar, e um bilhete de porta
+   * não entrega vídeo nenhum. Somar-lhe a comissão dos bilhetes melhorava a
+   * margem do vídeo com dinheiro que não tem nada a ver com vídeo.
+   *
+   * Por isso o cenário tem bilhetes: sem eles, comparar contra o total do
+   * extrato passava na mesma e escondia a distinção — e o primeiro bilhete
+   * vendido em produção partia um teste que ninguém saberia ler.
    */
-  it("a comissão bate certo com a do extrato mensal, ao cêntimo", async () => {
+  it("a comissão bate certo com a parcela PPV do extrato mensal, ao cêntimo", async () => {
     const canal = await criarCanal();
     const evento = await criarEvento(canal.id, { priceCents: 855 });
     const pessoas = await Promise.all(Array.from({ length: 7 }, () => criarUtilizador()));
     await Promise.all(pessoas.map((p) => criarEntitlement(p.id, evento.id, { status: "active" })));
+    // Um bilhete de porta, que o extrato conta e a economia de vídeo não.
+    const porteiro = await criarUtilizador();
+    await criarBilhete(porteiro.id, evento.id, { status: "issued", priceCents: 2000 });
 
     const [economics, statement] = await Promise.all([
       getPlatformEconomics({ all: true }),
@@ -453,14 +467,16 @@ describe.skipIf(!temBaseDeDados())("o caso da SmokingBars, ao cêntimo", () => {
     ]);
 
     const porEvento = economics.totals.commissionCents;
-    const porExtrato = statement.rows.reduce((acc, r) => acc + r.firstrowFeeCents, 0);
+    const soma = (campo: keyof (typeof statement.rows)[number]) =>
+      statement.rows.reduce((acc, r) => acc + (r[campo] as number), 0);
 
     expect(porEvento).toBe(7 * 86); // 602 cêntimos
-    expect(porEvento).toBe(porExtrato);
-    // E a receita bruta também, que é o outro número partilhado.
-    expect(economics.totals.revenueCents).toBe(
-      statement.rows.reduce((acc, r) => acc + r.grossCents, 0),
-    );
+    // Contra a PARCELA PPV — a comissão total do extrato traz também o bilhete.
+    expect(soma("firstrowFeeCents")).toBe(7 * 86 + 200);
+    expect(economics.totals.revenueCents).toBe(soma("ppvGrossCents"));
+    expect(economics.totals.revenueCents).toBe(7 * 855);
+    // E o extrato, esse, soma os dois — que é o que a liga recebe.
+    expect(soma("grossCents")).toBe(7 * 855 + 2000);
   });
 
   /*

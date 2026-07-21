@@ -85,6 +85,13 @@ const MATRIZ: readonly { rota: string; gate: BackofficeGate; abre: readonly Pape
 
   // ── A porta do recinto: é por isto que o staff entra ─────────────────────
   { rota: "/admin/scanner", gate: "operate", abre: ["staff", "owner", "admin"] },
+  /*
+   * A agenda: a MESMA lista de eventos, sem um número de dinheiro. É rota
+   * própria em vez de `/admin/eventos` com colunas escondidas porque esconder a
+   * coluna não esconde o dado — o que a página vai buscar entra no payload do
+   * RSC na mesma. Ver a nota na própria página.
+   */
+  { rota: "/admin/agenda", gate: "operate", abre: ["staff", "owner", "admin"] },
 
   // ── Ecrãs de UM evento: operar é da equipa; editar continua a ser do dono,
   //    e essa distinção é de `server/event-access.ts`, que sabe o canal ──────
@@ -206,8 +213,21 @@ describe("para onde é que cada um é mandado", () => {
     expect(backofficeHomeFor(PAPEIS.admin)).toBe("/admin");
   });
 
-  it("quem só opera vai para o scanner — não para uma recusa", () => {
-    expect(backofficeHomeFor(PAPEIS.staff)).toBe("/admin/scanner");
+  /*
+   * ISTO ERA O SCANNER, E A MUDANÇA FOI DE PROPÓSITO.
+   *
+   * O scanner é servido SEM MOLDURA (usa-se de pé, à porta, com uma mão), logo
+   * sem barra lateral: quem aterrava lá não tinha um único link para o resto do
+   * backoffice que lhe é permitido — a transmissão e os bilhetes de cada
+   * evento. A "casa" de quem só opera era um beco.
+   *
+   * A agenda é a lista dos mesmos eventos sem um número de dinheiro, tem
+   * moldura, e aponta para os três destinos (transmissão, bilhetes, scanner).
+   * Continua a não ser uma recusa — que é o que este teste sempre defendeu — e
+   * passa a ser um sítio de onde se sai.
+   */
+  it("quem só opera vai para a agenda — não para uma recusa nem para um beco", () => {
+    expect(backofficeHomeFor(PAPEIS.staff)).toBe("/admin/agenda");
   });
 
   it("quem gere um canal e é equipa noutro vai para o painel", () => {
@@ -294,6 +314,7 @@ describe("o gate corre ANTES do primeiro await de dados", () => {
     "app/admin/canais/page.tsx",
     "app/admin/eventos/page.tsx",
     "app/admin/scanner/page.tsx",
+    "app/admin/agenda/page.tsx",
   ];
 
   it.each(PAGINAS)("%s espera o gate antes de ler dados", (ficheiro) => {

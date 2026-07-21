@@ -46,9 +46,31 @@ export function formatNumber(value: number): string {
   return sign + groupThousands(String(Math.round(Math.abs(value))));
 }
 
-/** Fração → percentagem inteira: 0.195 → "20 %". */
+/**
+ * Fração → percentagem INTEIRA: 0.195 → "20 %".
+ *
+ * Para proporções medidas, onde as casas decimais são ruído: o peso do vídeo na
+ * comissão, a conversão de uma coorte. ⚠️ NÃO serve para TAXAS CONTRATADAS
+ * abaixo de 1 % — arredonda-as para o inteiro mais próximo. Ver `formatRate`.
+ */
 export function formatPercent(fraction: number): string {
   return `${formatNumber(fraction * 100)}${NBSP}%`;
+}
+
+/**
+ * Fração → percentagem com casas decimais: 0.007 → "0,7 %".
+ *
+ * Existe por causa de um erro medido nesta base de código: a taxa da Eupago
+ * (0,7 % por transação) foi escrita com `formatPercent` e saiu **"1 %"** — uma
+ * taxa 43 % maior do que a real, impressa por baixo da tabela do extrato, que
+ * existe precisamente para uma liga conferir o que lhe é devido ao cêntimo.
+ *
+ * A regra: `formatPercent` para o que se MEDE, `formatRate` para o que se
+ * CONTRATA. Um número que aparece num contrato não pode ser arredondado pelo
+ * formatador.
+ */
+export function formatRate(fraction: number, places = 1): string {
+  return `${formatDecimal(fraction * 100, places)}${NBSP}%`;
 }
 
 /**

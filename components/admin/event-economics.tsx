@@ -84,7 +84,7 @@ export function EventEconomics({
   economics: PlatformEconomics;
   channels: ChannelsInScope;
 }) {
-  const { commissionPct, usdToEur, rows, totals } = economics;
+  const { commissionPct, usdToEur, rows, totals, periodLabel } = economics;
 
   if (rows.length === 0) return null;
 
@@ -93,8 +93,14 @@ export function EventEconomics({
 
   return (
     <Card>
-      <CardHeader>
+      <CardHeader className="flex-row items-baseline justify-between">
         <CardTitle>Economia por evento</CardTitle>
+        {/* A janela a que os números se referem. `/admin/ganhos` não tem
+            seletor — é sempre "desde o início" — mas dizê-lo é o que impede
+            que se leia como sendo do mês que a tabela por baixo mostra. */}
+        <span className="font-mono text-2xs text-muted-foreground">
+          {periodLabel ?? "desde o início"}
+        </span>
       </CardHeader>
       <CardContent className="flex flex-col gap-3.5">
         <div className="grid gap-3.5 md:grid-cols-3">

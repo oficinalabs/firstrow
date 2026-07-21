@@ -45,8 +45,21 @@ export const BACKOFFICE_GATES = ["operate", "manage", "platform"] as const;
 /** A raiz do backoffice — o destino do atalho no header do site. */
 export const BACKOFFICE_ROOT = "/admin";
 
-/** O scanner de porta: a casa de quem só opera. */
+/** O scanner de porta. */
 export const SCANNER_PATH = "/admin/scanner";
+
+/**
+ * A agenda: a lista de eventos SEM valores, para quem só opera.
+ *
+ * É a casa de quem só opera, e não o scanner, por uma razão de navegação e não
+ * de gosto: o scanner é servido **sem moldura** (ver `BackofficeChrome`), porque
+ * se usa de pé, à porta, com uma mão — logo não tem barra lateral nenhuma. Quem
+ * aterrava lá ficava num beco: sem links, o resto do backoffice que lhe é
+ * permitido (a transmissão, os bilhetes de cada evento) só se alcançava por um
+ * link que alguém lhe mandasse. A agenda tem moldura e aponta para os dois, o
+ * scanner incluído — troca um toque a mais por deixar de haver um beco.
+ */
+export const AGENDA_PATH = "/admin/agenda";
 
 type Zona = {
   readonly path: string;
@@ -74,6 +87,21 @@ const ZONAS: readonly Zona[] = [
 
   // A porta do recinto. É por isto que o `staff` entra no backoffice.
   { path: SCANNER_PATH, gate: "operate" },
+
+  /*
+   * A agenda — a MESMA lista de eventos que `/admin/eventos`, sem um número de
+   * dinheiro.
+   *
+   * É rota própria e não uma versão da outra com colunas escondidas, e a razão
+   * é a que este projeto já mediu duas vezes: dados que a página FOI BUSCAR
+   * entram no payload do RSC mesmo quando o componente que os mostrava não é
+   * desenhado (ver a nota em `app/admin/ganhos/page.tsx` e a medição no
+   * `proxy.ts`). Filtrar colunas escondia a receita do ecrã e deixava-a no
+   * corpo da resposta — que é exactamente a fuga que a Frente T fechou na
+   * página de transmissão. Não buscar é a única forma de não revelar, e para
+   * não buscar é preciso outra query; tendo outra query, é outra página.
+   */
+  { path: AGENDA_PATH, gate: "operate" },
 
   // A lista de eventos mostra receita por evento → dinheiro.
   { path: "/admin/eventos", gate: "manage", exact: true },

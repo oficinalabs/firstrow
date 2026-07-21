@@ -43,9 +43,51 @@ const LIMIAR_FUNDO_PX = 48;
 /** A partir de quantos caracteres restantes o contador aparece. */
 const AVISAR_A_FALTAR = 40;
 
-/** Altura da lista no telemóvel. Em `dvh` — com `vh`, a barra do browser
- *  cortava o compositor exactamente quando o teclado abria. */
-const ALTURA_LISTA = "max-h-[55dvh] md:max-h-none md:flex-1";
+/**
+ * Onde a conversa é desenhada. Não são dois painéis — é o mesmo painel com duas
+ * apresentações, porque é a mesma conversa, com as mesmas regras e o mesmo
+ * estado. Duas cópias queriam dizer dois `follow()` a ler a base de dados, duas
+ * listas a divergirem e a mensagem por enviar a perder-se ao entrar em ecrã
+ * inteiro.
+ *
+ *   coluna     — ao lado do vídeo (ou por baixo, no telemóvel)
+ *   sobreposto — por cima do vídeo, em ecrã inteiro
+ */
+export type VarianteChat = "coluna" | "sobreposto";
+
+/**
+ * Altura da lista, por apresentação. Em `dvh` — com `vh`, a barra do browser
+ * cortava o compositor exactamente quando o teclado abria.
+ *
+ * `lg` e não `md`, e isso é uma correção: até aos 1024px a conversa fica por
+ * baixo do vídeo numa coluna só, e a partir dos 768 o `md:max-h-none` tirava-lhe
+ * o tecto sem lhe dar altura nenhuma em troca. Medido a 768×1024 com 74
+ * mensagens: o painel ficava com 1799px de altura, a lista não rolava por
+ * dentro (`scrollHeight === clientHeight`) e o documento ia a 2599px. O "rola
+ * por dentro" só passa a existir a partir de `lg`, que é onde a célula da
+ * grelha tem finalmente uma altura própria — a do vídeo.
+ *
+ * No sobreposto não há tecto a negociar: a caixa tem altura fixa e a lista
+ * ocupa o que sobra entre o cabeçalho e o compositor.
+ */
+const ALTURA_LISTA: Record<VarianteChat, string> = {
+  coluna: "max-h-[55dvh] lg:max-h-none lg:flex-1",
+  sobreposto: "flex-1",
+};
+
+/**
+ * A moldura do painel, por apresentação.
+ *
+ * O sobreposto é o mesmo cartão com o fundo a deixar passar um pouco do vídeo —
+ * não é um estilo novo, é o `bg-card` com transparência. Nada de desfoque nem
+ * de gradiente: o fundo do espectador já é escuro, o contraste do texto está
+ * medido contra ele, e o desfoque criava contexto de empilhamento em cima da
+ * marca de água (ver `Z_MARCA` em `watermark.tsx`).
+ */
+const MOLDURA: Record<VarianteChat, string> = {
+  coluna: "border-input bg-card",
+  sobreposto: "border-bar-border bg-card/92",
+};
 
 const TITULO: Record<ChatPhase, string> = {
   live: "Chat ao vivo",
@@ -90,6 +132,17 @@ export type ChatPanelProps = {
   transport?: ChatTransport;
   /** O que dizer quando a fase é `fechado` (a página sabe porquê). */
   closedNotice?: string;
+  /** Onde está a ser desenhado. Só muda a apresentação — ver `VarianteChat`. */
+  variante?: VarianteChat;
+  /**
+   * Fechar o painel. Só faz sentido no sobreposto, e é lá que aparece o botão.
+   *
+   * Existe por acessibilidade, não por decoração: o interruptor que abre o chat
+   * vive nos controlos do leitor, que se escondem sozinhos. Enquanto o chat
+   * está aberto tem de haver uma maneira de o fechar que esteja SEMPRE à vista
+   * e no caminho do teclado — sem depender de passar o rato por cima de nada.
+   */
+  onFechar?: () => void;
   className?: string;
 };
 
@@ -99,6 +152,8 @@ export function ChatPanel({
   initial,
   transport,
   closedNotice,
+  variante = "coluna",
+  onFechar,
   className,
 }: ChatPanelProps) {
   const feed = useMemo(() => transport ?? httpPollingTransport(eventId), [transport, eventId]);
@@ -361,23 +416,43 @@ export function ChatPanel({
     <section
       aria-label={TITULO[phase]}
       className={cn(
-        "flex min-h-0 flex-col overflow-hidden rounded-sm border border-input bg-card",
+        "flex min-h-0 flex-col overflow-hidden rounded-sm border",
+        MOLDURA[variante],
         className,
       )}
     >
       <header className="flex shrink-0 items-center justify-between gap-2 border-b border-input px-3 py-2">
         <h2 className="font-display text-2sm font-bold tracking-display">{TITULO[phase]}</h2>
-        {emLive ? (
-          <span className="font-mono text-2xs uppercase tracking-label text-muted-foreground">
-            {messages.length} {messages.length === 1 ? "mensagem" : "mensagens"}
-          </span>
-        ) : null}
+        <div className="flex items-center gap-2">
+          {emLive ? (
+            <span className="font-mono text-2xs uppercase tracking-label text-muted-foreground">
+              {messages.length} {messages.length === 1 ? "mensagem" : "mensagens"}
+            </span>
+          ) : null}
+          {onFechar ? (
+            <button
+              type="button"
+              onClick={onFechar}
+              // Sempre visível enquanto o painel estiver aberto: é o caminho
+              // que não depende de hover nenhum. Ver `onFechar`.
+              aria-label="Fechar o chat"
+              title="Fechar o chat (c)"
+              aria-keyshortcuts="c"
+              className="alvo-toque -mr-1 inline-flex size-7 shrink-0 cursor-pointer items-center justify-center rounded-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+            >
+              <IconeFechar />
+            </button>
+          ) : null}
+        </div>
       </header>
 
       <ol
         ref={listaRef}
         onScroll={aoRolar}
-        className={cn("min-h-0 flex-1 overflow-y-auto overscroll-contain py-1.5", ALTURA_LISTA)}
+        className={cn(
+          "min-h-0 flex-1 overflow-y-auto overscroll-contain py-1.5",
+          ALTURA_LISTA[variante],
+        )}
         /*
          * Anunciar só enquanto a pessoa está a acompanhar o fundo. Um chat de
          * batalha com o leitor de ecrã a ler TUDO, sempre, é inutilizável — e
@@ -528,6 +603,28 @@ export function ChatPanel({
         ) : null}
       </footer>
     </section>
+  );
+}
+
+/*
+ * O X de fechar. Traço de 2, `currentColor`, sem preenchimento — a mesma
+ * linguagem dos ícones do leitor (`fullscreen-button.tsx`). Nada de emoji: um
+ * emoji muda de desenho conforme o sistema e nunca combina com o resto.
+ */
+function IconeFechar() {
+  return (
+    <svg
+      width="15"
+      height="15"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      aria-hidden="true"
+    >
+      <path d="M6 6l12 12M18 6L6 18" />
+    </svg>
   );
 }
 

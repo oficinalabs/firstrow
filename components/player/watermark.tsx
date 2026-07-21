@@ -73,6 +73,36 @@ const FALHAS_PARA_CORTAR = 2;
 /** De quanto em quanto tempo o vigia olha (com ruído, ver abaixo). */
 const INTERVALO_MS = 2500;
 
+/**
+ * ⚠️ A ALTURA DA MARCA NA PILHA — o que impede o chat sobreposto de parar o vídeo.
+ *
+ * A marca vive dentro da moldura do vídeo, mas o ecrã inteiro é pedido a um
+ * elemento MAIOR (o palco, que leva a moldura *e* o chat — ver
+ * `components/chat/palco-com-chat.tsx`). Nesse palco passa a haver interface
+ * nossa desenhada por cima do vídeo, e uma pergunta nova: quem fica por cima
+ * de quem.
+ *
+ * A resposta tinha de ser estrutural e não aritmética. O vigia corta quando
+ * `elementsFromPoint` devolve alguém À FRENTE da marca (`tapada:…`), e "o chat
+ * calha noutro sítio" é uma conta que depende da largura do ecrã, do tamanho do
+ * email e de onde a animação parou. Aqui declara-se o contrário: **a marca é
+ * desenhada acima de toda a interface da aplicação que partilhe o palco.** Se
+ * um dia se cruzarem, quem fica à frente é a marca — continua a identificar a
+ * sessão e o vigia não tem motivo para cortar.
+ *
+ * A defesa NÃO fica mais fraca por isto — fica mais explícita. O vigia continua
+ * ligado e a olhar em ecrã inteiro; se alguém empurrar um elemento para cima da
+ * marca (z-index maior, top layer, o que for), `quemTapa` vê-o e o vídeo pára
+ * como sempre. O que se garante aqui é só que a NOSSA interface nunca é esse
+ * alguém.
+ *
+ * A moldura não pode criar contexto de empilhamento próprio, ou este número
+ * deixava de se comparar com o do chat: nada de `transform`, `filter`,
+ * `opacity` ou `isolate` entre a marca e o palco. Está medido no relatório da
+ * frente W e há teste que fixa a ordem.
+ */
+export const Z_MARCA = 15;
+
 export type WatermarkProps = {
   /** O texto que identifica a conta — hoje o email do espectador. */
   label: string;
@@ -256,7 +286,11 @@ export function Watermark({ label, onTampered }: WatermarkProps) {
   }, [label]);
 
   return (
-    <div className="pointer-events-none absolute inset-0 overflow-hidden select-none">
+    <div
+      className="pointer-events-none absolute inset-0 overflow-hidden select-none"
+      // Ver `Z_MARCA` lá em cima: a marca fica acima da interface da app.
+      style={{ zIndex: Z_MARCA }}
+    >
       {/*
        * Estilos em `style` e não em classes utilitárias, de propósito. Um
        * conjunto de classes estáveis (`.font-mono.-rotate-12.text-2sm`) é um

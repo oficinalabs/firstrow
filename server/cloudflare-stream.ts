@@ -1,3 +1,4 @@
+import { signPlaybackToken } from "@/lib/cloudflare";
 import { requireEnv } from "@/lib/server-env";
 
 /*
@@ -135,6 +136,59 @@ export async function getLatestRecording(liveInputId: string): Promise<Recording
     console.error(`[cloudflare] gravações de ${liveInputId}:`, error);
     return null;
   }
+}
+
+/*
+ * ============================================================================
+ *  A MINIATURA (THUMBNAIL) DE UMA GRAVAÇÃO — e porque NUNCA vai ao browser
+ * ============================================================================
+ *
+ * A Cloudflare gera a miniatura a partir do próprio vídeo. O QUE SE MEDIU
+ * (21/07/2026, contra a gravação real d4714203…, que é criada com
+ * `requireSignedURLs: true` como todas — ver `lib/cloudflare.ts`):
+ *
+ *   videodelivery.net/<uid>/thumbnails/thumbnail.jpg     → 401 unauthorized
+ *   videodelivery.net/<token>/thumbnails/thumbnail.jpg   → 200 image/jpeg (20 KB)
+ *   videodelivery.net/<token-expirado>/thumbnails/…      → 401 signature expired
+ *
+ * Ou seja: a miniatura exige o MESMO token assinado que a reprodução, e o edge
+ * revalida o `exp` (tal como faz nos segmentos de vídeo). Por isso reutiliza-se
+ * `signPlaybackToken` — não há uma segunda forma de assinar, nem faria sentido
+ * haver.
+ *
+ * ⚠️ E É POR ISSO QUE ESTE URL É SERVIDO POR UM PROXY NOSSO, NUNCA POSTO NUM
+ * <img>. Medido no mesmo dia, com o mesmo token:
+ *
+ *   videodelivery.net/<token>/manifest/video.m3u8       → 200 (o vídeo pago!)
+ *
+ * O token que abre a miniatura abre o manifesto HLS inteiro — não existe no JWT
+ * da Cloudflare um âmbito "só miniatura". Os cartões de arquivo são PÚBLICOS
+ * (quem ainda não comprou vê-os), portanto pôr o token no `src` de uma imagem
+ * era entregar o VOD pago a qualquer visitante que abrisse o inspetor. A rota
+ * `/eventos/[eventId]/thumbnail` assina, vai buscar o JPEG aqui do lado do
+ * servidor e devolve só a imagem; o token nasce e morre no servidor.
+ *
+ * O TTL do token é irrelevante nesta utilização (é consumido de imediato pelo
+ * `fetch` do proxy e nunca sai daqui), daí não haver um TTL próprio de miniatura.
+ */
+
+// Domínio de entrega agnóstico da conta — o mesmo padrão do iframe do player
+// (`iframe.cloudflarestream.com`), que também dispensa o subdomínio do cliente.
+const STREAM_DELIVERY_BASE = "https://videodelivery.net";
+// Pede-se a miniatura já reduzida: ~2x de um cartão da grelha (≈320px), 16:9.
+// Um só tamanho serve todos os cartões — o `object-cover` no browser encolhe o
+// resto. Poupa bytes numa página de arquivo com muitos cartões.
+const THUMBNAIL_WIDTH = 640;
+const THUMBNAIL_HEIGHT = 360;
+
+/**
+ * URL assinado da miniatura de uma gravação, para uso EXCLUSIVO do servidor (o
+ * proxy da rota de thumbnail). Leva um token que abre o vídeo pago — ver a nota
+ * acima sobre porque nunca pode chegar ao cliente.
+ */
+export async function signedThumbnailUrl(vodUid: string): Promise<string> {
+  const token = await signPlaybackToken(vodUid, "vod");
+  return `${STREAM_DELIVERY_BASE}/${token}/thumbnails/thumbnail.jpg?width=${THUMBNAIL_WIDTH}&height=${THUMBNAIL_HEIGHT}&fit=crop`;
 }
 
 /**

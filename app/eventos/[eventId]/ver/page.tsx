@@ -52,6 +52,23 @@ export default async function WatchPage({ params }: { params: Promise<{ eventId:
   const { user, event, phase } = access;
   const isVod = event.status === "ended" && Boolean(event.cfVodUid);
 
+  /*
+   * A MARCA DE ÁGUA identifica a conta: nome E email, não só o email.
+   *
+   * Composta AQUI e uma vez só, porque esta página tem dois caminhos que montam
+   * o player — o palco com chat (live) e o `WatchPlayer` direto (VOD) — e os dois
+   * têm de mostrar exatamente a mesma marca. Uma constante evita que um deles
+   * fique para trás no dia em que o formato mudar.
+   *
+   * NUNCA é a password: nem sequer a temos em claro (só o hash), e uma password
+   * gravada por cima de um vídeo seria um disparate de segurança. O email é o
+   * identificador único para a análise forense de uma gravação que apareça a
+   * circular; o nome torna-a legível de imediato. O ` · ` separa-os como no resto
+   * da UI. Se o nome vier vazio, fica só o email — em vez de um " · " solto a
+   * abrir a marca.
+   */
+  const marcaDeAgua = user.name.trim() ? `${user.name} · ${user.email}` : user.email;
+
   const [channel, archive, chat, likes] = await Promise.all([
     getChannelById(event.channelId),
     // A barra ao lado chama-se "Arquivo do canal" e tem de o ser mesmo: vinha
@@ -146,7 +163,7 @@ export default async function WatchPage({ params }: { params: Promise<{ eventId:
         <div className="mx-auto w-full max-w-6xl flex-1 px-4 py-4 md:py-6">
           <PalcoComChat
             eventId={eventId}
-            watermark={user.email}
+            watermark={marcaDeAgua}
             viewerId={user.id}
             inicial={chat}
             info={info}
@@ -178,7 +195,7 @@ export default async function WatchPage({ params }: { params: Promise<{ eventId:
           }
         >
           <div className="min-w-0">
-            <WatchPlayer eventId={eventId} watermark={user.email} mode={isVod ? "vod" : "live"} />
+            <WatchPlayer eventId={eventId} watermark={marcaDeAgua} mode={isVod ? "vod" : "live"} />
             <div className="mt-4">{info}</div>
             <div className="mt-4">{conversa}</div>
           </div>

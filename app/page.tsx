@@ -4,7 +4,7 @@ import { EventCard } from "@/components/eventos/event-card";
 import { COMO_FUNCIONA, HowItWorksCard } from "@/components/eventos/how-it-works-card";
 import { LiveNowBanner } from "@/components/eventos/live-now-banner";
 import { ViewerFooter } from "@/components/eventos/viewer-footer";
-import { ChannelRow } from "@/components/home/channel-row";
+import { ChannelCard } from "@/components/home/channel-card";
 import { buildOverview, type PlatformOverview } from "@/components/home/overview";
 import { UpcomingRow } from "@/components/home/upcoming-row";
 import { SITE_URL } from "@/components/marketing/dados";
@@ -115,9 +115,16 @@ function Programacao({ overview }: { overview: PlatformOverview }) {
     <>
       <section aria-label="Canais" className="pb-12 md:pb-14">
         <SectionHeader title="Canais" className={SECTION_RULE} />
-        <div className="mt-1">
+        {/*
+         * Galeria de quadrados. Uma coluna a 375px (o cartão é largo de mais
+         * para dois num telemóvel), duas a partir de 640px, três a partir de
+         * 1024px — segue o padrão da auditoria de responsividade e não deixa o
+         * corpo passar dos `max-w-6xl` da página, por isso não há scroll
+         * horizontal em nenhuma das três larguras medidas (375/768/1280).
+         */}
+        <div className="mt-5 grid grid-cols-1 gap-4 sm:grid-cols-2 md:gap-5 lg:grid-cols-3">
           {channels.map((summary) => (
-            <ChannelRow key={summary.channel.slug} {...summary} />
+            <ChannelCard key={summary.channel.slug} {...summary} />
           ))}
         </div>
       </section>

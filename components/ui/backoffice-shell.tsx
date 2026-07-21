@@ -1,5 +1,6 @@
 import Image from "next/image";
 import Link from "next/link";
+import { SiteLink } from "@/components/ui/site-link";
 import { tenantStyle } from "@/components/ui/tenant-scope";
 import type { Channel } from "@/lib/channels";
 import { cn } from "@/lib/utils";
@@ -62,8 +63,11 @@ export function BackofficeShell({
        * ferramenta que se usa com uma mão e pressa.
        */}
       <div className="md:hidden">
-        <header className="flex h-13 items-center justify-between bg-bar px-4 text-bar-foreground">
+        {/* `gap-3` para o atalho do site não ficar colado ao rótulo BACKOFFICE
+            (que já é empurrado para a direita pelo `ml-auto` do BrandRow). */}
+        <header className="flex h-13 items-center justify-between gap-3 bg-bar px-4 text-bar-foreground">
           <BrandRow />
+          <SiteLink />
         </header>
         <nav
           aria-label="Backoffice"
@@ -98,6 +102,13 @@ export function BackofficeShell({
       >
         <div className="flex items-center border-b border-bar-border px-4.5 pt-1 pb-3.5">
           <BrandRow />
+        </div>
+        {/* Atalho para o site, logo abaixo da marca — perto do topo, como o
+            simétrico "Backoffice" que o header do site já tem. Sem borda própria
+            para não pesar a coluna; encosta ao bloco do canal (ou à navegação,
+            quando não há canal). */}
+        <div className="px-4.5 pt-3 pb-1">
+          <SiteLink />
         </div>
         {channel ? (
           <div className="flex items-center gap-2.5 px-4.5 py-3.5">

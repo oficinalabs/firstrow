@@ -14,8 +14,10 @@ import {
  *  MARCA DE ÁGUA POR ESPECTADOR — o que ela faz, e o que ela NUNCA vai fazer
  * ============================================================================
  *
- * Marca + email por cima do vídeo: dissuade quem filma o ecrã e identifica a
- * conta em qualquer gravação que apareça a circular.
+ * Marca + nome e email por cima do vídeo: dissuade quem filma o ecrã e
+ * identifica a conta em qualquer gravação que apareça a circular. O texto chega
+ * pronto de quem monta o player (`${nome} · ${email}`, ver a página de ver) —
+ * este componente só o desenha e o vigia.
  *
  * ────────────────────────────────────────────────────────────────────────────
  *  HONESTIDADE, PARA NINGUÉM VENDER ISTO ÀS LIGAS COMO O QUE NÃO É
@@ -50,7 +52,7 @@ import {
  *    acompanha e nós nem conseguimos VER que aconteceu. **Continua aberto no
  *    iPhone, e não há como o fechar deste lado.** Ver `fullscreen-button.tsx`.
  *  • Filmar o ecrã com um telemóvel. Nunca foi o alvo — aí a marca não impede,
- *    identifica. É para isso que ela tem o email lá dentro.
+ *    identifica. É para isso que ela tem o nome e o email lá dentro.
  *
  * ────────────────────────────────────────────────────────────────────────────
  *  MOVIMENTO
@@ -104,7 +106,7 @@ const INTERVALO_MS = 2500;
 export const Z_MARCA = 15;
 
 export type WatermarkProps = {
-  /** O texto que identifica a conta — hoje o email do espectador. */
+  /** O texto que identifica a conta — o nome e o email do espectador. */
   label: string;
   /**
    * Chamado quando a marca deixou de estar visível. Recebe o que falhou, para

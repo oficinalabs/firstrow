@@ -222,6 +222,18 @@ const nextConfig: NextConfig = {
   poweredByHeader: false,
 
   /*
+   * O `sharp` (app/api/uploads/canal/route.ts) tem binário nativo por
+   * plataforma — aqui só está instalado o de macOS (`darwin-arm64`), a Vercel
+   * corre em `linux-x64`. Sem isto, o empacotamento da função serverless pode
+   * não levar consigo o binário certo: o build passa, o upload rebenta com
+   * 500 só em produção, e nada disso aparece a testar em `next dev` local.
+   * `serverExternalPackages` diz ao Next para tratar o módulo à parte (via
+   * `require()` em runtime, com o `node_modules` a acompanhar) em vez de o
+   * tentar analisar/empacotar como código normal.
+   */
+  serverExternalPackages: ["sharp"],
+
+  /*
    * As imagens de canal vêm do bucket R2, e o `next/image` recusa por omissão
    * tudo o que não esteja aqui. Não é chatice: é o que impede que gravar um
    * `logo_url` apontado a um servidor de fora ponha o nosso optimizador a

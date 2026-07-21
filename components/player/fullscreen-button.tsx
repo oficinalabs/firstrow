@@ -60,8 +60,41 @@ function temEcraInteiro(): boolean {
   );
 }
 
+/**
+ * Estamos em ecrã inteiro NESTE elemento?
+ *
+ * Está aqui, e exportado, porque deixou de haver um só interessado: além do
+ * ícone do botão, o palco precisa de saber (é ele que troca a grelha de duas
+ * colunas pelo chat sobreposto — ver `components/chat/palco-com-chat.tsx`).
+ *
+ * Um só sítio a ler o estado, e a lê-lo ao BROWSER: sair por `Esc`, pelo gesto
+ * do sistema ou por outro separador tem de chegar aos dois ao mesmo tempo. Dois
+ * palpites separados davam um ícone e um painel a discordarem um do outro — e
+ * o que discorda aqui é o que fica com o chat aberto sobre uma página que já
+ * saiu do ecrã inteiro.
+ */
+export function useDentroDoEcraInteiro(alvo: React.RefObject<HTMLElement | null>): boolean {
+  const [dentro, setDentro] = useState(false);
+
+  useEffect(() => {
+    const aoMudar = () => setDentro(document.fullscreenElement === alvo.current);
+    // Também à montagem: montar já dentro do ecrã inteiro é raro, mas o estado
+    // ficava a mentir até ao evento seguinte.
+    aoMudar();
+    document.addEventListener("fullscreenchange", aoMudar);
+    return () => document.removeEventListener("fullscreenchange", aoMudar);
+  }, [alvo]);
+
+  return dentro;
+}
+
 export type FullscreenButtonProps = {
-  /** A moldura que vai a ecrã inteiro. É ela que contém o iframe e a marca. */
+  /**
+   * O elemento que vai a ecrã inteiro. TEM de conter o iframe e a marca — é
+   * essa a defesa toda. Hoje é o palco (vídeo + chat); antes era a moldura.
+   * Se alguém lhe passar um elemento que deixe a marca de fora, o vigia vê
+   * (`ecraInteiro: "sem-a-marca"`) e o vídeo pára — o erro é ruidoso.
+   */
   alvo: React.RefObject<HTMLElement | null>;
   className?: string;
 };
@@ -73,7 +106,7 @@ export function FullscreenButton({ alvo, className }: FullscreenButtonProps) {
    * do cliente.
    */
   const [suportado, setSuportado] = useState(false);
-  const [dentro, setDentro] = useState(false);
+  const dentro = useDentroDoEcraInteiro(alvo);
 
   useEffect(() => setSuportado(temEcraInteiro()), []);
 
@@ -90,14 +123,6 @@ export function FullscreenButton({ alvo, className }: FullscreenButtonProps) {
      * onde isso é possível (Android). Onde não for, é ignorado — não é erro.
      */
     void el.requestFullscreen({ navigationUI: "hide" }).catch(() => {});
-  }, [alvo]);
-
-  // Quem manda no estado é o browser, não o nosso clique: sair por `Esc`, pelo
-  // gesto do sistema ou por outro separador tem de virar o ícone à mesma.
-  useEffect(() => {
-    const aoMudar = () => setDentro(document.fullscreenElement === alvo.current);
-    document.addEventListener("fullscreenchange", aoMudar);
-    return () => document.removeEventListener("fullscreenchange", aoMudar);
   }, [alvo]);
 
   /*

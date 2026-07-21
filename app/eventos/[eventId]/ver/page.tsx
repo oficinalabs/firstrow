@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import { ChatPanel } from "@/components/chat/chat-panel";
+import { PalcoComChat } from "@/components/chat/palco-com-chat";
 import { EventCard } from "@/components/eventos/event-card";
 import { LikeShare } from "@/components/eventos/like-share";
 import { splitProgram } from "@/components/eventos/program";
@@ -75,9 +76,6 @@ export default async function WatchPage({ params }: { params: Promise<{ eventId:
       viewerId={user.id}
       initial={chat}
       closedNotice={event.status === "draft" ? AVISO_FECHADO.draft : AVISO_FECHADO.expirado}
-      // Na live a conversa acompanha a altura da coluna; no arquivo cresce com
-      // o conteúdo até ao limite que o próprio painel impõe.
-      className={phase === "live" ? "lg:h-full" : undefined}
     />
   );
 
@@ -128,16 +126,38 @@ export default async function WatchPage({ params }: { params: Promise<{ eventId:
 
   /*
    * A LIVE põe a conversa ao lado do player (é o que se espera de um direto, e
-   * é onde ela é olhada ao mesmo tempo que o vídeo). O ARQUIVO põe os
-   * comentários por baixo e deixa a coluna para o arquivo do canal — os
-   * comentários de um VOD lêem-se depois de ver, não ao lado.
+   * é onde ela é olhada ao mesmo tempo que o vídeo) e deixa-a saltar para cima
+   * do vídeo em ecrã inteiro. As duas coisas vivem no `PalcoComChat`, e vivem
+   * lá pela mesma razão: em ecrã inteiro o sistema só desenha o elemento que lá
+   * pusermos, por isso o vídeo e a conversa têm de estar na mesma caixa. Ver a
+   * nota de topo desse ficheiro.
    *
-   * No telemóvel — o caso principal — os dois casos caem na mesma coluna única,
-   * com o player primeiro e a conversa a seguir.
+   * O ARQUIVO põe os comentários por baixo e deixa a coluna para o arquivo do
+   * canal — os comentários de um VOD lêem-se depois de ver, não ao lado. Aí o
+   * ecrã inteiro continua a ser pedido à moldura, como sempre foi: não há chat
+   * ao lado para levar com ele.
+   *
+   * No telemóvel — o caso principal — os dois casos caem numa coluna única, com
+   * o player primeiro e a conversa a seguir.
    */
-  const colunaLateral = phase === "live" ? conversa : null;
+  if (phase === "live") {
+    return (
+      <ViewerShell channel={channel ?? undefined}>
+        <div className="mx-auto w-full max-w-6xl flex-1 px-4 py-4 md:py-6">
+          <PalcoComChat
+            eventId={eventId}
+            watermark={user.email}
+            viewerId={user.id}
+            inicial={chat}
+            info={info}
+          />
+        </div>
+      </ViewerShell>
+    );
+  }
+
   const asideArquivo =
-    !colunaLateral && archive.length > 0 ? (
+    archive.length > 0 ? (
       <aside aria-label="Arquivo do canal">
         <h2 className="mb-2.5 font-display text-base font-bold">Arquivo do canal</h2>
         <div className="flex flex-col">
@@ -149,22 +169,20 @@ export default async function WatchPage({ params }: { params: Promise<{ eventId:
       </aside>
     ) : null;
 
-  const comDuasColunas = Boolean(colunaLateral || asideArquivo);
-
   return (
     <ViewerShell channel={channel ?? undefined}>
       <div className="mx-auto w-full max-w-6xl flex-1 px-4 py-4 md:py-6">
         <div
           className={
-            comDuasColunas ? "grid items-start gap-6 lg:grid-cols-[1fr_340px]" : "mx-auto max-w-4xl"
+            asideArquivo ? "grid items-start gap-6 lg:grid-cols-[1fr_340px]" : "mx-auto max-w-4xl"
           }
         >
           <div className="min-w-0">
             <WatchPlayer eventId={eventId} watermark={user.email} mode={isVod ? "vod" : "live"} />
             <div className="mt-4">{info}</div>
-            {phase !== "live" ? <div className="mt-4">{conversa}</div> : null}
+            <div className="mt-4">{conversa}</div>
           </div>
-          {colunaLateral ?? asideArquivo}
+          {asideArquivo}
         </div>
       </div>
     </ViewerShell>

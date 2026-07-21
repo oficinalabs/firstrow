@@ -137,10 +137,11 @@ export type ChatPanelProps = {
   /**
    * Fechar o painel. Só faz sentido no sobreposto, e é lá que aparece o botão.
    *
-   * Existe por acessibilidade, não por decoração: o interruptor que abre o chat
-   * vive nos controlos do leitor, que se escondem sozinhos. Enquanto o chat
-   * está aberto tem de haver uma maneira de o fechar que esteja SEMPRE à vista
-   * e no caminho do teclado — sem depender de passar o rato por cima de nada.
+   * Existe por acessibilidade e por proximidade, não por decoração: o
+   * interruptor que abre/fecha o chat vive nos controlos do leitor, ao cimo do
+   * ecrã. Com o painel aberto e a pessoa a ler lá em baixo, um X no próprio
+   * cabeçalho fecha sem a obrigar a subir os olhos e voltar a procurar o
+   * interruptor — e está SEMPRE à vista e no caminho do teclado, sem hover.
    */
   onFechar?: () => void;
   className?: string;

@@ -71,12 +71,10 @@ import { cn } from "@/lib/utils";
 const Z_CHAT_SOBREPOSTO = Z_MARCA - 1;
 
 /** Os controlos do palco ficam acima de tudo — incluindo da marca, como já
- *  ficava o botão de ecrã inteiro do leitor. São 44px num canto onde a marca
- *  nunca chega (o `wm-hop` mantém-na entre os 6% e os 44% da largura). */
+ *  ficava o botão de ecrã inteiro do leitor. 44px de altura, num canto à
+ *  direita onde a marca nunca chega (o `wm-hop` mantém-na entre os 6% e os 44%
+ *  da largura, à esquerda). */
 const Z_CONTROLOS = Z_MARCA + 15;
-
-/** Quanto tempo os controlos ficam à vista depois do último gesto. */
-const ESCONDER_CONTROLOS_MS = 2600;
 
 /**
  * Onde fica lembrado se o chat sobreposto está ligado.
@@ -133,7 +131,6 @@ export function PalcoComChat({ eventId, watermark, viewerId, inicial, info }: Pa
   const dentro = useDentroDoEcraInteiro(palcoRef);
 
   const [ligado, setLigado] = useState(true);
-  const [controlosAVista, setControlosAVista] = useState(true);
 
   // A memória. Falhar a ler não é motivo para partir nada: em navegação
   // privada, ou com o armazenamento bloqueado, fica o valor por omissão.
@@ -192,55 +189,6 @@ export function PalcoComChat({ eventId, watermark, viewerId, inicial, info }: Pa
   }, [dentro]);
 
   /*
-   * Os controlos escondem-se sozinhos, como num leitor de vídeo — mas só onde
-   * há rato.
-   *
-   * Num ecrã táctil não existe `hover` para os trazer de volta, e o vídeo é um
-   * iframe de OUTRO domínio: um toque em cima dele nem sequer chega a esta
-   * página, por isso não há evento nenhum com que os fazer reaparecer. Esconder
-   * ali era esconder para sempre. Por isso a pergunta é feita ao ponteiro e não
-   * ao tamanho do ecrã.
-   *
-   * O `focusin` é o que garante o caminho do teclado: quem chega ao interruptor
-   * com o Tab traz os controlos de volta antes de os ver.
-   */
-  useEffect(() => {
-    if (!dentro) {
-      setControlosAVista(true);
-      return;
-    }
-    const palco = palcoRef.current;
-    if (!palco) return;
-
-    const comRato = window.matchMedia("(hover: hover) and (pointer: fine)").matches;
-    let temporizador: ReturnType<typeof setTimeout> | undefined;
-
-    const mostrar = () => {
-      setControlosAVista(true);
-      clearTimeout(temporizador);
-      if (comRato) {
-        temporizador = setTimeout(() => setControlosAVista(false), ESCONDER_CONTROLOS_MS);
-      }
-    };
-
-    mostrar();
-    palco.addEventListener("pointermove", mostrar);
-    palco.addEventListener("pointerdown", mostrar);
-    palco.addEventListener("focusin", mostrar);
-    // No documento e não no palco: em ecrã inteiro o foco está quase sempre no
-    // `body`, e um `keydown` no palco nunca chegava a disparar.
-    document.addEventListener("keydown", mostrar);
-
-    return () => {
-      clearTimeout(temporizador);
-      palco.removeEventListener("pointermove", mostrar);
-      palco.removeEventListener("pointerdown", mostrar);
-      palco.removeEventListener("focusin", mostrar);
-      document.removeEventListener("keydown", mostrar);
-    };
-  }, [dentro]);
-
-  /*
    * A tecla `c`, irmã do `f` do ecrã inteiro — e com a mesma guarda, que aqui é
    * ainda mais precisa de ser: o painel que esta tecla abre TEM uma caixa de
    * texto, e escrever "chavão" no chat não pode fechar o chat a meio da
@@ -249,6 +197,17 @@ export function PalcoComChat({ eventId, watermark, viewerId, inicial, info }: Pa
    *
    * Só em ecrã inteiro: fora dele o chat é uma coluna que está sempre lá, e uma
    * tecla que não faz nada é pior do que tecla nenhuma.
+   *
+   * ATENÇÃO — porque é que isto é um BÓNUS e não o caminho. O vídeo é um iframe
+   * de OUTRO domínio (Cloudflare). Mediu-se em Chrome real, headless, a
+   * despachar a tecla mesmo: com o foco DENTRO do iframe — e basta clicar no
+   * vídeo para dar play — o `keydown` fica no documento do iframe e NUNCA chega
+   * a este `document`; este ouvinte não dispara. Foi por aqui que o dono
+   * carregou no `c` e "não aconteceu nada": a tecla só vale enquanto o foco
+   * estiver na NOSSA página, e ninguém garante isso. Um teste que despacha
+   * `keydown` no `document` passa sempre e esconde exatamente este caso — daí a
+   * regra dupla. Por isso o interruptor visível, lá em baixo, é o caminho a
+   * sério; a tecla é um atalho para quem a descobre.
    */
   useEffect(() => {
     if (!dentro) return;
@@ -359,31 +318,46 @@ export function PalcoComChat({ eventId, watermark, viewerId, inicial, info }: Pa
        * O INTERRUPTOR. Só em ecrã inteiro — fora dele a conversa está sempre lá
        * e não há nada para ligar.
        *
-       * Escondido, continua focável de propósito (`opacity-0` não tira do Tab; o
-       * `pointer-events-none` é que evita cliques às cegas). Quem chegar cá com
-       * o teclado dispara o `focusin` do efeito acima, os controlos voltam, e só
-       * então o botão volta a receber cliques. É esse o caminho alternativo ao
-       * hover — mais o `c`, e mais o X que o painel mostra enquanto está aberto.
+       * SEMPRE À VISTA, e com a palavra "Chat" escrita. Antes escondia-se com o
+       * resto dos controlos (`opacity-0`) uns segundos depois do último gesto,
+       * como a barra de um leitor de vídeo. Só que a barra de um leitor esconde-
+       * -se porque tapa o filme e toda a gente sabe que ela volta ao mexer o
+       * rato; isto é um interruptor que se procura UMA vez, e um interruptor que
+       * desaparece não se encontra. O dono, à procura do controlo com o rato
+       * parado, viu-o sumir e concluiu que não existia — pediu literalmente "um
+       * botão de mostrar chat ou não". Fica, então.
+       *
+       * E leva rótulo de TEXTO. Um ícone sozinho (um balão de fala) é adivinha:
+       * tanto pode abrir o chat como escrever uma mensagem. "Chat" não deixa
+       * dúvida. O estado ligado/desligado vai em três sítios para não depender
+       * de um só: `aria-pressed` (leitor de ecrã), o ícone (balão inteiro ou
+       * riscado) e o tooltip. O `c` continua a valer, agora anunciado no tooltip
+       * como atalho — não como o único caminho, que era o que falhava para quem
+       * não o adivinhava e para quem tinha o foco no iframe (ver o ouvinte
+       * acima).
        */}
       {dentro ? (
         <button
           type="button"
           onClick={alternarChat}
           aria-pressed={ligado}
-          aria-label="Chat sobre o vídeo"
           aria-keyshortcuts="c"
           title={ligado ? "Esconder o chat (c)" : "Mostrar o chat (c)"}
           style={{ zIndex: Z_CONTROLOS }}
           className={cn(
-            // 44×44 de alvo, como o botão do leitor ao lado — o que tem de ter
-            // 44px é a área que recebe o toque, não o desenho.
-            "absolute top-3 right-(--recuo-2o-controlo) inline-flex size-11 cursor-pointer items-center justify-center rounded-sm",
-            "bg-bar/55 text-bar-foreground transition-opacity transition-colors hover:bg-bar/85",
+            // Pílula de 44px de altura (o alvo de toque mínimo) que cresce para
+            // a ESQUERDA a partir da âncora à direita — para longe do botão de
+            // ecrã inteiro do leitor, que fica encostado ao canto. O texto vem
+            // do `<span>`; a `aria-label` sairia daqui e criava um nome
+            // diferente do rótulo visível (falha de "label in name").
+            "absolute top-3 right-(--recuo-2o-controlo) inline-flex h-11 min-w-11 cursor-pointer items-center gap-2 rounded-sm px-3",
+            "bg-bar/55 text-bar-foreground transition-colors hover:bg-bar/85",
+            // Foco visível (o anel limão global) — alcançável e visível por Tab.
             "focus-visible:bg-bar/85",
-            !controlosAVista && "pointer-events-none opacity-0",
           )}
         >
           {ligado ? <IconeChatLigado /> : <IconeChatDesligado />}
+          <span className="text-2sm font-medium">Chat</span>
         </button>
       ) : null}
     </div>

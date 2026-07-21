@@ -152,20 +152,33 @@ describe("o interruptor do chat não rouba o teclado", () => {
   it("o interruptor diz o seu estado sem depender do desenho", () => {
     expect(PALCO).toMatch(/aria-pressed=\{ligado\}/);
     expect(PALCO).toMatch(/aria-keyshortcuts="c"/);
-    // 44px de alvo, como o botão de ecrã inteiro ao lado.
-    expect(PALCO).toMatch(/size-11/);
+    // 44px de altura (o alvo de toque mínimo); a largura cresce com o rótulo.
+    expect(PALCO).toMatch(/h-11/);
+    expect(PALCO).toMatch(/min-w-11/);
   });
 
   /*
-   * Escondido por `opacity`, e nunca por `hidden` ou `visibility`: as duas
-   * últimas tiram o botão do caminho do Tab, e um controlo que só existe para
-   * quem passa o rato não existe para quem usa teclado nem para quem usa
-   * telemóvel. O `focusin` do palco traz os controlos de volta antes de o botão
-   * receber o foco.
+   * O CAMINHO DE DESCOBERTA — o que este trabalho corrigiu. O dono carregou no
+   * `c` e "não aconteceu nada", e não encontrou o botão sozinho: ele só aparecia
+   * ao passar o rato e sumia uns segundos depois. Um interruptor procura-se UMA
+   * vez; um que se esconde não se encontra. A régua de que agora é descoberto
+   * sem se saber da tecla: fica sempre à vista e leva a palavra "Chat".
    */
-  it("os controlos escondidos continuam no caminho do teclado", () => {
-    expect(PALCO).toMatch(/!controlosAVista && "pointer-events-none opacity-0"/);
-    expect(PALCO).toMatch(/addEventListener\("focusin", mostrar\)/);
+  it("o interruptor está sempre à vista — não se esconde nem depende de hover", () => {
+    // O botão não pode levar nenhuma das classes que o tiravam do ecrã.
+    const bloco = PALCO.match(/aria-pressed=\{ligado\}[\s\S]*?<\/button>/)?.[0] ?? "";
+    expect(bloco).not.toBe("");
+    expect(bloco).not.toMatch(/opacity-0/);
+    expect(bloco).not.toMatch(/pointer-events-none/);
+    expect(bloco).not.toMatch(/\bhidden\b/);
+    expect(bloco).not.toMatch(/\binvisible\b/);
+  });
+
+  it("o interruptor tem rótulo de texto visível, não só um ícone", () => {
+    // "Chat" escrito no botão — um balão de fala sozinho tanto abre o chat como
+    // podia ser "escrever mensagem". A palavra tira a dúvida.
+    const bloco = PALCO.match(/aria-pressed=\{ligado\}[\s\S]*?<\/button>/)?.[0] ?? "";
+    expect(bloco).toMatch(/<span[^>]*>Chat<\/span>/);
   });
 
   /*
@@ -186,10 +199,12 @@ describe("o interruptor do chat não rouba o teclado", () => {
     expect(PALCO).toMatch(/irmao\.inert\) continue;/);
   });
 
-  it("o auto-esconder só existe onde há rato", () => {
-    // Num ecrã táctil não há hover para os trazer de volta, e o vídeo é um
-    // iframe de outro domínio: um toque nele nem chega a esta página.
-    expect(PALCO).toMatch(/matchMedia\("\(hover: hover\) and \(pointer: fine\)"\)/);
+  it("já não há máquina de auto-esconder a apagar o interruptor", () => {
+    // Regressão: nada de temporizador nem de `controlosAVista` a decidir se o
+    // botão existe. Era isso que o punha fora do alcance de quem o procurava com
+    // o rato parado — e, entre gestos, de todo o teclado.
+    expect(PALCO).not.toMatch(/controlosAVista/);
+    expect(PALCO).not.toMatch(/ESCONDER_CONTROLOS_MS/);
   });
 
   it("com o chat aberto há sempre um botão de fechar à vista", () => {

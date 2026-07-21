@@ -54,6 +54,27 @@
   --bar-active: #1b1a18; /* item ativo na sidebar do backoffice */
 
   --radius: 6px; /* raio único (nada de pill, nada de 2xl) */
+
+  /*
+   * Alvo de toque mínimo. 44px é a medida da polpa do dedo adulto, não um
+   * número redondo — abaixo disto acerta-se ao lado, e quem usa a plataforma
+   * está a ver batalhas no telemóvel, muitas vezes de pé e com uma mão.
+   * Token e não valor à mão: quem precisar de o rever muda-o AQUI.
+   */
+  --alvo-toque: 44px;
+
+  /*
+   * Quanto do ecrã é que o teclado do telemóvel está a tapar. Zero quase
+   * sempre; o `ChatPanel` escreve a medida real enquanto se escreve no chat.
+   *
+   * TEM de ser declarada aqui, e não apenas usada com um fallback lá em baixo:
+   * escrita só como `var(--altura-teclado, 0px)`, o optimizador de CSS via que
+   * a variável não existia em folha nenhuma, substituía-a pelo fallback e
+   * deitava fora a declaração inteira por ser igual ao `padding: 0` do
+   * preflight. A regra desaparecia da folha compilada — verificado a procurar
+   * "altura-teclado" no CSS servido: não estava lá.
+   */
+  --altura-teclado: 0px;
 }
 
 [data-theme="dark"] {
@@ -82,6 +103,16 @@
 
 /* dark: segue o data-theme do segmento (não o esquema do sistema) */
 @custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
+
+/*
+ * `toque:` — só onde se aponta com o DEDO.
+ *
+ * Existe para os controlos poderem crescer até aos 44px sem que isso mexa no
+ * ecrã grande, onde o desenho compacto é intencional e o rato acerta em 36px
+ * sem se queixar. Ligado ao apontador e não à largura da janela: um portátil
+ * com a janela estreita continua a ser rato, um tablet de 1024px é dedo.
+ */
+@custom-variant toque (@media (pointer: coarse));
 
 @theme inline {
   /* apaga a paleta por defeito do Tailwind: bg-red-500 e afins deixam de
@@ -169,9 +200,251 @@
   }
 }
 
+/*
+ * ============================================================================
+ *  ALVO DE TOQUE — área de acerto sem mexer no desenho
+ * ============================================================================
+ *
+ * O problema: o design é editorial e compacto de propósito (links de 16px de
+ * altura, ligações de texto, migalhas). Engordar tudo para 44px estragava-o —
+ * e estragava-o no ECRÃ GRANDE, onde se aponta com o rato e 44px não servem
+ * para nada.
+ *
+ * A solução: um pseudo-elemento centrado que ESTICA a área de acerto sem tocar
+ * na caixa visível nem no fluxo do layout. O que se vê continua igual ao pixel;
+ * o que o dedo acerta passa a ter 44px.
+ *
+ * `@media (pointer: coarse)` e não um breakpoint de largura: quem decide se o
+ * alvo precisa de crescer é o APONTADOR, não o tamanho da janela. Uma janela
+ * estreita num portátil continua a ser rato (fino, preciso, não precisa); um
+ * tablet de 1024px é dedo (grosso, precisa). Ligar isto à largura dava as duas
+ * respostas erradas ao mesmo tempo.
+ *
+ * CUIDADO ao aplicar em controlos ENCOSTADOS uns aos outros: as áreas crescem
+ * por baixo e podem sobrepor-se, e nesse caso ganha o último do DOM — o toque
+ * ia parar ao vizinho. Regra prática: só usar onde o espaço livre à volta é
+ * maior do que o que falta para os 44px; onde não for, dá-se tamanho a sério
+ * ao controlo (é o que os cartões da DataTable fazem).
+ */
+@utility alvo-toque {
+  @media (pointer: coarse) {
+    position: relative;
+
+    &::after {
+      content: "";
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      translate: -50% -50%;
+      width: max(100%, var(--alvo-toque));
+      height: max(100%, var(--alvo-toque));
+    }
+  }
+}
+
+/*
+ * A outra metade do par: para controlos ENCOSTADOS uns aos outros — itens de
+ * uma barra lateral, linhas de uma lista — onde a área esticada do
+ * `alvo-toque` se sobrepunha à do vizinho e o toque ia parar ao item errado.
+ * Medido: os itens da barra do backoffice, de 38,8px de altura e sem intervalo
+ * entre eles, falhavam o teste em cima E em baixo com o `alvo-toque` aplicado
+ * — cada um roubava a área ao seguinte.
+ *
+ * Aqui cresce a caixa a sério. Custa alguns píxeis de altura no telemóvel e no
+ * tablet, e não custa nada no ecrã grande — que continua a apontar com o rato,
+ * onde 38,8px sempre chegaram.
+ */
+@utility alvo-toque-alto {
+  @media (pointer: coarse) {
+    display: flex;
+    align-items: center;
+    min-height: var(--alvo-toque);
+  }
+}
+
+/*
+ * ============================================================================
+ *  TABELA → CARTÕES  (o padrão do backoffice, escrito UMA vez)
+ * ============================================================================
+ *
+ * Em ecrã estreito uma tabela de sete colunas não encolhe: parte-se. Medido
+ * antes desta regra, a 375px: em `/admin/eventos` a data aparecia como
+ * "hoj 10:" e a coluna das ações (Abrir · Editar · Apagar) ficava inteiramente
+ * fora do ecrã; em `/admin/ganhos` a receita lia-se "22," e o líquido não se
+ * via de todo. Não era feio — era informação a desaparecer sem aviso.
+ *
+ * A regra vive AQUI e não em cada página de propósito: são catorze tabelas em
+ * nove ficheiros. Catorze cópias divergem — a décima quinta tabela nasceria
+ * partida e ninguém dava por isso.
+ *
+ * COMO: as células deixam de ser células e passam a linhas "rótulo → valor",
+ * e cada `<tr>` passa a cartão. O rótulo sai do `data-rotulo` que a `DataTable`
+ * copia do cabeçalho da coluna — por isso o valor nunca fica órfão.
+ *
+ * QUANDO: por consulta ao CONTENTOR, não à janela (ver a nota em
+ * `components/ui/table.tsx`). O limiar sai do número de colunas: uma tabela de
+ * duas colunas cabe em 400px e não tem nada que virar cartão; a do dinheiro,
+ * com sete, precisa de 830px — e não os tem num tablet de 768 com a barra
+ * lateral aberta, que é exactamente onde a régie trabalha.
+ */
+@layer components {
+  /*
+   * UM limiar, não um por tabela. Medido antes de o escolher: a tabela mais
+   * larga do backoffice (`/admin/ganhos`, sete colunas de dinheiro) corta as
+   * últimas colunas com 552px de espaço — que é o que sobra num tablet de
+   * 768px depois da barra lateral de 216px. E a área de conteúdo a 1280px tem
+   * ~1000px. Qualquer valor entre os dois serve os dois casos; 42rem (672px)
+   * fica com folga confortável de cada lado.
+   *
+   * Em `rem` e não em `px`: quem aumenta o tamanho de letra do sistema precisa
+   * de mais espaço por coluna, e a passagem a cartões tem de acontecer mais
+   * cedo para essa pessoa — com `px` acontecia à mesma largura para todos e a
+   * tabela partia-se na cara de quem já tinha dificuldade em ler.
+   */
+  @container (max-width: 42rem) {
+    table[data-tabela] {
+      display: block;
+
+      /* `display: none` e não apenas escondido à vista: sem cabeçalho de
+         coluna a que se associem, um leitor de ecrã que ainda os lesse
+         anunciava sete rótulos seguidos antes do primeiro valor. Em cartão o
+         rótulo vive dentro da célula, ao lado do valor a que pertence. */
+      & thead {
+        display: none;
+      }
+
+      & tbody {
+        display: flex;
+        flex-direction: column;
+        gap: calc(var(--spacing) * 3);
+      }
+
+      & tr {
+        display: flex;
+        flex-direction: column;
+        border: 1px solid var(--color-border);
+        border-radius: var(--radius);
+        background: var(--color-card);
+        padding: calc(var(--spacing) * 3.5);
+      }
+
+      & td {
+        display: flex;
+        align-items: baseline;
+        justify-content: space-between;
+        gap: calc(var(--spacing) * 3);
+        /* Anula o `first:pl-0 last:pr-0` da célula, que em cartão só
+           desalinhava a primeira e a última linha em relação às do meio. */
+        padding: calc(var(--spacing) * 1.5) 0;
+      }
+
+      & td:not(:last-child) {
+        border-bottom: 1px solid var(--color-muted);
+      }
+
+      /* Célula sem conteúdo (a coluna das ações costuma ter cabeçalho "")
+         não deixa um traço nem um espaço morto no meio do cartão. */
+      & td:empty {
+        display: none;
+      }
+
+      /* Só quem tem rótulo o mostra: um rodapé de totais escrito à mão não
+         passa `label` e a sua célula fica com o valor sozinho, que é o que
+         se quer numa linha que já diz "Total". */
+      & td[data-rotulo]::before {
+        content: attr(data-rotulo);
+        font-family: var(--font-mono);
+        font-size: var(--text-2xs);
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: var(--tracking-label);
+        color: var(--color-muted-foreground);
+        /* O rótulo não encolhe e o valor fica com o resto: ao contrário, um
+           "Comissão FirstRow · 10%" empurrava o número para fora do cartão. */
+        flex: 0 0 auto;
+        padding-right: calc(var(--spacing) * 3);
+        text-align: left;
+      }
+
+      /*
+       * A célula de destaque é o título do cartão: sem rótulo, a toda a
+       * largura, em primeiro. É ela que responde a "de que linha estamos a
+       * falar?" antes de qualquer número — num cartão não há coluna da
+       * esquerda a dizê-lo, e sete valores sem assunto não são nada.
+       */
+      & td[data-destaque] {
+        display: block;
+        /*
+         * Ao topo do cartão, seja qual for a posição da coluna na tabela. Na
+         * dashboard o "Evento" é a 5ª coluna (depois de quando/comprador/
+         * canal/tipo, que é a ordem certa numa tabela) e o título aparecia a
+         * meio do cartão, com valores por cima do assunto a que pertencem.
+         *
+         * O custo é a ordem visual deixar de casar com a do DOM. Aceitável
+         * AQUI e não em geral: cada célula do cartão leva o seu próprio rótulo
+         * colado ao valor ("CANAL SmokingBars"), por isso o sentido não
+         * depende da sequência — um leitor de ecrã percorre pares completos e
+         * nenhum deles fica ambíguo por vir antes ou depois do título.
+         */
+        order: -1;
+        padding-top: 0;
+        font-size: var(--text-sm);
+        font-weight: 600;
+      }
+
+      & td[data-destaque]::before {
+        content: none;
+      }
+
+      /*
+       * A célula de ações ocupa a largura toda e ganha ar: é a linha onde se
+       * toca, e num cartão ela é o rodapé. Sem isto os três links ficavam
+       * encostados à direita, com 16px de altura e 3px entre eles.
+       */
+      & td[data-accoes] {
+        display: flex;
+        justify-content: flex-start;
+        gap: calc(var(--spacing) * 5);
+        padding-top: calc(var(--spacing) * 3);
+      }
+
+      & td[data-accoes]::before {
+        content: none;
+      }
+    }
+  }
+}
+
 @layer base {
   * {
     border-color: var(--color-border);
+  }
+
+  /*
+   * ESPAÇO PARA O TECLADO — sem isto o compositor do chat não SOBE.
+   *
+   * Com o teclado aberto (comportamento por omissão, `resizes-visual`) a
+   * viewport de layout não encolhe: continua a valer 812px num iPhone, e o
+   * documento continua a ter a altura que tinha. Medido na página de ver:
+   * documento 1164px, janela 812px → o máximo que a página rola são 352px, e o
+   * compositor precisava de subir 365px para passar acima do teclado. Faltavam
+   * 13px de espaço que simplesmente não existiam — a página estava no fim e o
+   * campo ficava atrás do teclado por muito que se mandasse rolar.
+   *
+   * Isto dá ao documento exactamente a folga que falta, e só enquanto ela é
+   * precisa: `--altura-teclado` é escrita pelo `ChatPanel` quando o campo
+   * ganha o foco (a partir de `innerHeight - visualViewport.height`, que é a
+   * medida do teclado a sério) e apagada quando o perde. Fora desse momento
+   * vale 0px e não há padding nenhum.
+   *
+   * Porquê aqui e não `interactive-widget=resizes-content` no viewport: essa
+   * meta resolve o problema onde é suportada — medido, funciona em Chromium e
+   * em WebKit — mas o Safari do iPhone ignora-a, e o iPhone é precisamente
+   * onde as pessoas veem as batalhas. Uma correção que não cobre o caso
+   * principal não é correção.
+   */
+  body {
+    padding-bottom: var(--altura-teclado);
   }
 
   body {

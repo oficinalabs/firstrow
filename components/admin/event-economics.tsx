@@ -124,6 +124,7 @@ export function EventEconomics({
           columns={[
             {
               header: "Evento",
+              destaque: true,
               cell: (r) => (
                 <span className="flex flex-col">
                   <span className="font-semibold">{r.title}</span>

@@ -96,7 +96,7 @@ export default async function EventPage({ params }: { params: Promise<{ eventId:
         {channel ? (
           <Link
             href={channelPath(channel)}
-            className="w-fit text-2sm font-medium text-muted-foreground hover:text-foreground"
+            className="alvo-toque w-fit text-2sm font-medium text-muted-foreground hover:text-foreground"
           >
             ‹ {channel.name}
           </Link>

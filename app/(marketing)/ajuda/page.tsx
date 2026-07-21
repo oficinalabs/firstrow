@@ -40,7 +40,7 @@ export default function AjudaPage() {
           <Link
             key={parte.id}
             href={`${ROTA_AJUDA}#${parte.id}`}
-            className="rounded-sm border border-input px-3 py-1.5 text-2sm font-medium text-foreground-secondary transition-colors hover:bg-muted/60 hover:text-foreground"
+            className="alvo-toque rounded-sm border border-input px-3 py-1.5 text-2sm font-medium text-foreground-secondary transition-colors hover:bg-muted/60 hover:text-foreground"
           >
             {parte.titulo}
           </Link>

@@ -97,6 +97,7 @@ export default async function EarningsPage() {
               columns={[
                 {
                   header: "Mês",
+                  destaque: true,
                   cell: (r) => <span className="font-semibold">{r.monthLabel}</span>,
                 },
                 // A quem se paga esta linha. Só com mais do que um canal — com

@@ -25,7 +25,7 @@ export function PageHeader({
       {backHref ? (
         <Link
           href={backHref}
-          className="self-start text-xs text-muted-foreground transition-colors hover:text-foreground"
+          className="alvo-toque self-start text-xs text-muted-foreground transition-colors hover:text-foreground"
         >
           {backLabel} ‹
         </Link>

@@ -109,7 +109,12 @@ function ChannelContent({ channel, program }: { channel: Channel; program: Chann
             )}
           </section>
         </div>
-        <div className="flex flex-col gap-5">
+        {/* `min-w-0` como na coluna principal, e não por simetria: sem ele a
+            pista do grid crescia até caber o título do evento SEM QUEBRA dentro
+            do AccessCard (que é `truncate`, logo `white-space: nowrap`, logo
+            largura mínima intrínseca = o título inteiro). Medido a 375px:
+            scrollWidth 381 contra 375 de viewport; com `min-w-0`, 375. */}
+        <div className="flex min-w-0 flex-col gap-5">
           <AccessCard upcoming={upcoming} />
           <HowItWorksCard title="Como funciona" lines={COMO_FUNCIONA} />
         </div>

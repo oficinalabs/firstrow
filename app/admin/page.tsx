@@ -139,6 +139,7 @@ export default async function AdminDashboardPage() {
                     // do backoffice. O `-my-2` devolve à célula o espaço que o
                     // alvo de toque de 44px lhe tira (ver `EventTitleLink`).
                     header: "Evento",
+                    destaque: true,
                     cell: (p) => (
                       <EventTitleLink
                         eventId={p.eventId}

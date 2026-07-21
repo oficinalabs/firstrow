@@ -59,7 +59,10 @@ export function BuyersTable({ rows }: { rows: BuyerRow[] }) {
           onChange={(e) => setQuery(e.target.value)}
           placeholder="procurar nome, email ou código…"
           aria-label="Procurar comprador"
-          className="h-9 max-w-66"
+          // `h-9` é a versão compacta para caber ao lado do título no ecrã
+          // grande; no telemóvel volta aos 44px do Input base, que é onde este
+          // campo é mesmo usado — a conferir bilhetes à porta, de pé.
+          className="h-9 max-w-66 toque:min-h-(--alvo-toque)"
         />
       </div>
       {filtered.length === 0 ? (

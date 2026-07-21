@@ -40,7 +40,7 @@ export default async function AdminEventoBilhetesPage({
       <div>
         <Link
           href="/admin/eventos"
-          className="text-xs text-muted-foreground transition-colors hover:text-foreground"
+          className="alvo-toque text-xs text-muted-foreground transition-colors hover:text-foreground"
         >
           ‹ Eventos
         </Link>

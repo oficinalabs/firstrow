@@ -111,6 +111,7 @@ export function ChannelMembers({ channelId, channelName, members, viewerId }: Ch
             columns={[
               {
                 header: "Pessoa",
+                destaque: true,
                 cell: (member) => (
                   <span className="flex flex-col">
                     <span className="font-semibold">
@@ -131,6 +132,7 @@ export function ChannelMembers({ channelId, channelName, members, viewerId }: Ch
               },
               {
                 header: "",
+                accoes: true,
                 numeric: true,
                 cell: (member) => (
                   <span className="flex items-center justify-end gap-3.5">

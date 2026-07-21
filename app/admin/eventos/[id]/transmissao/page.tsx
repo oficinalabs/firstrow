@@ -102,6 +102,7 @@ export default async function TransmissionPage({ params }: { params: Promise<{ i
                 columns={[
                   {
                     header: "Conta",
+                    destaque: true,
                     cell: (s) => <span className="font-mono text-xs">{s.email}</span>,
                   },
                   { header: "Hora", numeric: true, cell: (s) => formatTime(s.revokedAt) },

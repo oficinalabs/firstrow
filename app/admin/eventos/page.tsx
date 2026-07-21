@@ -58,6 +58,9 @@ function EventsTable({
         { header: "Estado", cell: (e) => <EventStatusBadge status={e.status} /> },
         {
           header: "Evento",
+          // Em cartão é o título: sem ele, o cartão era um estado, uma data e
+          // três números sem dizer de que evento se trata.
+          destaque: true,
           // O nome abre o evento. O "Abrir" no fim da linha continua lá — é o
           // que diz que a linha tem para onde ir a quem não experimenta clicar
           // no texto —, mas deixou de ser o único caminho.
@@ -104,11 +107,15 @@ function EventsTable({
         {
           header: "",
           numeric: true,
+          // Em cartão estes três são o rodapé, com espaço entre eles. Sem isto
+          // ficavam encostados à direita, com 16px de altura e 3px de intervalo
+          // — três alvos de dedo à distância de um erro uns dos outros.
+          accoes: true,
           cell: (e) => (
             <span className="flex items-center justify-end gap-3.5">
               <Link
                 href={eventHubPath(e.id)}
-                className="font-sans text-xs font-semibold text-foreground underline-offset-4 hover:underline"
+                className="alvo-toque font-sans text-xs font-semibold text-foreground underline-offset-4 hover:underline"
               >
                 {e.status === "ended" ? "Ver" : "Abrir"}
               </Link>
@@ -119,7 +126,7 @@ function EventsTable({
                 <>
                   <Link
                     href={`/admin/eventos/${e.id}/editar`}
-                    className="font-sans text-xs font-semibold text-muted-foreground underline-offset-4 transition-colors hover:text-foreground hover:underline"
+                    className="alvo-toque font-sans text-xs font-semibold text-muted-foreground underline-offset-4 transition-colors hover:text-foreground hover:underline"
                   >
                     Editar
                   </Link>

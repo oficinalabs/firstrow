@@ -7,10 +7,22 @@ import { cn } from "@/lib/utils";
 const NAV_ITEMS = [
   { key: "inicio", label: "Início", href: "/" },
   { key: "bilhetes", label: "Bilhetes", href: "/bilhetes" },
-  { key: "conta", label: "Conta", href: "/conta" },
 ] as const;
 
-export type ViewerNavKey = (typeof NAV_ITEMS)[number]["key"];
+export type ViewerNavKey = (typeof NAV_ITEMS)[number]["key"] | "conta";
+
+/*
+ * O item de conta é a ÚNICA entrada da navegação cujo destino depende de quem
+ * está a olhar: sem sessão, "Conta" era um convite a clicar para descobrir que
+ * afinal pede para entrar — o dono achou-o ambíguo ("aparece 'Conta' estando ou
+ * não com log in"). Uma função pura (e não mais um `NAV_ITEMS` estático) para
+ * se poder testar as duas respostas sem montar o componente.
+ */
+export function accountNavItem(signedIn: boolean): { label: string; href: string } {
+  return signedIn
+    ? { label: "Conta", href: "/conta" }
+    : { label: "Iniciar Sessão", href: "/entrar" };
+}
 
 /*
  * Moldura do espectador: barra FirstRow (sempre tinta) + conteúdo dark.
@@ -35,19 +47,31 @@ export type ViewerNavKey = (typeof NAV_ITEMS)[number]["key"];
  * as páginas passam por aqui já montado. Para quem não tem poderes ele devolve
  * `null` — o atalho não é escondido, não existe. As `loading.tsx` e as
  * `error.tsx` simplesmente não o passam: um esqueleto não tem sessão para ler.
+ *
+ * O item de conta segue a MESMA regra, mas não pode ser um `ReactNode` pronto
+ * como o `backoffice`: é um dos itens fixos da navegação (sempre lá, ao
+ * contrário do atalho que só aparece a quem gere um canal), por isso entra como
+ * `signedIn?: boolean` — a página é que sabe se há sessão, o shell só escolhe o
+ * rótulo. Sem a prop (as `loading.tsx`/`error.tsx` que não podem lê-la) o
+ * default é `false`: mostra "Iniciar Sessão", nunca "Conta" a quem talvez não
+ * tenha uma — assumir a sessão era o lado errado para se enganar.
  */
 export function ViewerShell({
   active,
   backoffice,
   channel,
+  signedIn = false,
   children,
 }: {
   active?: ViewerNavKey;
   /** `<BackofficeLink />`. Só as páginas de servidor o passam — ver acima. */
   backoffice?: React.ReactNode;
   channel?: Channel;
+  /** Há sessão? Por omissão `false` — ver a nota acima. */
+  signedIn?: boolean;
   children: React.ReactNode;
 }) {
+  const conta = accountNavItem(signedIn);
   return (
     <div
       data-theme="dark"
@@ -88,6 +112,16 @@ export function ViewerShell({
                 {item.label}
               </Link>
             ))}
+            <Link
+              href={conta.href}
+              aria-current={active === "conta" ? "page" : undefined}
+              className={cn(
+                "alvo-toque text-sm font-medium transition-colors hover:text-bar-foreground",
+                active === "conta" ? "text-bar-foreground" : "text-bar-muted",
+              )}
+            >
+              {conta.label}
+            </Link>
             {backoffice}
           </nav>
         </div>

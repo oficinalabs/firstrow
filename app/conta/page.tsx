@@ -22,7 +22,7 @@ export default async function ContaPage() {
   const purchases = await listUserPurchases(user.id);
 
   return (
-    <ViewerShell active="conta" backoffice={<BackofficeLink />}>
+    <ViewerShell active="conta" backoffice={<BackofficeLink />} signedIn>
       {/* Conta é uma superfície de espectador → tema dark do ViewerShell
           (fundação: "espectador = dark por defeito"). O mock desenha-a em
           papel; ver nota no PR sobre uma variante light do shell. */}

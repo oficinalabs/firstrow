@@ -17,6 +17,7 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { SectionHeader } from "@/components/ui/section-header";
 import { ViewerShell } from "@/components/ui/viewer-shell";
 import { type Channel, channelPath } from "@/lib/channels";
+import { getSession } from "@/server/auth-helper";
 import { getChannel } from "@/server/channels";
 import { listEventsByChannel } from "@/server/events";
 
@@ -49,9 +50,15 @@ export default async function ChannelPage({ params }: ChannelParams) {
   } catch {
     rows = null;
   }
+  const session = await getSession();
 
   return (
-    <ViewerShell active="inicio" channel={channel} backoffice={<BackofficeLink />}>
+    <ViewerShell
+      active="inicio"
+      channel={channel}
+      backoffice={<BackofficeLink />}
+      signedIn={Boolean(session?.user)}
+    >
       <ChannelHeader channel={channel} />
       <div className="mx-auto flex w-full max-w-6xl flex-1 flex-col gap-7 px-4 pt-5 md:gap-8 md:px-8 md:pt-6">
         {rows === null ? (

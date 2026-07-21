@@ -13,6 +13,7 @@ import { buttonVariants } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { SectionHeader } from "@/components/ui/section-header";
 import { ViewerShell } from "@/components/ui/viewer-shell";
+import { getSession } from "@/server/auth-helper";
 import { listChannels } from "@/server/channels";
 import { listEvents } from "@/server/events";
 
@@ -50,9 +51,10 @@ export default async function HomePage() {
   } catch {
     overview = null;
   }
+  const session = await getSession();
 
   return (
-    <ViewerShell active="inicio" backoffice={<BackofficeLink />}>
+    <ViewerShell active="inicio" backoffice={<BackofficeLink />} signedIn={Boolean(session?.user)}>
       <div className="mx-auto flex w-full max-w-6xl flex-1 flex-col px-4 md:px-8">
         {overview !== null && overview.live.length > 0 ? (
           <div className="flex flex-col gap-3 pt-5 md:pt-6">

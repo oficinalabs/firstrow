@@ -159,7 +159,7 @@ export default async function WatchPage({ params }: { params: Promise<{ eventId:
    */
   if (phase === "live") {
     return (
-      <ViewerShell channel={channel ?? undefined}>
+      <ViewerShell channel={channel ?? undefined} signedIn>
         <div className="mx-auto w-full max-w-6xl flex-1 px-4 py-4 md:py-6">
           <PalcoComChat
             eventId={eventId}
@@ -187,7 +187,7 @@ export default async function WatchPage({ params }: { params: Promise<{ eventId:
     ) : null;
 
   return (
-    <ViewerShell channel={channel ?? undefined}>
+    <ViewerShell channel={channel ?? undefined} signedIn>
       <div className="mx-auto w-full max-w-6xl flex-1 px-4 py-4 md:py-6">
         <div
           className={

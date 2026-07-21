@@ -53,9 +53,18 @@ servidor e fica registada com motivo `watermark` — para poderes banir a conta.
 Tenta também: pôr `opacity: 0`, ou tapar com um `<div>` por cima sem lhe tocar.
 Apanha as três, entre 0 e 4 segundos.
 
-### 1.5 Ecrã inteiro
+### 1.5 Ecrã inteiro, e o chat por cima
 Carrega no botão de ecrã inteiro (ou tecla `f`). **A marca de água vai com ele** —
 foi preciso pedir ecrã inteiro à moldura em vez de ao iframe.
+
+Já em ecrã inteiro, **liga o chat por cima do vídeo** (botão nos controlos, ou tecla
+`c`). Podes ligar e desligar; a escolha fica lembrada para a próxima. Os controlos
+escondem-se sozinhos com o rato parado — mas **não** em ecrã tátil, onde não há
+hover.
+
+A marca de água continua visível **por cima do chat**: a camada dela é importada
+pelo painel, que fica um degrau abaixo. Se as duas se cruzarem, ganha a marca — de
+propósito.
 
 Repara que o player da Cloudflare **já não tem botão de ecrã inteiro próprio**, e
 que o Picture-in-Picture está desligado: ambos eram portas de saída para um vídeo
@@ -124,7 +133,16 @@ luminosidade se a cor escolhida for ilegível.
 `/admin/pagamentos` — **dinheiro em risco**: compras a meio, com a referência da
 Eupago ao lado para poderes perguntar-lhes.
 
-### 2.7 A tua vista global
+### 2.7 A agenda da equipa (entra como `staff` para ver)
+`/admin/agenda` — a lista de eventos **sem um único valor**: título, data, estado, e
+os links para o que a equipa pode fazer. As colunas de dinheiro nem sequer são
+buscadas à base de dados; se um bilhete tem preço, isso vira um booleano dentro do
+Postgres e o preço nunca sai de lá.
+
+É o que o `staff` vê ao entrar em `/admin` — antes aterrava no scanner, que é servido
+sem barra lateral, e ficava sem forma de chegar a mais nada.
+
+### 2.8 A tua vista global
 `/admin/plataforma` — só tu a vês. Receita por canal, curva de espectadores,
 **custo de vídeo vs comissão** (o rácio que decide o negócio), conversão
 registo→compra, e a saúde dos pagamentos.

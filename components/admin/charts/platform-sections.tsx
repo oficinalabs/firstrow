@@ -407,11 +407,14 @@ export function ConcurrencySection({
   events,
   selectedId,
   period,
+  channelParam = null,
 }: {
   concurrency: EventConcurrency | null;
   events: EventWithSessions[];
   selectedId: string | null;
   period: string;
+  /** O canal filtrado, para o formulário GET o preservar ao trocar de evento. */
+  channelParam?: string | null;
 }) {
   const selecionado = events.find((e) => e.eventId === selectedId) ?? null;
   const series: ChartSeries[] = [
@@ -452,6 +455,9 @@ export function ConcurrencySection({
           */}
           <form method="get" className="mb-3 flex flex-wrap items-end gap-2">
             <input type="hidden" name="periodo" value={period} />
+            {/* O canal filtrado viaja escondido, como o período: trocar de
+                evento não pode fazer perder o canal que se estava a ver. */}
+            {channelParam ? <input type="hidden" name="canal" value={channelParam} /> : null}
             <label className="flex flex-col gap-1">
               <span className="font-mono text-2xs font-semibold uppercase tracking-label text-muted-foreground">
                 Evento

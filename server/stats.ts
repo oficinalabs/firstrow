@@ -1713,3 +1713,194 @@ export async function getPlatformHealth(
     superseded: supersededRow?.n ?? 0,
   };
 }
+
+// ── Tendências: o período contra o período anterior equivalente ─────────────
+
+/*
+ * ============================================================================
+ *  SUBIR E DESCER — a variação face ao período anterior, sem repetir o do fuso
+ * ============================================================================
+ *
+ * O dono quer "ver coisas a subir e a descer": cada número de topo ganha a sua
+ * variação contra o MESMO intervalo imediatamente antes. 90 dias comparam-se com
+ * os 90 dias anteriores; 30 com os 30 de trás; 12 meses com os 12 meses antes.
+ *
+ * ────────────────────────────────────────────────────────────────────────────
+ *  AS DUAS FRONTEIRAS SAEM DO MESMO `periodStart` — E ISSO É A DEFESA DO FUSO
+ * ────────────────────────────────────────────────────────────────────────────
+ *
+ * Já houve um bug de fuso nesta dashboard (um `sql<Date>` que não passava pelo
+ * conversor do drizzle e o driver lia no fuso do processo). A tentação aqui é
+ * inventar uma conta nova para o intervalo de trás — e reabrir a porta. Não se
+ * faz: o início do período ATUAL e o do ANTERIOR saem os dois do MESMO
+ * `periodStart`, que já calcula a meia-noite de Lisboa como deve ser.
+ *
+ *   início atual    = periodStart(period, agora)
+ *   início anterior = periodStart(period, agora − dias-do-período)
+ *
+ * A janela anterior é [início anterior, início atual) e a atual é [início atual,
+ * ∞) — as mesmas que as secções já desenham, por isso o valor "atual" de cada
+ * tendência bate com o total da secção respetiva (verificado em teste). Nenhuma
+ * soma um `N × 86 400 000 ms` a um instante para achar a fronteira: esse é o
+ * anti-padrão que o `bucketKeysBetween` documenta, porque em Portugal a janela
+ * atravessa a mudança de hora e o "somar milissegundos" devolve o dia errado.
+ * Aqui só se recua o `agora` e se deixa o cálculo do dia de calendário — o
+ * mesmo, já corrigido — a `periodStart`.
+ *
+ * ⚠️  Os REGISTOS são a plataforma inteira, SEMPRE — como em `getSignupsByPeriod`,
+ * uma conta não nasce dentro de um canal. A tendência de registos ignora o
+ * âmbito de propósito, e o ecrã di-lo quando há um canal filtrado.
+ */
+
+/** Uma métrica com o valor no período e no período anterior equivalente. */
+export type Trend = {
+  current: number;
+  previous: number;
+  /**
+   * Variação relativa (`(atual − anterior) / anterior`), ou `null` quando o
+   * anterior é zero — aí não há base de comparação e o ecrã diz "novo", nunca
+   * uma percentagem inventada de dividir por zero.
+   */
+  deltaRatio: number | null;
+};
+
+export type DashboardTrends = {
+  /** Receita bruta (PPV + bilhetes), em cêntimos. */
+  revenueCents: Trend;
+  /** Espectadores distintos que viram alguma coisa (sessões do player). */
+  viewers: Trend;
+  /** Pessoas distintas que compraram (PPV ou bilhete), sem dupla contagem. */
+  buyers: Trend;
+  /** Contas novas — SEMPRE da plataforma inteira, ver a nota acima. */
+  signups: Trend;
+  /** Rótulo do período ("90 dias") e da comparação ("vs 90 dias anteriores"). */
+  periodLabel: string;
+  previousLabel: string;
+};
+
+function trendOf(current: number, previous: number): Trend {
+  // `null` e não `0/0`: o badge distingue "novo" (anterior 0, atual > 0) de "sem
+  // atividade" (ambos 0) a partir do próprio `current`.
+  return { current, previous, deltaRatio: previous === 0 ? null : (current - previous) / previous };
+}
+
+/** O início do período anterior equivalente — pelo MESMO `periodStart` corrigido. */
+function previousPeriodStart(period: PeriodKey, now: Date): Date {
+  return periodStart(period, new Date(now.getTime() - PERIODS[period].days * DAY_MS));
+}
+
+/**
+ * As quatro tendências de topo da dashboard: receita, espectadores, compradores
+ * e registos, cada uma com o valor do período e do período anterior equivalente.
+ *
+ * Uma só função e não quatro: a fronteira das janelas é frágil (ver a nota
+ * acima) e tem de ser calculada UMA vez, aqui, para as quatro métricas a
+ * partilharem. Espalhá-la era espalhar o risco do fuso.
+ */
+export async function getDashboardTrends(
+  scope: ChannelScope,
+  period: PeriodKey,
+  now = new Date(),
+): Promise<DashboardTrends> {
+  const inicioAtual = periodStart(period, now);
+  const inicioAnterior = previousPeriodStart(period, now);
+  const mine = inChannelScope(scope);
+
+  // As duas janelas, escritas com os operadores do drizzle (datas ligadas como
+  // as outras queries desta página) e não à mão dentro do texto SQL.
+  const naAtual = (col: AnyPgColumn) => gte(col, inicioAtual);
+  const naAnterior = (col: AnyPgColumn) => and(gte(col, inicioAnterior), lt(col, inicioAtual));
+
+  // `sum(...) filter (where ...)` e `count(...) filter (...)`: UMA query traz as
+  // duas janelas, e ambas partilham exatamente o mesmo âmbito e a mesma condição
+  // de base — dois pedidos separados eram duas oportunidades de os desalinhar.
+  const somaSe = (valor: AnyPgColumn, janela: SQL | undefined) =>
+    sql<number>`coalesce(sum(${valor}) filter (where ${janela}), 0)`.mapWith(Number);
+  const distintosSe = (col: AnyPgColumn, janela: SQL | undefined) =>
+    sql<number>`count(distinct ${col}) filter (where ${janela})`.mapWith(Number);
+
+  const [ppv, bilhetes, espectadores, registos, ppvCompradores, bilheteCompradores] =
+    await Promise.all([
+      // Receita PPV, as duas janelas de uma vez.
+      db
+        .select({
+          atual: somaSe(events.priceCents, naAtual(entitlements.createdAt)),
+          anterior: somaSe(events.priceCents, naAnterior(entitlements.createdAt)),
+        })
+        .from(entitlements)
+        .innerJoin(events, eq(entitlements.eventId, events.id))
+        .where(and(activeEntitlement, gte(entitlements.createdAt, inicioAnterior), mine)),
+      // Receita de bilhetes: `tickets.price_cents`, a cópia por bilhete.
+      db
+        .select({
+          atual: somaSe(tickets.priceCents, naAtual(tickets.createdAt)),
+          anterior: somaSe(tickets.priceCents, naAnterior(tickets.createdAt)),
+        })
+        .from(tickets)
+        .innerJoin(events, eq(tickets.eventId, events.id))
+        .where(and(paidTicket, gte(tickets.createdAt, inicioAnterior), mine)),
+      // Espectadores distintos por janela — pelo INÍCIO da sessão, como o custo.
+      db
+        .select({
+          atual: distintosSe(playbackSessions.userId, naAtual(playbackSessions.startedAt)),
+          anterior: distintosSe(playbackSessions.userId, naAnterior(playbackSessions.startedAt)),
+        })
+        .from(playbackSessions)
+        .innerJoin(events, eq(playbackSessions.eventId, events.id))
+        .where(and(gte(playbackSessions.startedAt, inicioAnterior), mine)),
+      // Registos — SEM âmbito, a plataforma inteira (ver a nota acima).
+      db
+        .select({
+          atual: sql<number>`count(*) filter (where ${naAtual(user.createdAt)})`.mapWith(Number),
+          anterior: sql<number>`count(*) filter (where ${naAnterior(user.createdAt)})`.mapWith(
+            Number,
+          ),
+        })
+        .from(user)
+        .where(gte(user.createdAt, inicioAnterior)),
+      // Compradores distintos: um por origem, unidos em JS para não contar duas
+      // vezes quem comprou PPV e bilhete. `bool_or` diz em que janela(s) comprou.
+      db
+        .select({
+          userId: entitlements.userId,
+          atual: sql<boolean>`bool_or(${naAtual(entitlements.createdAt)})`,
+          anterior: sql<boolean>`bool_or(${naAnterior(entitlements.createdAt)})`,
+        })
+        .from(entitlements)
+        .innerJoin(events, eq(entitlements.eventId, events.id))
+        .where(and(activeEntitlement, gte(entitlements.createdAt, inicioAnterior), mine))
+        .groupBy(entitlements.userId),
+      db
+        .select({
+          userId: tickets.userId,
+          atual: sql<boolean>`bool_or(${naAtual(tickets.createdAt)})`,
+          anterior: sql<boolean>`bool_or(${naAnterior(tickets.createdAt)})`,
+        })
+        .from(tickets)
+        .innerJoin(events, eq(tickets.eventId, events.id))
+        .where(and(paidTicket, gte(tickets.createdAt, inicioAnterior), mine))
+        .groupBy(tickets.userId),
+    ]);
+
+  // A união dos compradores das duas origens, janela a janela — é o que impede
+  // que quem comprou PPV E bilhete conte como dois.
+  const compradoresAtuais = new Set<string>();
+  const compradoresAnteriores = new Set<string>();
+  for (const linha of [...ppvCompradores, ...bilheteCompradores]) {
+    if (linha.atual) compradoresAtuais.add(linha.userId);
+    if (linha.anterior) compradoresAnteriores.add(linha.userId);
+  }
+
+  const receitaAtual = (ppv[0]?.atual ?? 0) + (bilhetes[0]?.atual ?? 0);
+  const receitaAnterior = (ppv[0]?.anterior ?? 0) + (bilhetes[0]?.anterior ?? 0);
+
+  return {
+    revenueCents: trendOf(receitaAtual, receitaAnterior),
+    viewers: trendOf(espectadores[0]?.atual ?? 0, espectadores[0]?.anterior ?? 0),
+    buyers: trendOf(compradoresAtuais.size, compradoresAnteriores.size),
+    signups: trendOf(registos[0]?.atual ?? 0, registos[0]?.anterior ?? 0),
+    periodLabel: PERIODS[period].label,
+    // Sem "vs": o rótulo entra em frases já construídas ("comparam com os …").
+    previousLabel: `${PERIODS[period].label} anteriores`,
+  };
+}

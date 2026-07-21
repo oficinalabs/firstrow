@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import type { ChannelScope } from "@/server/authz";
 import {
   bucketKeysBetween,
+  getDashboardTrends,
   getEventConcurrency,
   getMonthlyStatement,
   getPlatformHealth,
@@ -670,6 +671,190 @@ describe.skipIf(!temBaseDeDados())("dashboard da plataforma", () => {
 
       const saude = await getPlatformHealth(TODOS, "90d", AGORA);
       expect(saude.blocked).toEqual([{ reason: "no_access", total: 1 }]);
+    });
+  });
+
+  /*
+   * ==========================================================================
+   *  TENDÊNCIAS — o período contra o período anterior, ao número
+   * ==========================================================================
+   *
+   * A regra da sessão: nenhuma variação se afirma sem se semear valor conhecido
+   * em DOIS períodos e calcular a conta à mão. Aqui está o cenário, com as
+   * janelas de 90 dias a contar de 2026-07-20 já resolvidas:
+   *
+   *   início do período ATUAL    ≈ 2026-04-22 (Lisboa)  → [atual, ∞)
+   *   início do período ANTERIOR ≈ 2026-01-22 (Lisboa)  → [anterior, atual)
+   *
+   * Por isso 2026-07-15 cai no ATUAL, 2026-03-01 no ANTERIOR, e 2025-06-01 fica
+   * de fora dos dois — o controlo negativo.
+   *
+   * O cenário, pessoa a pessoa (todas com `createdAt` no dia da sua atividade,
+   * para os REGISTOS serem contáveis):
+   *
+   *   ATUAL (2026-07-15)
+   *     A  regista-se · compra PPV (10 €) · vê             → comprador + espectador
+   *     B  regista-se · compra PPV (10 €) · vê             → comprador + espectador
+   *     C  regista-se · compra PPV (10 €) · compra bilhete → comprador das DUAS origens
+   *     D  regista-se · compra bilhete (20 €)              → comprador só de bilhete
+   *   ANTERIOR (2026-03-01)
+   *     E  regista-se · compra PPV (10 €)                  → comprador
+   *     F  regista-se · vê                                 → espectador
+   *   FORA (2025-06-01)
+   *     G  regista-se · compra PPV · vê                    → não conta em lado nenhum
+   *
+   * Contas à mão:
+   *                        ATUAL            ANTERIOR       variação
+   *   Receita   3×1000 + 2×2000 = 7000      1×1000 = 1000  (7000−1000)/1000 = 6,0
+   *   Espectadores  {A,B}       = 2         {F}    = 1      (2−1)/1        = 1,0
+   *   Compradores {A,B,C,D}     = 4         {E}    = 1      (4−1)/1        = 3,0
+   *   Registos  {A,B,C,D}       = 4         {E,F}  = 2      (4−2)/2        = 1,0
+   *
+   * O 4 dos compradores (e não 5) é a prova da UNIÃO: o C comprou PPV e bilhete
+   * e conta UMA vez, não duas.
+   */
+  describe("tendências: período contra período anterior", () => {
+    const CURRENT = new Date("2026-07-15T10:00:00Z");
+    const PRIOR = new Date("2026-03-01T10:00:00Z");
+    const FORA = new Date("2025-06-01T10:00:00Z");
+    const PPV = 1000;
+    const BILHETE = 2000;
+
+    async function cenarioTendencia() {
+      const canal = await criarCanal();
+      const evento = await criarEvento(canal.id, { priceCents: PPV, startsAt: AGORA });
+
+      const criarEspectador = async (userId: string, quando: Date) => {
+        await criarSessao(userId, evento.id, {
+          startedAt: new Date(`${quando.toISOString().slice(0, 10)}T21:00:00Z`),
+          lastHeartbeatAt: new Date(`${quando.toISOString().slice(0, 10)}T21:30:00Z`),
+        });
+      };
+
+      // ATUAL
+      const a = await criarUtilizador({ createdAt: CURRENT });
+      await criarEntitlement(a.id, evento.id, { status: "active", createdAt: CURRENT });
+      await criarEspectador(a.id, CURRENT);
+      const b = await criarUtilizador({ createdAt: CURRENT });
+      await criarEntitlement(b.id, evento.id, { status: "active", createdAt: CURRENT });
+      await criarEspectador(b.id, CURRENT);
+      const c = await criarUtilizador({ createdAt: CURRENT });
+      await criarEntitlement(c.id, evento.id, { status: "active", createdAt: CURRENT });
+      await criarBilhete(c.id, evento.id, {
+        status: "issued",
+        priceCents: BILHETE,
+        createdAt: CURRENT,
+      });
+      const d = await criarUtilizador({ createdAt: CURRENT });
+      await criarBilhete(d.id, evento.id, {
+        status: "issued",
+        priceCents: BILHETE,
+        createdAt: CURRENT,
+      });
+
+      // ANTERIOR
+      const e = await criarUtilizador({ createdAt: PRIOR });
+      await criarEntitlement(e.id, evento.id, { status: "active", createdAt: PRIOR });
+      const f = await criarUtilizador({ createdAt: PRIOR });
+      await criarEspectador(f.id, PRIOR);
+
+      // FORA — o controlo negativo: não pode entrar em nenhuma das janelas.
+      const g = await criarUtilizador({ createdAt: FORA });
+      await criarEntitlement(g.id, evento.id, { status: "active", createdAt: FORA });
+      await criarEspectador(g.id, FORA);
+
+      return { canal, evento };
+    }
+
+    it("as quatro variações são as calculadas à mão", async () => {
+      await cenarioTendencia();
+      const trends = await getDashboardTrends(TODOS, "90d", AGORA);
+
+      expect(trends.revenueCents.current).toBe(7000);
+      expect(trends.revenueCents.previous).toBe(1000);
+      expect(trends.revenueCents.deltaRatio).toBeCloseTo(6, 10);
+
+      expect(trends.viewers.current).toBe(2);
+      expect(trends.viewers.previous).toBe(1);
+      expect(trends.viewers.deltaRatio).toBeCloseTo(1, 10);
+
+      // 4 e não 5: o C comprou PPV E bilhete e conta uma só vez.
+      expect(trends.buyers.current).toBe(4);
+      expect(trends.buyers.previous).toBe(1);
+      expect(trends.buyers.deltaRatio).toBeCloseTo(3, 10);
+
+      expect(trends.signups.current).toBe(4);
+      expect(trends.signups.previous).toBe(2);
+      expect(trends.signups.deltaRatio).toBeCloseTo(1, 10);
+
+      expect(trends.periodLabel).toBe("90 dias");
+      expect(trends.previousLabel).toBe("90 dias anteriores");
+    });
+
+    it("o valor ATUAL bate, ao cêntimo, com o total da secção de receita", async () => {
+      // A prova de que as duas janelas usam a MESMA lógica de datas já corrigida:
+      // a receita "atual" da tendência é, exatamente, o que o gráfico de receita
+      // soma para o mesmo período — senão haveria dois números para o mesmo
+      // dinheiro no mesmo ecrã.
+      await cenarioTendencia();
+      const [trends, serie] = await Promise.all([
+        getDashboardTrends(TODOS, "90d", AGORA),
+        getRevenueByPeriod(TODOS, "90d", AGORA),
+      ]);
+      expect(trends.revenueCents.current).toBe(serie.totals.ppvCents + serie.totals.ticketCents);
+    });
+
+    it("sem período anterior, a variação é `null` — «novo», nunca +100 %", async () => {
+      // Só atividade no período atual: dividir por zero não é subir, é não ter
+      // com quê comparar. O ecrã mostra "novo"; a query devolve `null`.
+      const canal = await criarCanal();
+      const evento = await criarEvento(canal.id, { priceCents: PPV, startsAt: AGORA });
+      const pessoa = await criarUtilizador({ createdAt: CURRENT });
+      await criarEntitlement(pessoa.id, evento.id, { status: "active", createdAt: CURRENT });
+
+      const trends = await getDashboardTrends(TODOS, "90d", AGORA);
+      expect(trends.revenueCents.previous).toBe(0);
+      expect(trends.revenueCents.current).toBe(PPV);
+      expect(trends.revenueCents.deltaRatio).toBeNull();
+    });
+
+    it("a base vazia dá tudo a zero e sem variação — nunca uma seta inventada", async () => {
+      const trends = await getDashboardTrends(TODOS, "90d", AGORA);
+      for (const t of [trends.revenueCents, trends.viewers, trends.buyers, trends.signups]) {
+        expect(t.current).toBe(0);
+        expect(t.previous).toBe(0);
+        expect(t.deltaRatio).toBeNull();
+      }
+    });
+
+    it("o filtro de canal estreita receita e compradores, mas os registos ficam globais", async () => {
+      const { canal } = await cenarioTendencia();
+      // Um segundo canal, com atividade no período atual, que o filtro do
+      // primeiro NÃO pode ver no dinheiro — mas cujos registos CONTAM à mesma,
+      // porque uma conta não pertence a canal nenhum.
+      const outro = await criarCanal();
+      const eventoOutro = await criarEvento(outro.id, { priceCents: 5000, startsAt: AGORA });
+      const forasteiro = await criarUtilizador({ createdAt: CURRENT });
+      await criarEntitlement(forasteiro.id, eventoOutro.id, {
+        status: "active",
+        createdAt: CURRENT,
+      });
+
+      const soPrimeiro = await getDashboardTrends(
+        { all: false, channelIds: [canal.id] },
+        "90d",
+        AGORA,
+      );
+
+      // Receita e compradores do primeiro canal, sem um cêntimo nem uma pessoa
+      // do outro.
+      expect(soPrimeiro.revenueCents.current).toBe(7000);
+      expect(soPrimeiro.buyers.current).toBe(4);
+      // Registos: A,B,C,D + E,F (do cenário) + o forasteiro, todos criados nas
+      // janelas — a plataforma inteira. 5 no atual (A,B,C,D,forasteiro), 2 no
+      // anterior (E,F).
+      expect(soPrimeiro.signups.current).toBe(5);
+      expect(soPrimeiro.signups.previous).toBe(2);
     });
   });
 });

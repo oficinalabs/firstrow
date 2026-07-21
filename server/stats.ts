@@ -542,7 +542,22 @@ export async function listBuyers(scope: ChannelScope): Promise<BuyerRow[]> {
  * `round(sum(...))`), por isso a mudança de agrupamento não mexe um cêntimo no
  * total: mudar de sítio a soma de valores já arredondados dá o mesmo.
  */
-export async function getMonthlyStatement(scope: ChannelScope): Promise<{
+/**
+ * O extrato mensal. `period` é opcional e vem só do ecrã — a Cloudflare/outros
+ * consumidores continuam a chamar sem ele e recebem TODOS os meses, como
+ * sempre: o comportamento por omissão não muda, e os testes de identidade que
+ * comparam este extrato com a dashboard global continuam a passar sem saber
+ * que este parâmetro existe.
+ *
+ * Filtra-se a lista já agrupada por mês, não a query em si: aos volumes desta
+ * plataforma são poucas dezenas de linhas, e reaproveitar o mesmo `periodStart`
+ * da dashboard (em vez de uma janela nova) é o que garante que "90 dias" quer
+ * dizer o mesmo nos dois ecrãs.
+ */
+export async function getMonthlyStatement(
+  scope: ChannelScope,
+  period?: PeriodKey,
+): Promise<{
   commissionPct: number;
   rows: MonthlyStatementRow[];
 }> {
@@ -663,7 +678,11 @@ export async function getMonthlyStatement(scope: ChannelScope): Promise<{
     // `channelCreatedAt` serviu a ordem e não tem que ir para o ecrã.
     .map(({ channelCreatedAt: _ordem, ...row }) => row);
 
-  return { commissionPct: pct, rows };
+  const emJanela = period
+    ? rows.filter((r) => monthKeyStart(r.monthKey) >= periodStart(period))
+    : rows;
+
+  return { commissionPct: pct, rows: emJanela };
 }
 
 /*
@@ -1008,11 +1027,24 @@ const DAY_MS = 86_400_000;
  * um corte a meio do dia partia o primeiro balde em dois e a primeira coluna do
  * gráfico aparecia sempre mais baixa do que as outras, sem ser por vender menos.
  */
-function periodStart(period: PeriodKey, now = new Date()): Date {
+export function periodStart(period: PeriodKey, now = new Date()): Date {
   const { days, unit } = PERIODS[period];
   const { year, month, day } = lisbonParts(new Date(now.getTime() - (days - 1) * DAY_MS));
   // Em meses, o período abre no dia 1 — senão o primeiro balde é um mês cortado.
   return unit === "month" ? lisbonMidnightUtc(year, month, 1) : lisbonMidnightUtc(year, month, day);
+}
+
+/**
+ * O primeiro instante de um `monthKey` ("YYYY-MM") — meia-noite de Lisboa do
+ * dia 1. Mesma lógica de `periodStart`, para as duas nunca poderem discordar
+ * sobre o que é "o mesmo mês": já houve aqui um bug de fuso horário (um
+ * `sql<Date>` que não passava pelo conversor do Drizzle e lia no fuso do
+ * processo), e comparar datas construídas por dois caminhos diferentes era
+ * como reabri-lo.
+ */
+export function monthKeyStart(monthKey: string): Date {
+  const [year, month] = monthKey.split("-").map(Number);
+  return lisbonMidnightUtc(year, month, 1);
 }
 
 // ── Baldes de calendário ────────────────────────────────────────────────────

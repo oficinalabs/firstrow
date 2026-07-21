@@ -9,6 +9,7 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { SectionHeader } from "@/components/ui/section-header";
 import { ViewerShell } from "@/components/ui/viewer-shell";
 import { type Channel, channelPath } from "@/lib/channels";
+import { getSession } from "@/server/auth-helper";
 import { getChannel } from "@/server/channels";
 import { listEvents, listEventsByChannel } from "@/server/events";
 
@@ -50,9 +51,15 @@ export default async function VodPage({ searchParams }: VodParams) {
   const voltar = channel
     ? { href: channelPath(channel), label: "‹ Voltar ao canal" }
     : { href: "/", label: "‹ Voltar ao início" };
+  const session = await getSession();
 
   return (
-    <ViewerShell active="inicio" channel={channel ?? undefined} backoffice={<BackofficeLink />}>
+    <ViewerShell
+      active="inicio"
+      channel={channel ?? undefined}
+      backoffice={<BackofficeLink />}
+      signedIn={Boolean(session?.user)}
+    >
       <div className="mx-auto flex w-full max-w-6xl flex-1 flex-col px-4 pt-5 md:px-8 md:pt-6">
         <SectionHeader
           eyebrow={channel?.name}

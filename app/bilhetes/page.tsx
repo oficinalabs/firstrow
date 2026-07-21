@@ -20,7 +20,7 @@ export default async function BilhetesPage() {
   const usados = bilhetes.filter((t) => t.status === "used");
 
   return (
-    <ViewerShell active="bilhetes" backoffice={<BackofficeLink />}>
+    <ViewerShell active="bilhetes" backoffice={<BackofficeLink />} signedIn>
       <section className="mx-auto flex w-full max-w-md flex-1 flex-col gap-4 px-4 py-6 pb-10">
         <h1 className="font-display text-xl font-extrabold tracking-display">Os meus bilhetes</h1>
 

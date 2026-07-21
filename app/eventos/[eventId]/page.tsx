@@ -91,7 +91,12 @@ export default async function EventPage({ params }: { params: Promise<{ eventId:
   const ticketConsent = event.ticketPriceCents != null ? copiaCliente("bilhete") : null;
 
   return (
-    <ViewerShell active="inicio" channel={channel ?? undefined} backoffice={<BackofficeLink />}>
+    <ViewerShell
+      active="inicio"
+      channel={channel ?? undefined}
+      backoffice={<BackofficeLink />}
+      signedIn={Boolean(user)}
+    >
       <div className="mx-auto flex w-full max-w-xl flex-1 flex-col px-4 pt-4 md:pt-6">
         {channel ? (
           <Link

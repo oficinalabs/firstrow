@@ -91,6 +91,29 @@ const PERMISSIONS_POLICY = [
  *  4. zero violações inesperadas → mudar a chave do cabeçalho abaixo de
  *     "Content-Security-Policy-Report-Only" para "Content-Security-Policy".
  */
+/*
+ * O domínio público do bucket R2, onde vivem os logos e os banners que as ligas
+ * carregam pelo backoffice (ver `lib/r2.ts`).
+ *
+ * Vem do ambiente e não fixo no código porque muda com a conta e porque um dia
+ * passará a ser um domínio próprio. Sem a variável fica `null` e o resto do
+ * ficheiro nem repara — é a mesma degradação que `lib/startup-check.ts` anuncia.
+ *
+ * O `try` não é excesso de zelo: uma variável mal escrita rebentava o BUILD com
+ * um erro de `new URL` que não aponta a lado nenhum.
+ */
+const R2_PUBLIC = (() => {
+  const raw = (process.env.R2_PUBLIC_URL ?? "").trim();
+  if (!raw) return null;
+  try {
+    const url = new URL(raw);
+    return { origin: url.origin, hostname: url.hostname, protocol: url.protocol };
+  } catch {
+    console.warn(`[next.config] R2_PUBLIC_URL não é um URL válido: ${raw}`);
+    return null;
+  }
+})();
+
 const CSP_REPORT_ONLY = [
   "default-src 'self'",
   /*
@@ -102,7 +125,13 @@ const CSP_REPORT_ONLY = [
    */
   `script-src 'self' 'unsafe-inline'${isDev ? " 'unsafe-eval'" : ""}`,
   "style-src 'self' 'unsafe-inline'",
-  `img-src 'self' data: blob: ${CF_STREAM_DOMAINS.join(" ")}`,
+  /*
+   * O bucket R2 entra aqui por causa da PRÉ-VISUALIZAÇÃO do backoffice, que é
+   * um `<img>` direto (a pré-visualização local é um `blob:`, que o
+   * optimizador não sabe servir). Nas páginas públicas as imagens passam pelo
+   * `/_next/image`, que é da nossa origem e já cabia no `'self'`.
+   */
+  `img-src 'self' data: blob:${R2_PUBLIC ? ` ${R2_PUBLIC.origin}` : ""} ${CF_STREAM_DOMAINS.join(" ")}`,
   "font-src 'self' data:",
   /*
    * Só 'self': o Better Auth e as nossas rotas são todos da mesma origem, e o
@@ -191,6 +220,30 @@ const nextConfig: NextConfig = {
    * CVEs vale a pena tentar — e não custa nada.
    */
   poweredByHeader: false,
+
+  /*
+   * As imagens de canal vêm do bucket R2, e o `next/image` recusa por omissão
+   * tudo o que não esteja aqui. Não é chatice: é o que impede que gravar um
+   * `logo_url` apontado a um servidor de fora ponha o nosso optimizador a
+   * buscar-lhe conteúdo — e a servi-lo com o nosso domínio por cima.
+   *
+   * Sem `R2_PUBLIC_URL` não se declara padrão nenhum: um `remotePatterns` vazio
+   * é exactamente o comportamento de antes deste upload existir.
+   *
+   * A dupla com o `foreignImages()` de `app/admin/canais/actions.ts` é
+   * deliberada: um recusa gravar o que não é nosso, o outro recusa servi-lo.
+   */
+  images: R2_PUBLIC
+    ? {
+        remotePatterns: [
+          {
+            protocol: R2_PUBLIC.protocol.replace(":", "") as "https" | "http",
+            hostname: R2_PUBLIC.hostname,
+            pathname: "/**",
+          },
+        ],
+      }
+    : undefined,
 
   /*
    * NOTA: não se liga `experimental.authInterrupts`.

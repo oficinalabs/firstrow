@@ -17,9 +17,11 @@
  * Só imprime o que está em falta: com tudo configurado, o arranque é silencioso.
  */
 
+import { R2_VARS } from "@/lib/r2";
+
 type Capability = {
   nome: string;
-  vars: string[];
+  vars: readonly string[];
   /** O que deixa de funcionar sem isto. Escrito para ser lido à pressa. */
   semIsto: string;
   /** `true` quando a falha custa dinheiro ou acesso — sai como erro, não aviso. */
@@ -63,6 +65,20 @@ const CAPABILITIES: Capability[] = [
     vars: ["EUPAGO_WEBHOOK_SECRET"],
     semIsto: "paga-se e não se ativa nada — o webhook recusa tudo por falta de assinatura",
     grave: true,
+  },
+  {
+    nome: "Imagens de canal",
+    /*
+     * As cinco, e não quatro: o `R2_BUCKET` não se adivinha a partir do
+     * `R2_PUBLIC_URL` — o domínio público de um bucket R2 é um identificador
+     * opaco (`pub-<hash>.r2.dev`) que não tem o nome lá dentro.
+     */
+    vars: R2_VARS,
+    semIsto:
+      "o backoffice não deixa carregar logo nem banner (o resto do canal grava na mesma, e as imagens já gravadas continuam a aparecer)",
+    // Não-grave a sério: sem isto ninguém deixa de comprar, de ver ou de entrar.
+    // Um canal sem logo mostra as iniciais, que é o que já fazia antes.
+    grave: false,
   },
   {
     nome: "Divisão do dinheiro com a liga (split)",

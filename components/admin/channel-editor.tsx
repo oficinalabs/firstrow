@@ -65,6 +65,9 @@ export function ChannelEditor({ channel }: ChannelEditorProps) {
       initialValues={channel ? toFormValues(channel) : undefined}
       onSubmit={submit}
       mode={channel ? "edit" : "create"}
+      // O upload de imagens precisa de saber a que canal pertencem. Em criação
+      // vai vazio, e a rota exige a FirstRow — ver app/api/uploads/canal.
+      channelId={channel?.id}
     />
   );
 }

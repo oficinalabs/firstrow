@@ -12,6 +12,7 @@ import {
   slugify,
   validateChannelForm,
 } from "@/components/admin/channel-rules";
+import { ImageUpload } from "@/components/admin/image-upload";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Field, FieldError, FieldHint, FieldLabel } from "@/components/ui/field";
@@ -62,11 +63,22 @@ export type ChannelFormProps = {
   /** Chamado só com um canal já validado. Devolver erro reabre o formulário. */
   onSubmit: (draft: ChannelDraft) => Promise<ChannelSubmitResult>;
   mode?: "create" | "edit";
+  /**
+   * O canal em edição. Vai para o upload de imagens, que precisa de saber a
+   * que canal pertence o que se está a carregar — em criação não há nenhum, e
+   * a rota trata disso (só a FirstRow cria canais).
+   */
+  channelId?: string;
 };
 
 const NO_ERRORS: ChannelFieldErrors = {};
 
-export function ChannelForm({ initialValues, onSubmit, mode = "create" }: ChannelFormProps) {
+export function ChannelForm({
+  initialValues,
+  onSubmit,
+  mode = "create",
+  channelId,
+}: ChannelFormProps) {
   const [values, setValues] = useState<ChannelFormValues>(() => {
     const merged = { ...EMPTY_CHANNEL_VALUES, ...initialValues };
     // Nome dado sem endereço (criar a partir de um rascunho, por exemplo): o
@@ -212,46 +224,35 @@ export function ChannelForm({ initialValues, onSubmit, mode = "create" }: Channe
               />
               <FieldError>{errors.tagline}</FieldError>
             </Field>
+          </CardContent>
+        </Card>
 
-            <div className="grid gap-4 md:grid-cols-2">
-              <Field>
-                <FieldLabel htmlFor="channel-logo">Logo</FieldLabel>
-                <Input
-                  id="channel-logo"
-                  name="logoUrl"
-                  value={values.logoUrl}
-                  onChange={(event) => set("logoUrl", event.target.value)}
-                  placeholder="/brand/liga-do-norte.svg"
-                  spellCheck={false}
-                  autoCapitalize="none"
-                  autoComplete="off"
-                  aria-invalid={errors.logoUrl ? true : undefined}
-                />
-                <FieldError>{errors.logoUrl}</FieldError>
-                {!errors.logoUrl && (
-                  <FieldHint>Quadrado, já no site. Sem logo ficam as iniciais.</FieldHint>
-                )}
-              </Field>
-
-              <Field>
-                <FieldLabel htmlFor="channel-banner">Banner</FieldLabel>
-                <Input
-                  id="channel-banner"
-                  name="bannerUrl"
-                  value={values.bannerUrl}
-                  onChange={(event) => set("bannerUrl", event.target.value)}
-                  placeholder="/brand/liga-do-norte-banner.jpg"
-                  spellCheck={false}
-                  autoCapitalize="none"
-                  autoComplete="off"
-                  aria-invalid={errors.bannerUrl ? true : undefined}
-                />
-                <FieldError>{errors.bannerUrl}</FieldError>
-                {!errors.bannerUrl && (
-                  <FieldHint>Faixa larga, no topo da página do canal.</FieldHint>
-                )}
-              </Field>
-            </div>
+        {/*
+         * As imagens em cartão próprio, e uma por linha: o banner é uma faixa
+         * 3:1 e a pré-visualização dele só diz alguma coisa com largura. Numa
+         * coluna a 375px ficariam empilhadas na mesma — nasce responsivo.
+         */}
+        <Card>
+          <CardHeader>
+            <CardTitle>Imagens</CardTitle>
+          </CardHeader>
+          <CardContent className="flex flex-col gap-5">
+            <ImageUpload
+              kind="logo"
+              value={values.logoUrl}
+              onChange={(url) => set("logoUrl", url)}
+              channelId={channelId}
+              error={errors.logoUrl}
+              disabled={isSubmitting}
+            />
+            <ImageUpload
+              kind="banner"
+              value={values.bannerUrl}
+              onChange={(url) => set("bannerUrl", url)}
+              channelId={channelId}
+              error={errors.bannerUrl}
+              disabled={isSubmitting}
+            />
           </CardContent>
         </Card>
 

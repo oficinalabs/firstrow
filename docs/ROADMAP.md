@@ -55,13 +55,29 @@ Na criação do canal, escolher **1 ou 2 cores** da marca e a página `/canal/[s
 - **Quando:** encaixa naturalmente com a criação de canais em BD (Fase 2, multi-tenant), porque é aí
   que deixa de ser config e passa a ser dado do canal.
 
-### Gates por página no backoffice (para o `staff` do canal poder usar o scanner)
-O layout do `/admin` corta em `canEnterBackoffice`, que exige ser **`owner` de algum canal**, logo
-o `staff` — que existe precisamente para validar bilhetes à porta — não chega ao scanner. Para
-aliviar o layout é preciso **primeiro** pôr gate próprio nas páginas de dinheiro/dados
-(`/admin`, `/admin/ganhos`, `/admin/subscritores`), senão o staff passava a ver a contabilidade.
-Ordem obrigatória: gates nas páginas → só depois relaxar o layout.
+### ~~Gates por página no backoffice~~ — FEITO (21/07/2026, Frente T)
 
-Parte disto já está feita pela Frente E: essas páginas passaram a levar um `ChannelScope` às
-queries e o `/admin/plataforma` já tem gate próprio (`isPlatformAdmin`). Falta o gate de **papel**
-por página — o âmbito limita *que canais* se veem, não *quem* pode abrir o ecrã.
+O `staff` do canal já chega ao scanner. A ordem obrigatória foi respeitada e está visível nos
+commits: **primeiro** os gates próprios nas páginas de dinheiro, **só depois** aliviar a porta —
+nunca houve um estado intermédio com a porta aberta e as páginas por fechar.
+
+O `proxy.ts` passou de uma porta única a corte **por caminho** (`canOpenBackofficePath`), lendo
+`lib/backoffice-zones.ts` — a mesma tabela que os gates das páginas e a sidebar leem, para não
+haver três versões da mesma regra. Para as páginas de dinheiro o proxy ficou **mais** apertado.
+
+Matriz medida com sessões reais: o `staff` entra no scanner (200), na transmissão e nos bilhetes;
+leva 307 para `/sem-acesso` em ganhos, subscritores e pagamentos; e `/admin` redireciona-o para o
+scanner, que é o que ele veio fazer. Zero ocorrências de valores, receita ou emails de comprador
+no corpo em bruto — com controlo positivo a acusar `7,50 €×4` na sessão de dono.
+
+**Duas fugas encontradas e fechadas pelo caminho:** a página de transmissão mostrava vendidos e
+receita ao staff, e a de bilhetes mostrava "Receita bilhetes" com um botão de export que já
+respondia 404 no servidor.
+
+Fica em `tests/unidade/matriz-de-acessos-do-backoffice.test.ts`, que compara a matriz com as
+páginas reais em `app/admin/` — uma página nova sem linha na matriz fica vermelha sozinha.
+
+### Índice de eventos sem dinheiro, para a equipa da liga
+Sobrou uma lacuna deste trabalho: a equipa chega ao scanner e a um evento por link direto, mas
+`/admin/eventos` é zona de gestão porque traz receita por linha. Se o staff tiver de operar
+transmissões sozinho, falta-lhe uma lista de eventos sem valores.

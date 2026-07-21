@@ -464,6 +464,36 @@
     background: var(--color-accent);
     color: var(--color-accent-foreground);
   }
+
+  /*
+   * CURSOR DE PONTEIRO — em tudo o que se clica, num sítio só.
+   *
+   * O Preflight do Tailwind v4 deixou de pôr `cursor: pointer` nos botões: o
+   * `<button>` nativo passou a `cursor: default`. Era isto que o dono via — os
+   * botões, os controlos do player e o interruptor do chat sem a mãozinha ao
+   * passar o rato.
+   *
+   * A correção vive AQUI, e não `cursor-pointer` colado a cada botão: nove
+   * frentes já mexeram em botões espalhados pela app, e catorze cópias da mesma
+   * classe divergem — a décima quinta nasceria sem ela. Uma regra central apanha
+   * todos de uma vez, incluindo os controlos do player que às vezes são `<div>`
+   * ou `<span>` com `role="button"` em vez de `<button>` (hoje são todos
+   * `<button>`, mas a regra cobre o caso antes de ele existir), o `<summary>` das
+   * secções recolhíveis e o `<select>` dos formulários.
+   *
+   * `:not(:disabled)` / `[aria-disabled="true"]`: um controlo desligado não
+   * convida ao clique — fica com a seta. E o cursor NÃO é a única affordance: o
+   * anel de foco limão (`:focus-visible`, acima) continua a marcar o alvo para
+   * quem navega por teclado, que não vê cursor nenhum. Os links (`<a href>`) já
+   * trazem o ponteiro do próprio browser e o Preflight não lho tira — não
+   * precisam de estar aqui.
+   */
+  button:not(:disabled),
+  [role="button"]:not([aria-disabled="true"]),
+  summary,
+  select:not(:disabled) {
+    cursor: pointer;
+  }
 }
 
 /*

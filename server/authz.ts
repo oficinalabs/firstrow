@@ -7,10 +7,10 @@ import { DEFAULT_ROLE, ROLES, type Role, user as userTable } from "@/db/auth-sch
 import { CHANNEL_ROLES, type ChannelRole, channelMembers } from "@/db/schema";
 import { auth, authCapabilities } from "@/lib/auth";
 import {
-  AGENDA_PATH,
   BACKOFFICE_GATES,
   BACKOFFICE_ROOT,
   type BackofficeGate,
+  EVENTS_PATH,
   gateForPath,
 } from "@/lib/backoffice-zones";
 
@@ -261,17 +261,18 @@ export function satisfiedGates(user: Subject): BackofficeGate[] {
 /**
  * Onde é que o backoffice desta pessoa começa.
  *
- * Quem gere um canal entra pelo painel; quem só opera entra pela AGENDA.
- * `null` para quem não tem nada lá dentro.
+ * Quem gere um canal entra pelo painel; quem só opera entra pela LISTA DE
+ * EVENTOS. `null` para quem não tem nada lá dentro.
  *
- * ⚠️  ISTO APONTAVA AO SCANNER, E A MUDANÇA TEM UM MOTIVO CONCRETO.
+ * ⚠️  ISTO JÁ APONTOU AO SCANNER, DEPOIS À AGENDA, E AGORA À LISTA DE EVENTOS.
  * O scanner é servido SEM MOLDURA (`BackofficeChrome`), porque se usa de pé, à
  * porta, com uma mão — logo não tem barra lateral. Mandar para lá quem só opera
  * era mandá-lo para um beco: os outros ecrãs que lhe são permitidos (a
  * transmissão e os bilhetes de cada evento) não tinham como ser alcançados sem
- * um link que alguém lhe mandasse. A agenda tem moldura, lista os eventos sem
- * um número de dinheiro e aponta para os três destinos — scanner incluído.
- * Custa um toque a mais até à porta; deixa de haver um beco.
+ * um link que alguém lhe mandasse. A `/admin/agenda` resolveu o beco com uma
+ * lista de eventos sem dinheiro; esta frente fundiu-a em `/admin/eventos`, que
+ * agora serve essa mesma lista sem valores a quem só opera (ver a nota grande
+ * em `app/admin/eventos/page.tsx`). O destino de quem opera é essa lista.
  *
  * Serve o atalho do header (para apontar já ao sítio certo, sem um salto pelo
  * meio) e o `proxy.ts` (para quem escreve `/admin` à mão não levar com uma
@@ -279,7 +280,7 @@ export function satisfiedGates(user: Subject): BackofficeGate[] {
  */
 export function backofficeHomeFor(user: Subject): string | null {
   if (canManageAnyChannel(user)) return BACKOFFICE_ROOT;
-  if (canEnterBackoffice(user)) return AGENDA_PATH;
+  if (canEnterBackoffice(user)) return EVENTS_PATH;
   return null;
 }
 

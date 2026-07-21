@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { CopyField } from "@/components/admin/copy-field";
 import { DataTable } from "@/components/admin/data-table";
+import { EventDetailTabs } from "@/components/admin/event-detail-tabs";
 import { EventStatusActions } from "@/components/admin/event-status-actions";
 import { EventStatusBadge } from "@/components/admin/event-status-badge";
 import { LiveViewers } from "@/components/admin/live-viewers";
@@ -81,6 +82,15 @@ export default async function TransmissionPage({ params }: { params: Promise<{ i
         meta={channel?.name}
         backHref="/admin/eventos"
         backLabel="Eventos"
+      />
+
+      {/* As secções do evento. `hasTickets` sai de `ticketPriceCents != null` —
+          um booleano, nunca o preço. A aba de editar só aparece a quem gere. */}
+      <EventDetailTabs
+        eventId={event.id}
+        active="transmissao"
+        canManage={canManage}
+        hasTickets={event.ticketPriceCents != null}
       />
 
       <div className="grid items-start gap-5 lg:grid-cols-[1fr_380px]">

@@ -49,33 +49,36 @@ export const BACKOFFICE_ROOT = "/admin";
 export const SCANNER_PATH = "/admin/scanner";
 
 /**
- * A agenda: a lista de eventos SEM valores, para quem só opera.
+ * A lista de eventos — UMA rota para os dois papéis.
  *
- * É a casa de quem só opera, e não o scanner, por uma razão de navegação e não
- * de gosto: o scanner é servido **sem moldura** (ver `BackofficeChrome`), porque
- * se usa de pé, à porta, com uma mão — logo não tem barra lateral nenhuma. Quem
- * aterrava lá ficava num beco: sem links, o resto do backoffice que lhe é
+ * É a casa de quem só opera (o `staff`) e a lista de gestão de quem gere (o
+ * `owner`): a MESMA rota, servida por DUAS queries escolhidas pelo papel dentro
+ * da página (ver a nota grande em `app/admin/eventos/page.tsx`). Não é o scanner
+ * a casa do staff porque o scanner é servido **sem moldura** (ver
+ * `BackofficeChrome`) — usa-se de pé, à porta, com uma mão, logo sem barra
+ * lateral. Quem aterrava lá ficava num beco: o resto do backoffice que lhe é
  * permitido (a transmissão, os bilhetes de cada evento) só se alcançava por um
- * link que alguém lhe mandasse. A agenda tem moldura e aponta para os dois, o
- * scanner incluído — troca um toque a mais por deixar de haver um beco.
+ * link que alguém lhe mandasse. Esta lista tem moldura e aponta para os três.
+ *
+ * (Foi `/admin/agenda`, uma rota à parte com uma query sem dinheiro, até esta
+ * frente a fundir com `/admin/eventos`: o dono pediu um só item de menu e um só
+ * URL. Fundiu-se a NAVEGAÇÃO, não a segurança — ver a nota das ZONAS abaixo.)
  */
-export const AGENDA_PATH = "/admin/agenda";
+export const EVENTS_PATH = "/admin/eventos";
 
 type Zona = {
   readonly path: string;
   readonly gate: BackofficeGate;
-  /** `true` = só o caminho exato; por omissão apanha também o que vem abaixo. */
-  readonly exact?: boolean;
 };
 
 /*
  * ⚠️ A ORDEM DESTA LISTA DECIDE — ganha a PRIMEIRA entrada que casa.
  *
- * Não é uma lista de prefixos ordenada por comprimento porque `/admin/eventos`
- * precisa de duas respostas diferentes: a LISTA (caminho exato) traz o preço,
- * os compradores e a receita de cada evento, logo é `manage`; um EVENTO
- * concreto lá dentro é `operate`, porque é onde o staff opera a transmissão e
- * vê os bilhetes da porta. Ordenar por comprimento não sabe exprimir isso.
+ * O caso que obriga a pensar na ordem é `/admin/eventos`: a LISTA e os ecrãs de
+ * um evento partilham o gate `operate`, mas `/admin/eventos/novo` exige gerir um
+ * canal (criar um evento provisiona vídeo e custa dinheiro). Como `novo` é um
+ * prefixo mais específico, tem de vir ANTES da entrada geral de `/admin/eventos`
+ * — senão a regra geral apanhava-o primeiro e baixava-lhe o gate.
  *
  * Há um teste que percorre todas as rotas reais de `/admin` e confirma o gate
  * de cada uma — é o que impede esta ordem de se estragar em silêncio.
@@ -88,29 +91,28 @@ const ZONAS: readonly Zona[] = [
   // A porta do recinto. É por isto que o `staff` entra no backoffice.
   { path: SCANNER_PATH, gate: "operate" },
 
-  /*
-   * A agenda — a MESMA lista de eventos que `/admin/eventos`, sem um número de
-   * dinheiro.
-   *
-   * É rota própria e não uma versão da outra com colunas escondidas, e a razão
-   * é a que este projeto já mediu duas vezes: dados que a página FOI BUSCAR
-   * entram no payload do RSC mesmo quando o componente que os mostrava não é
-   * desenhado (ver a nota em `app/admin/ganhos/page.tsx` e a medição no
-   * `proxy.ts`). Filtrar colunas escondia a receita do ecrã e deixava-a no
-   * corpo da resposta — que é exactamente a fuga que a Frente T fechou na
-   * página de transmissão. Não buscar é a única forma de não revelar, e para
-   * não buscar é preciso outra query; tendo outra query, é outra página.
-   */
-  { path: AGENDA_PATH, gate: "operate" },
-
-  // A lista de eventos mostra receita por evento → dinheiro.
-  { path: "/admin/eventos", gate: "manage", exact: true },
-  // Criar um evento provisiona vídeo na Cloudflare e custa dinheiro.
+  // Criar um evento provisiona vídeo na Cloudflare e custa dinheiro → `manage`.
+  // ANTES da entrada geral de `/admin/eventos`, que é um prefixo seu.
   { path: "/admin/eventos/novo", gate: "manage" },
-  // `/admin/eventos/<id>/**` — transmissão e bilhetes da porta. O gate FINO
-  // (editar é só do dono) fica em `server/event-access.ts`, que sabe de que
-  // canal é o evento; aqui só se abre a zona.
-  { path: "/admin/eventos", gate: "operate" },
+
+  /*
+   * A LISTA de eventos e os ecrãs de UM evento — uma rota, gate `operate`.
+   *
+   * ⚠️ A LISTA ERA `manage` E BAIXOU PARA `operate`, MAS O DINHEIRO NÃO BAIXOU
+   * COM ELA. `/admin/eventos` passou a servir DUAS listas na mesma rota,
+   * escolhidas pelo papel DENTRO da página: quem gere um canal recebe a lista
+   * com receita; quem só opera recebe `listEventsForOperations`, que nem vai
+   * buscar dinheiro à base de dados. O gate abre a ROTA aos dois papéis; a
+   * página é que decide QUE dados busca — e o que a página não busca não pode
+   * escorrer no payload do RSC (a fuga que este projeto já mediu duas vezes; ver
+   * a nota grande em `app/admin/eventos/page.tsx`). Fundiu-se a NAVEGAÇÃO — um
+   * item de menu, um URL — não a segurança.
+   *
+   * O gate FINO de cada evento (editar é só do dono) fica em
+   * `server/event-access.ts`, que sabe de que canal é o evento; aqui só se abre
+   * a zona.
+   */
+  { path: EVENTS_PATH, gate: "operate" },
 
   /*
    * Rede de segurança: tudo o resto de `/admin` exige `manage`.
@@ -123,8 +125,7 @@ const ZONAS: readonly Zona[] = [
 ];
 
 function casa(pathname: string, zona: Zona): boolean {
-  if (pathname === zona.path) return true;
-  return zona.exact !== true && pathname.startsWith(`${zona.path}/`);
+  return pathname === zona.path || pathname.startsWith(`${zona.path}/`);
 }
 
 /**

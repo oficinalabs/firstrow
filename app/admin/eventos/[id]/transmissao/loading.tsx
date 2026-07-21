@@ -1,4 +1,8 @@
-import { PageHeaderSkeleton, TableCardSkeleton } from "@/components/admin/skeletons";
+import {
+  EventTabsSkeleton,
+  PageHeaderSkeleton,
+  TableCardSkeleton,
+} from "@/components/admin/skeletons";
 import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 
@@ -6,6 +10,7 @@ export default function TransmissionLoading() {
   return (
     <div className="mx-auto flex w-full max-w-5xl flex-col gap-5">
       <PageHeaderSkeleton />
+      <EventTabsSkeleton />
       <div className="grid items-start gap-5 lg:grid-cols-[1fr_380px]">
         <div className="flex flex-col gap-3.5">
           <div className="grid grid-cols-2 gap-3.5">

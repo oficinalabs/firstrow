@@ -52,7 +52,7 @@ export function DeleteEventDialog({
           setError("");
           dialog.current?.showModal();
         }}
-        className="cursor-pointer font-sans text-xs font-semibold text-muted-foreground underline-offset-4 transition-colors hover:text-destructive hover:underline"
+        className="alvo-toque cursor-pointer font-sans text-xs font-semibold text-muted-foreground underline-offset-4 transition-colors hover:text-destructive hover:underline"
       >
         Apagar
       </button>

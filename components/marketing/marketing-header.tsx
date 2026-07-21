@@ -12,7 +12,11 @@ export function MarketingHeader({ minimal = false }: { minimal?: boolean }) {
   return (
     <header data-theme="dark" className="bg-bar text-bar-foreground">
       <div className="mx-auto flex h-14 w-full max-w-6xl items-center justify-between px-4 md:px-8">
-        <Link href="/sobre" aria-label="FirstRow — início" className="flex shrink-0 items-center">
+        <Link
+          href="/sobre"
+          aria-label="FirstRow — início"
+          className="alvo-toque flex shrink-0 items-center"
+        >
           <Image
             src="/brand/firstrow-lockup-h-branco.svg"
             alt="FirstRow"
@@ -22,26 +26,26 @@ export function MarketingHeader({ minimal = false }: { minimal?: boolean }) {
           />
         </Link>
         {minimal ? (
-          <Link href="/entrar" className="text-sm font-medium text-bar-foreground">
+          <Link href="/entrar" className="alvo-toque text-sm font-medium text-bar-foreground">
             Entrar
           </Link>
         ) : (
           <nav aria-label="Navegação de marketing" className="flex items-center gap-5 md:gap-6">
             <Link
               href="/"
-              className="hidden text-sm font-medium text-bar-muted transition-colors hover:text-bar-foreground sm:inline"
+              className="alvo-toque hidden text-sm font-medium text-bar-muted transition-colors hover:text-bar-foreground sm:inline"
             >
               Explorar canais
             </Link>
             <Link
               href="/criadores"
-              className="hidden text-sm font-medium text-bar-muted transition-colors hover:text-bar-foreground sm:inline"
+              className="alvo-toque hidden text-sm font-medium text-bar-muted transition-colors hover:text-bar-foreground sm:inline"
             >
               Para criadores
             </Link>
             {/* Entrar/Criar conta ficam sempre visíveis: são as ações da barra.
                 Os links de navegação têm saída pelo rodapé e pela banda de CTA. */}
-            <Link href="/entrar" className="text-sm font-medium text-bar-foreground">
+            <Link href="/entrar" className="alvo-toque text-sm font-medium text-bar-foreground">
               Entrar
             </Link>
             <Link href="/registar" className={buttonVariants({ size: "sm" })}>

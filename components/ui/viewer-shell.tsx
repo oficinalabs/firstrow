@@ -56,7 +56,11 @@ export function ViewerShell({
     >
       <header className="border-b border-bar-border bg-bar text-bar-foreground">
         <div className="mx-auto flex h-13 w-full max-w-6xl items-center justify-between px-4 md:h-14 md:px-8">
-          <Link href="/" className="flex shrink-0 items-center" aria-label="FirstRow — início">
+          <Link
+            href="/"
+            className="alvo-toque flex shrink-0 items-center"
+            aria-label="FirstRow — início"
+          >
             <Image
               src="/brand/firstrow-lockup-h-branco.svg"
               alt="FirstRow"
@@ -72,7 +76,12 @@ export function ViewerShell({
                 href={item.href}
                 aria-current={active === item.key ? "page" : undefined}
                 className={cn(
-                  "text-sm font-medium transition-colors hover:text-bar-foreground",
+                  // A navegação principal do espectador tinha 20px de altura:
+                  // 35x20 no "Início". `alvo-toque` estica a área de acerto aos
+                  // 44px sem mexer no desenho da barra — e o intervalo de 20px
+                  // entre itens é maior do que os ~4px que cada um cresce para
+                  // cada lado, por isso não se roubam toques uns aos outros.
+                  "alvo-toque text-sm font-medium transition-colors hover:text-bar-foreground",
                   active === item.key ? "text-bar-foreground" : "text-bar-muted",
                 )}
               >

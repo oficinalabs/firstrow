@@ -19,9 +19,16 @@ export const buttonVariants = cva(
           "bg-destructive text-destructive-foreground hover:bg-destructive/90 disabled:bg-muted disabled:text-muted-foreground/60",
         live: "bg-live font-bold text-live-foreground hover:bg-live/90 disabled:bg-muted disabled:text-muted-foreground/60",
       },
+      /*
+       * `toque:min-h-…` nos dois tamanhos pequenos: 36px e 40px chegam para um
+       * rato e não chegam para um dedo (44px é a medida da polpa). O `min-h`
+       * ganha ao `h-*` sem o apagar, por isso no ecrã grande o botão continua
+       * exactamente com a altura desenhada — o crescimento acontece só onde o
+       * apontador é grosso. O `lg` já nasceu com 44.
+       */
       size: {
-        sm: "h-9 px-3.5",
-        default: "h-10 px-4.5",
+        sm: "h-9 px-3.5 toque:min-h-(--alvo-toque)",
+        default: "h-10 px-4.5 toque:min-h-(--alvo-toque)",
         lg: "h-11 px-5",
       },
     },

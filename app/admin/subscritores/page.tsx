@@ -53,6 +53,7 @@ export default async function SubscribersPage() {
               columns={[
                 {
                   header: "Comprador",
+                  destaque: true,
                   cell: (b) => <span className="font-semibold">{b.name}</span>,
                 },
                 {

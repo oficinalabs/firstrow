@@ -117,17 +117,84 @@ export function ChatPanel({
   const [erro, setErro] = useState<string | null>(null);
   const [porLer, setPorLer] = useState(0);
 
-  const fundoRef = useRef<HTMLDivElement>(null);
+  const listaRef = useRef<HTMLOListElement>(null);
   const compositorRef = useRef<HTMLTextAreaElement>(null);
   /* Guardado em ref e não em estado: o `follow` do transporte lê isto dentro de
      um callback que só se regista uma vez, e um estado ficaria congelado no
      valor do primeiro render. */
   const aAcompanhar = useRef(true);
 
+  /*
+   * Rolar a LISTA, e só a lista.
+   *
+   * Isto era `fundoRef.scrollIntoView({ block: "end" })` e o `scrollIntoView`
+   * não pára no elemento com scroll: sobe a árvore e rola também o DOCUMENTO,
+   * até deixar o fim da lista encostado ao fundo da janela. Como o compositor
+   * vem DEPOIS da lista, ficava empurrado para fora do ecrã — medido a 375x812
+   * com o campo focado: topo do compositor em y=821, ou seja abaixo da própria
+   * janela (812) e 309px abaixo da linha de um teclado de iPhone (512).
+   *
+   * E acontecia a cada mensagem nova: quem estivesse a ler a descrição do
+   * evento via a página saltar sozinha de dois em dois segundos.
+   *
+   * `scrollTop` faz o que era preciso desde o início — mover a lista por
+   * dentro — sem tocar na posição da página.
+   */
   const irParaOFundo = useCallback((comportamento: ScrollBehavior = "smooth") => {
-    fundoRef.current?.scrollIntoView({ behavior: comportamento, block: "end" });
+    const lista = listaRef.current;
+    if (lista) lista.scrollTo({ top: lista.scrollHeight, behavior: comportamento });
     aAcompanhar.current = true;
     setPorLer(0);
+  }, []);
+
+  /*
+   * Manter o compositor à vista quando o teclado abre.
+   *
+   * Por omissão — em todos os browsers, iOS incluído — o teclado encolhe a
+   * viewport VISUAL e deixa a de layout como estava. Quer dizer que nenhuma
+   * unidade CSS dá por ele: `100dvh` continua a valer o ecrã inteiro e nada no
+   * desenho encolhe. Quem sabe onde acaba a área visível é a `visualViewport`,
+   * e é a ela que se pergunta.
+   *
+   * O ajuste vai por `window.scrollBy` em vez de `scrollIntoView` no campo: o
+   * `scrollIntoView` decide sozinho quanto rola e, com o teclado aberto, tanto
+   * pode parar a meio como saltar demais. Aqui move-se exactamente o que falta.
+   */
+  const manterCompositorAVista = useCallback(() => {
+    const campo = compositorRef.current;
+    if (!campo) return;
+    const vv = window.visualViewport;
+    if (!vv) {
+      campo.scrollIntoView({ block: "nearest" });
+      return;
+    }
+
+    /*
+     * Quanto do ecrã é que o teclado está a tapar. É a diferença entre a
+     * viewport de LAYOUT (que o teclado não mexe) e a VISUAL (que ele encolhe)
+     * — e é zero quando não há teclado, ou quando o browser encolhe as duas.
+     * Por isso a mesma conta serve os dois comportamentos sem os distinguir.
+     */
+    const tapado = Math.max(0, window.innerHeight - vv.height);
+    /*
+     * A folga que se dá ao documento para ele PODER rolar o suficiente. Sem
+     * ela a página chega ao fim antes de o campo passar acima do teclado (ver
+     * a nota do `body` em globals.css). Escrita numa variável CSS em vez de um
+     * estilo directo no elemento porque quem a consome é o `body`, que não é
+     * deste componente — e assim há um só nome para a coisa.
+     */
+    document.documentElement.style.setProperty("--altura-teclado", `${tapado}px`);
+
+    // Folga de 12px para o campo não ficar colado à aresta do teclado.
+    const fundoVisivel = vv.offsetTop + vv.height - 12;
+    const r = campo.getBoundingClientRect();
+    if (r.bottom > fundoVisivel)
+      window.scrollBy({ top: r.bottom - fundoVisivel, behavior: "auto" });
+  }, []);
+
+  /** Devolver o espaço ao sair do campo — o teclado fechou, a folga sobra. */
+  const largarOTeclado = useCallback(() => {
+    document.documentElement.style.removeProperty("--altura-teclado");
   }, []);
 
   /** Aplica uma leitura do servidor: mensagens novas, apagadas e estado. */
@@ -199,10 +266,34 @@ export function ChatPanel({
    */
   const quantasMensagens = messages.length;
   useEffect(() => {
-    if (quantasMensagens > 0 && aAcompanhar.current) {
-      fundoRef.current?.scrollIntoView({ block: "end" });
+    const lista = listaRef.current;
+    if (lista && quantasMensagens > 0 && aAcompanhar.current) {
+      lista.scrollTop = lista.scrollHeight;
     }
   }, [quantasMensagens]);
+
+  /*
+   * O teclado não abre no instante do `focus` — abre uns milissegundos depois,
+   * e é a `visualViewport` que muda quando ele aparece. Sem ouvir esse evento,
+   * o ajuste feito no `focus` era calculado com a janela ainda inteira e não
+   * corrigia nada. Só enquanto o campo está focado: fora disso não há teclado
+   * para compensar e o ouvinte era peso morto.
+   */
+  const [aEscrever, setAEscrever] = useState(false);
+  useEffect(() => {
+    const vv = window.visualViewport;
+    if (!aEscrever || !vv) return;
+    const ajustar = () => manterCompositorAVista();
+    vv.addEventListener("resize", ajustar);
+    vv.addEventListener("scroll", ajustar);
+    return () => {
+      vv.removeEventListener("resize", ajustar);
+      vv.removeEventListener("scroll", ajustar);
+      // Desmontar a página com o campo focado (mudar de evento a meio de
+      // escrever) deixava a folga do teclado colada ao body para sempre.
+      largarOTeclado();
+    };
+  }, [aEscrever, manterCompositorAVista, largarOTeclado]);
 
   function aoRolar(evento: React.UIEvent<HTMLOListElement>) {
     const alvo = evento.currentTarget;
@@ -284,6 +375,7 @@ export function ChatPanel({
       </header>
 
       <ol
+        ref={listaRef}
         onScroll={aoRolar}
         className={cn("min-h-0 flex-1 overflow-y-auto overscroll-contain py-1.5", ALTURA_LISTA)}
         /*
@@ -343,7 +435,6 @@ export function ChatPanel({
             </Fragment>
           );
         })}
-        <div ref={fundoRef} />
       </ol>
 
       {/* Aviso de mensagens novas para quem rolou para trás. É `status` para o
@@ -380,11 +471,23 @@ export function ChatPanel({
               disabled={aEnviar}
               onChange={(e) => setRascunho(e.target.value)}
               onFocus={() => {
-                /* O caso difícil do telemóvel: com o teclado aberto, o
-                   compositor tem de continuar à vista. `block: "nearest"` deixa
-                   o browser fazer o mínimo para o mostrar. */
-                compositorRef.current?.scrollIntoView({ block: "nearest" });
+                /*
+                 * A ORDEM importa, e era ela que estava trocada. O
+                 * `irParaOFundo` corria depois e desfazia o trabalho do
+                 * `scrollIntoView` do campo — rolava o documento até ao fim da
+                 * lista e mandava o compositor para baixo do teclado.
+                 *
+                 * Agora a lista vai ao fundo por dentro (sem mexer na página) e
+                 * só depois se acerta a posição da página para o campo ficar à
+                 * vista. Ver `manterCompositorAVista`.
+                 */
+                setAEscrever(true);
                 irParaOFundo("auto");
+                manterCompositorAVista();
+              }}
+              onBlur={() => {
+                setAEscrever(false);
+                largarOTeclado();
               }}
               onKeyDown={(e) => {
                 // Enter envia; Shift+Enter muda de linha. É a convenção de chat

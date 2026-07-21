@@ -18,7 +18,7 @@ export function AuthCard({
   return (
     <div className="flex w-full max-w-sm flex-col gap-4">
       <div className="mb-2 flex flex-col items-center gap-2.5 text-center">
-        <Link href="/" aria-label="FirstRow — início">
+        <Link href="/" aria-label="FirstRow — início" className="alvo-toque">
           <Image src="/brand/firstrow-icon-tinta.svg" alt="" width={40} height={40} priority />
         </Link>
         <h1 className="font-display text-xl font-extrabold tracking-display">{title}</h1>

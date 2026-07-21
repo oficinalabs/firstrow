@@ -57,7 +57,7 @@ export function RecoverForm({ emailEnabled }: { emailEnabled: boolean }) {
           Estamos a ligar este passo. Para já, fala connosco em{" "}
           <a
             href="mailto:ola@firstrow.pt"
-            className="font-medium text-foreground underline decoration-accent decoration-2 underline-offset-2"
+            className="alvo-toque font-medium text-foreground underline decoration-accent decoration-2 underline-offset-2"
           >
             ola@firstrow.pt
           </a>{" "}

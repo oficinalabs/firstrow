@@ -6,7 +6,7 @@ export function LemonLink({ className, ...props }: React.ComponentProps<typeof L
   return (
     <Link
       className={cn(
-        "font-semibold text-2sm underline decoration-2 decoration-accent underline-offset-4 transition-colors hover:decoration-foreground",
+        "alvo-toque font-semibold text-2sm underline decoration-2 decoration-accent underline-offset-4 transition-colors hover:decoration-foreground",
         className,
       )}
       {...props}

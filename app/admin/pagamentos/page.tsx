@@ -138,6 +138,7 @@ export default async function PaymentsPage() {
                   },
                   {
                     header: "Evento",
+                    destaque: true,
                     cell: (c) => <span className="text-muted-foreground">{c.eventTitle}</span>,
                   },
                   // De que liga é este dinheiro. Com uma só, era palha.

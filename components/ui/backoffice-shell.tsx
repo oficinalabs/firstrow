@@ -47,10 +47,50 @@ export function BackofficeShell({
       className="flex min-h-dvh w-full flex-col bg-background text-foreground md:flex-row"
       style={channel ? tenantStyle(channel, "light") : undefined}
     >
-      {/* topo mobile (o backoffice é desktop-first; isto é o mínimo digno) */}
-      <header className="flex h-13 items-center justify-between bg-bar px-4 text-bar-foreground md:hidden">
-        <BrandRow />
-      </header>
+      {/*
+       * Topo mobile. O backoffice é desktop-first, mas até aqui "desktop-first"
+       * tinha um significado que ninguém queria: abaixo de 768px a barra
+       * lateral é `hidden` e NADA a substituía — o backoffice ficava sem
+       * navegação nenhuma. Do telemóvel dava para aterrar em `/admin` e não
+       * havia forma de chegar a Eventos, Ganhos ou ao Scanner sem escrever o
+       * endereço à mão. E o Scanner é justamente o que se usa no telemóvel, à
+       * porta do recinto.
+       *
+       * A tira horizontal repete os MESMOS itens da barra lateral (a mesma
+       * lista, não uma cópia) e rola quando não cabem — em vez de um menu que
+       * abre e fecha, que é mais código e mais uma coisa para partir numa
+       * ferramenta que se usa com uma mão e pressa.
+       */}
+      <div className="md:hidden">
+        <header className="flex h-13 items-center justify-between bg-bar px-4 text-bar-foreground">
+          <BrandRow />
+        </header>
+        <nav
+          aria-label="Backoffice"
+          className="flex gap-1 overflow-x-auto border-b border-bar-border bg-bar px-2 text-bar-foreground"
+        >
+          {nav.map((item) => {
+            const isActive = item.href === activeHref;
+            return (
+              <Link
+                key={item.href}
+                href={item.href}
+                aria-current={isActive ? "page" : undefined}
+                className={cn(
+                  // `alvo-toque-alto` e não `alvo-toque`: são itens encostados,
+                  // e uma área esticada roubava o toque ao vizinho.
+                  "alvo-toque-alto shrink-0 whitespace-nowrap border-b-2 px-3 text-2sm transition-colors",
+                  isActive
+                    ? "border-accent font-semibold text-bar-foreground"
+                    : "border-transparent font-medium text-bar-muted",
+                )}
+              >
+                {item.label}
+              </Link>
+            );
+          })}
+        </nav>
+      </div>
 
       <aside
         className="hidden w-54 shrink-0 flex-col bg-bar py-4 text-bar-foreground md:flex"
@@ -80,7 +120,10 @@ export function BackofficeShell({
                 href={item.href}
                 aria-current={isActive ? "page" : undefined}
                 className={cn(
-                  "border-l-3 px-4.5 py-2.5 text-2sm transition-colors",
+                  // Itens encostados uns aos outros: cresce a caixa (só em
+                  // apontador grosso), não a área por baixo — que se sobrepunha
+                  // à do vizinho e entregava o toque ao item errado.
+                  "alvo-toque-alto border-l-3 px-4.5 py-2.5 text-2sm transition-colors",
                   isActive
                     ? "border-accent bg-bar-active font-semibold text-bar-foreground"
                     : "border-transparent font-medium text-bar-muted hover:text-bar-foreground",
@@ -101,7 +144,7 @@ export function BackofficeShell({
 function BrandRow() {
   return (
     <>
-      <Link href="/admin" className="flex items-center" aria-label="Backoffice FirstRow">
+      <Link href="/admin" className="alvo-toque flex items-center" aria-label="Backoffice FirstRow">
         <Image src="/brand/firstrow-lockup-h-branco.svg" alt="FirstRow" width={83} height={20} />
       </Link>
       <span className="ml-auto font-mono text-2xs text-bar-muted">BACKOFFICE</span>

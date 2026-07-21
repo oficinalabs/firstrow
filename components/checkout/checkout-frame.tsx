@@ -7,7 +7,7 @@ export function CheckoutFrame({ children }: { children: React.ReactNode }) {
   return (
     <div data-theme="dark" className="flex min-h-dvh flex-col bg-background text-foreground">
       <header className="flex h-13 shrink-0 items-center justify-center bg-bar md:h-14">
-        <Link href="/" aria-label="FirstRow — início">
+        <Link href="/" aria-label="FirstRow — início" className="alvo-toque">
           <Image
             src="/brand/firstrow-lockup-h-branco.svg"
             alt="FirstRow"

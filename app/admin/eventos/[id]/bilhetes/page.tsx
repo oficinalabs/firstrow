@@ -1,4 +1,6 @@
-import Link from "next/link";
+import { EventDetailTabs } from "@/components/admin/event-detail-tabs";
+import { EventStatusBadge } from "@/components/admin/event-status-badge";
+import { PageHeader } from "@/components/admin/page-header";
 import { BuyersTable } from "@/components/tickets/buyers-table";
 import { buttonVariants } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -37,38 +39,36 @@ export default async function AdminEventoBilhetesPage({
 
   return (
     <div className="mx-auto flex w-full max-w-5xl flex-col gap-5">
-      <div>
-        <Link
-          href="/admin/eventos"
-          className="alvo-toque text-xs text-muted-foreground transition-colors hover:text-foreground"
-        >
-          ‹ Eventos
-        </Link>
-        <div className="mt-1 flex flex-wrap items-center justify-between gap-3">
-          <div className="flex items-center gap-3.5">
-            <h1 className="font-display text-xl font-extrabold tracking-display">{event.title}</h1>
-            {channel ? (
-              <span className="font-mono text-xs text-muted-foreground">{channel.name}</span>
-            ) : null}
-          </div>
-          <div className="flex gap-2.5">
-            {/* O export é `canManageEvents` do lado do servidor (responde 404 a
-                quem não seja dono). Mostrá-lo à equipa da porta era oferecer um
-                botão que não faz nada — esconder é cortesia, o gate é lá. */}
-            {canManage ? (
-              <a
-                href={`/admin/eventos/${id}/bilhetes/export`}
-                className={buttonVariants({ variant: "secondary", size: "sm" })}
-              >
-                Exportar CSV
-              </a>
-            ) : null}
-            <Link href={`/admin/scanner?evento=${id}`} className={buttonVariants({ size: "sm" })}>
-              Abrir scanner de porta
-            </Link>
-          </div>
-        </div>
-      </div>
+      <PageHeader
+        title={event.title}
+        badge={<EventStatusBadge status={event.status} />}
+        meta={channel?.name}
+        backHref="/admin/eventos"
+        backLabel="Eventos"
+        action={
+          // O export é `canManageEvents` do lado do servidor (responde 404 a
+          // quem não seja dono). Mostrá-lo à equipa da porta era oferecer um
+          // botão que não faz nada — esconder é cortesia, o gate é lá. É um `<a>`
+          // e não um `<Link>` porque descarrega um ficheiro, não navega.
+          canManage ? (
+            <a
+              href={`/admin/eventos/${id}/bilhetes/export`}
+              className={buttonVariants({ variant: "secondary", size: "sm" })}
+            >
+              Exportar CSV
+            </a>
+          ) : undefined
+        }
+      />
+
+      {/* As secções do evento. O botão do scanner vive aqui dentro (só quando há
+          bilhete de porta). `hasTickets` é um booleano — o preço não sai daqui. */}
+      <EventDetailTabs
+        eventId={id}
+        active="bilhetes"
+        canManage={canManage}
+        hasTickets={event.ticketPriceCents != null}
+      />
 
       {event.ticketPriceCents == null ? (
         <EmptyState

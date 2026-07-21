@@ -107,7 +107,7 @@ describe("quem recebe o atalho", () => {
     expect(elemento?.props.href).toBe("/admin");
   });
 
-  it("staff de um canal — e o atalho aponta à AGENDA, não ao painel", async () => {
+  it("staff de um canal — e o atalho aponta à LISTA DE EVENTOS, não ao painel", async () => {
     /*
      * ISTO ERA O CONTRÁRIO, E A MUDANÇA FOI DE PROPÓSITO.
      *
@@ -118,15 +118,16 @@ describe("quem recebe o atalho", () => {
      * gate próprio (`requireBackofficePage`) e só então a porta aliviou.
      *
      * O destino é o que interessa aqui. `backofficeHomeFor` manda cada um para
-     * o que veio fazer: quem gere, para o painel; quem opera, para a agenda. Um
-     * atalho para `/admin` obrigava o staff a saltar por um ecrã que não pode
-     * ver para chegar aos que pode.
+     * o que veio fazer: quem gere, para o painel; quem opera, para a lista de
+     * eventos. Um atalho para `/admin` obrigava o staff a saltar por um ecrã que
+     * não pode ver para chegar aos que pode.
      *
-     * O destino já foi `/admin/scanner` e mudou nesta frente: o scanner é
-     * servido sem moldura (usa-se à porta, com uma mão), por isso não tem barra
-     * lateral nenhuma — quem aterrava lá ficava sem um único link para a
-     * transmissão ou para os bilhetes. A agenda é a lista dos mesmos eventos
-     * SEM VALORES, e aponta para os três destinos, scanner incluído.
+     * O destino já foi `/admin/scanner` e depois `/admin/agenda`. O scanner é
+     * servido sem moldura (usa-se à porta, com uma mão), sem barra lateral —
+     * quem aterrava lá ficava sem um link para a transmissão ou os bilhetes. A
+     * agenda resolveu-o com a lista dos mesmos eventos SEM VALORES; esta frente
+     * fundiu-a em `/admin/eventos`, que serve essa lista sem dinheiro a quem só
+     * opera e aponta para os três destinos, scanner incluído.
      */
     getCurrentUserMock.mockResolvedValue(
       utilizador("viewer", [{ channelId: "c1", role: "staff" }]),
@@ -134,7 +135,7 @@ describe("quem recebe o atalho", () => {
 
     const elemento = await render();
     expect(elemento).not.toBeNull();
-    expect(elemento?.props.href).toBe("/admin/agenda");
+    expect(elemento?.props.href).toBe("/admin/eventos");
   });
 
   it("dono num canal e staff noutro — basta ser dono de algum", async () => {

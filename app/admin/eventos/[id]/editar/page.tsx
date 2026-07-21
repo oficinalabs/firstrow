@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 import { updateEventAction } from "@/app/admin/eventos/actions";
+import { EventDetailTabs } from "@/components/admin/event-detail-tabs";
 import { EventForm } from "@/components/admin/event-form";
+import { EventStatusBadge } from "@/components/admin/event-status-badge";
 import { PageHeader } from "@/components/admin/page-header";
 import { eventEditRules, eventToDraft, eventToFormValues } from "@/lib/event-rules";
 import { manageScope } from "@/server/authz";
@@ -36,12 +38,26 @@ export default async function EditEventPage({ params }: { params: Promise<{ id: 
 
   return (
     <div className="mx-auto flex w-full max-w-5xl flex-col gap-5">
+      {/* O título é o do EVENTO, não "Editar evento": a página faz parte do
+          detalhe do evento, e é a aba ativa "Editar" que diz o que se está a
+          fazer — não um segundo título a repeti-lo. */}
       <PageHeader
-        title="Editar evento"
+        title={event.title}
+        badge={<EventStatusBadge status={event.status} />}
         meta={channel?.name}
         backHref="/admin/eventos"
         backLabel="Eventos"
       />
+
+      {/* Esta rota é `requireEventManager` (só o dono), logo `canManage` é
+          sempre verdadeiro aqui — a aba de editar existe de certeza. */}
+      <EventDetailTabs
+        eventId={event.id}
+        active="editar"
+        canManage
+        hasTickets={event.ticketPriceCents != null}
+      />
+
       <EventForm
         mode="edit"
         // O id viaja LIGADO no servidor, não no formulário: é o que impede

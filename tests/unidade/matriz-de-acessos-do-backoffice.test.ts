@@ -74,9 +74,9 @@ const MATRIZ: readonly { rota: string; gate: BackofficeGate; abre: readonly Pape
   { rota: "/admin/ganhos", gate: "manage", abre: ["owner", "admin"] },
   { rota: "/admin/subscritores", gate: "manage", abre: ["owner", "admin"] },
   { rota: "/admin/pagamentos", gate: "manage", abre: ["owner", "admin"] },
-  // A lista de eventos traz PPV, compradores e receita por linha.
-  { rota: "/admin/eventos", gate: "manage", abre: ["owner", "admin"] },
-  // Criar um evento provisiona vídeo na Cloudflare — custa dinheiro.
+  // Criar um evento provisiona vídeo na Cloudflare — custa dinheiro. A LISTA
+  // `/admin/eventos` já NÃO está aqui: fundiu-se com a agenda e abre a `operate`
+  // (o staff recebe a versão sem dinheiro). Está na secção da porta, abaixo.
   { rota: "/admin/eventos/novo", gate: "manage", abre: ["owner", "admin"] },
   // Marca e membros de um canal; o gate FINO (é o TEU canal?) é do channel-access.
   { rota: "/admin/canais", gate: "manage", abre: ["owner", "admin"] },
@@ -86,12 +86,14 @@ const MATRIZ: readonly { rota: string; gate: BackofficeGate; abre: readonly Pape
   // ── A porta do recinto: é por isto que o staff entra ─────────────────────
   { rota: "/admin/scanner", gate: "operate", abre: ["staff", "owner", "admin"] },
   /*
-   * A agenda: a MESMA lista de eventos, sem um número de dinheiro. É rota
-   * própria em vez de `/admin/eventos` com colunas escondidas porque esconder a
-   * coluna não esconde o dado — o que a página vai buscar entra no payload do
-   * RSC na mesma. Ver a nota na própria página.
+   * A LISTA de eventos abre a `operate` — o staff entra. Não porque deixou de
+   * ter dinheiro, mas porque passou a servir DUAS listas na mesma rota: quem
+   * gere recebe a de receita, quem só opera recebe `listEventsForOperations`,
+   * sem um número de dinheiro dentro. Era `/admin/agenda`, uma rota à parte, até
+   * esta frente as fundir a pedido do dono. O que cada papel RECEBE mede-se de
+   * ponta a ponta (no relatório); aqui só se afirma que ambos ABREM a rota.
    */
-  { rota: "/admin/agenda", gate: "operate", abre: ["staff", "owner", "admin"] },
+  { rota: "/admin/eventos", gate: "operate", abre: ["staff", "owner", "admin"] },
 
   // ── Ecrãs de UM evento: operar é da equipa; editar continua a ser do dono,
   //    e essa distinção é de `server/event-access.ts`, que sabe o canal ──────
@@ -144,7 +146,10 @@ describe("o staff da porta e o dinheiro", () => {
     "/admin/ganhos",
     "/admin/subscritores",
     "/admin/pagamentos",
-    "/admin/eventos",
+    // NÃO `/admin/eventos`: fundiu-se e abre agora ao staff, que recebe a lista
+    // SEM dinheiro (medido no relatório). O que o staff continua sem poder é
+    // CRIAR eventos — provisionar vídeo custa dinheiro —, logo `.../novo` fica.
+    "/admin/eventos/novo",
     "/admin/plataforma",
   ];
 
@@ -214,20 +219,21 @@ describe("para onde é que cada um é mandado", () => {
   });
 
   /*
-   * ISTO ERA O SCANNER, E A MUDANÇA FOI DE PROPÓSITO.
+   * ISTO ERA O SCANNER, DEPOIS A AGENDA, E AGORA A LISTA DE EVENTOS.
    *
    * O scanner é servido SEM MOLDURA (usa-se de pé, à porta, com uma mão), logo
    * sem barra lateral: quem aterrava lá não tinha um único link para o resto do
    * backoffice que lhe é permitido — a transmissão e os bilhetes de cada
    * evento. A "casa" de quem só opera era um beco.
    *
-   * A agenda é a lista dos mesmos eventos sem um número de dinheiro, tem
-   * moldura, e aponta para os três destinos (transmissão, bilhetes, scanner).
-   * Continua a não ser uma recusa — que é o que este teste sempre defendeu — e
-   * passa a ser um sítio de onde se sai.
+   * A `/admin/agenda` resolveu isso com a lista dos mesmos eventos sem um número
+   * de dinheiro; esta frente fundiu-a em `/admin/eventos`, que agora serve essa
+   * lista sem valores a quem só opera. A casa do staff é essa rota — tem
+   * moldura e aponta para a transmissão, os bilhetes e o scanner. Continua a não
+   * ser uma recusa, que é o que este teste sempre defendeu.
    */
-  it("quem só opera vai para a agenda — não para uma recusa nem para um beco", () => {
-    expect(backofficeHomeFor(PAPEIS.staff)).toBe("/admin/agenda");
+  it("quem só opera vai para a lista de eventos — não para uma recusa nem para um beco", () => {
+    expect(backofficeHomeFor(PAPEIS.staff)).toBe("/admin/eventos");
   });
 
   it("quem gere um canal e é equipa noutro vai para o painel", () => {
@@ -314,7 +320,6 @@ describe("o gate corre ANTES do primeiro await de dados", () => {
     "app/admin/canais/page.tsx",
     "app/admin/eventos/page.tsx",
     "app/admin/scanner/page.tsx",
-    "app/admin/agenda/page.tsx",
   ];
 
   it.each(PAGINAS)("%s espera o gate antes de ler dados", (ficheiro) => {

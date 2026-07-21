@@ -13,6 +13,20 @@ export function PageHeaderSkeleton() {
   );
 }
 
+/** A barra de secções de um evento: as abas à esquerda, o scanner à direita. */
+export function EventTabsSkeleton() {
+  return (
+    <div className="flex items-center justify-between border-b border-border pb-2">
+      <div className="flex gap-4">
+        <Skeleton className="h-5 w-24" />
+        <Skeleton className="h-5 w-20" />
+        <Skeleton className="h-5 w-16" />
+      </div>
+      <Skeleton className="h-8 w-32" />
+    </div>
+  );
+}
+
 export function StatRowSkeleton({ cards = 3 }: { cards?: number }) {
   return (
     <div className="grid gap-3.5 md:grid-cols-3">

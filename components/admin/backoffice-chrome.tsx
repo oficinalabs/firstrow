@@ -3,8 +3,8 @@
 import { usePathname } from "next/navigation";
 import { type BackofficeNavItem, BackofficeShell } from "@/components/ui/backoffice-shell";
 import {
-  AGENDA_PATH,
   type BackofficeGate,
+  EVENTS_PATH,
   gateForPath,
   SCANNER_PATH,
 } from "@/lib/backoffice-zones";
@@ -36,14 +36,15 @@ import type { Channel } from "@/lib/channels";
  */
 const NAV: BackofficeNavItem[] = [
   { label: "Dashboard", href: "/admin" },
-  { label: "Eventos", href: "/admin/eventos" },
   /*
-   * A agenda fica encostada a "Eventos" porque é a mesma lista sem valores — e
-   * fica DEPOIS porque, para quem vê as duas (o dono), a de gestão é a que ele
-   * quer. Para quem só opera, esta é a primeira coisa da lista, porque é a
-   * única que sobra além do scanner.
+   * UM só item para os eventos, e para os dois papéis. A rota é a mesma
+   * (`/admin/eventos`) e decide lá dentro que lista serve: com receita para quem
+   * gere, sem um número de dinheiro para quem só opera. Eram DOIS itens —
+   * "Eventos" e "Agenda" — até esta frente os fundir a pedido do dono. A quem só
+   * opera, este é o primeiro da lista que a sidebar lhe mostra (o Dashboard e o
+   * dinheiro ficam de fora pela mesma tabela de zonas), logo a casa dele.
    */
-  { label: "Agenda", href: AGENDA_PATH },
+  { label: "Eventos", href: EVENTS_PATH },
   { label: "Canais", href: "/admin/canais" },
   { label: "Subscritores", href: "/admin/subscritores" },
   { label: "Pagamentos", href: "/admin/pagamentos" },

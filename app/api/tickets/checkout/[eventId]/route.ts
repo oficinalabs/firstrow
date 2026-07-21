@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { createMbwayCharge } from "@/lib/eupago";
 import { validarConsentimento } from "@/lib/legal/consentimentos";
-import { limitByIp } from "@/lib/rate-limit";
+import { limitByAccountShared } from "@/lib/rate-limit";
 import { buildSplit } from "@/lib/split";
 import { requireApi } from "@/server/api-guard";
 import { guardarConsentimento } from "@/server/consents";
@@ -24,13 +24,19 @@ const bodySchema = z.object({
 // Compra de bilhete físico por MB WAY — espelha o checkout de acesso à live,
 // mas o `identifier` na Eupago é o id do bilhete ("tkt_…"), que o webhook emite.
 // O bilhete é sempre criado para o dono da sessão.
+//
+// O balde `checkout` é o MESMO das duas rotas de pagamento, de propósito: o que
+// se está a racionar não é "compras de bilhete" nem "compras de acesso", é
+// quantas vezes uma conta consegue fazer tocar um telemóvel com um pedido MB WAY.
+// Dois baldes separados davam-lhe o dobro pelo simples facto de haver dois
+// produtos à venda.
 export async function POST(req: Request, { params }: { params: Promise<{ eventId: string }> }) {
   const { eventId } = await params;
 
   const gate = await requireApi();
   if (!gate.ok) return gate.response;
 
-  const limited = limitByIp(req, "checkout", gate.user.id);
+  const limited = await limitByAccountShared("checkout", gate.user.id);
   if (limited) return limited;
 
   const event = await getEvent(eventId);

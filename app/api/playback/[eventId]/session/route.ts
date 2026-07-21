@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { attachDeviceCookie, newDeviceId, readDeviceId } from "@/app/api/playback/device";
 import { signPlaybackToken, streamIframeUrl } from "@/lib/cloudflare";
-import { limitByIp } from "@/lib/rate-limit";
+import { limitByAccountShared } from "@/lib/rate-limit";
 import { requireApi } from "@/server/api-guard";
 import { canWatchEvent, playbackTarget } from "@/server/event-access";
 import { getEvent } from "@/server/events";
@@ -20,6 +20,12 @@ import { startSession } from "@/server/playback";
  * para distribuir. 12/min dá para recarregar a página à vontade e não dá
  * para alimentar uma audiência.
  *
+ * A chave é SÓ a conta, e é o contador PARTILHADO. Antes desta frente era o
+ * contador de memória com a chave `IP|conta` — ou seja, a fábrica de tokens que
+ * este limite existe para fechar estava aberta duas vezes: o contador não
+ * sobrevivia entre instâncias, e quem revendesse acesso a partir de dados
+ * móveis ganhava 12 tokens novos a cada IP.
+ *
  * O DISPOSITIVO (cookie `fr_dv`, ver `../../device.ts`) entra aqui e só aqui:
  * é o primeiro sítio onde há um espectador a começar a ver. Quem chega sem
  * cookie leva um na resposta — daí em diante, recarregar a página deixa de
@@ -31,7 +37,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ eventId
   const gate = await requireApi();
   if (!gate.ok) return gate.response;
 
-  const limited = limitByIp(req, "playback", gate.user.id);
+  const limited = await limitByAccountShared("playback", gate.user.id);
   if (limited) return limited;
 
   const event = await getEvent(eventId);

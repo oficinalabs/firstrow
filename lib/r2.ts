@@ -225,12 +225,14 @@ export function signRequest(options: {
 function r2Headers(options: {
   method: string;
   path: string;
+  /** Query já canónica. Só a listagem a usa. */
+  query?: string;
   payload: Uint8Array;
   contentType?: string;
   config: R2Config;
   now: Date;
 }): Record<string, string> {
-  const { method, path, payload, contentType, config, now } = options;
+  const { method, path, query, payload, contentType, config, now } = options;
 
   const amzDate = now.toISOString().replace(/[:-]|\.\d{3}/g, "");
   const payloadHash = sha256Hex(payload);
@@ -247,6 +249,7 @@ function r2Headers(options: {
     Authorization: signRequest({
       method,
       path,
+      query,
       headers,
       payloadHash,
       accessKeyId: config.accessKeyId,
@@ -353,4 +356,109 @@ export async function deleteImageByUrl(url: string | null | undefined): Promise<
 
   const key = keyFromPublicUrl(url, config);
   if (key) await deleteImage(key);
+}
+
+/** Um objeto tal como o bucket o descreve. */
+export type R2Object = {
+  key: string;
+  /** Quando foi escrito. É o que dá o "prazo de validade" da limpeza de órfãos. */
+  lastModified: Date;
+  bytes: number;
+};
+
+/** Um `ListObjectsV2` traz no máximo isto de uma vez; acima disso pagina. */
+const LIST_MAX_KEYS = 1000;
+/** Teto de páginas, para um bucket enorme não pendurar um cron para sempre. */
+const LIST_MAX_PAGES = 100;
+
+/**
+ * Lista os objetos do bucket sob um prefixo.
+ *
+ * ⚠️ ESTA É A ÚNICA OPERAÇÃO DE LEITURA EM MASSA DO FICHEIRO, e existe por uma
+ * razão só: sem listar não há forma de saber o que está no bucket e já não é
+ * referido por ninguém. Uma limpeza de órfãos que adivinhasse chaves em vez de
+ * as ler seria uma forma cara de apagar coisas a sério.
+ *
+ * PAGINA de propósito: o `ListObjectsV2` corta aos 1000 e devolve um cursor. Ler
+ * só a primeira página daria uma lista PARCIAL — e uma lista parcial usada como
+ * "o que existe" é inofensiva, mas usada como "o que está referido" seria uma
+ * ordem de apagar o resto. Aqui é só o primeiro caso; ainda assim pagina-se,
+ * para o critério de órfão nunca depender do tamanho do bucket.
+ *
+ * DEVOLVE `null` EM CASO DE FALHA, e nunca uma lista vazia: quem limpa tem de
+ * conseguir distinguir "o bucket não tem nada" de "não consegui perguntar". É a
+ * mesma lição do `inChannelScope()` — uma lista vazia não pode significar
+ * "sem filtro".
+ */
+export async function listImages(prefix: string): Promise<R2Object[] | null> {
+  const config = r2Config();
+  if (!config) return null;
+
+  const objetos: R2Object[] = [];
+  let token: string | undefined;
+
+  for (let pagina = 0; pagina < LIST_MAX_PAGES; pagina++) {
+    /*
+     * A query TEM de ir ordenada por nome de parâmetro e codificada — é o
+     * `CanonicalQueryString` do SigV4, e uma ordem diferente dá uma assinatura
+     * que o R2 recusa com `SignatureDoesNotMatch`.
+     */
+    const params = [
+      `continuation-token=${token ? encodeURIComponent(token) : ""}`,
+      `list-type=2`,
+      `max-keys=${LIST_MAX_KEYS}`,
+      `prefix=${encodeURIComponent(prefix)}`,
+    ];
+    if (!token) params.splice(0, 1); // sem cursor, o parâmetro não vai de todo
+    const query = params.join("&");
+
+    const path = `/${config.bucket}`;
+    const headers = r2Headers({
+      method: "GET",
+      path,
+      query,
+      payload: new Uint8Array(),
+      config,
+      now: new Date(),
+    });
+
+    let resposta: Response;
+    try {
+      resposta = await fetch(
+        `https://${config.accountId}.r2.cloudflarestorage.com${path}?${query}`,
+        { method: "GET", headers, cache: "no-store" },
+      );
+    } catch (error) {
+      console.error("[r2] LIST falhou na rede:", error);
+      return null;
+    }
+
+    if (!resposta.ok) {
+      console.error(`[r2] LIST ${resposta.status}:`, (await resposta.text()).slice(0, 500));
+      return null;
+    }
+
+    const xml = await resposta.text();
+    for (const bloco of xml.split("<Contents>").slice(1)) {
+      const key = bloco.match(/<Key>([^<]*)<\/Key>/)?.[1];
+      const modificado = bloco.match(/<LastModified>([^<]*)<\/LastModified>/)?.[1];
+      const tamanho = bloco.match(/<Size>(\d+)<\/Size>/)?.[1];
+      if (!key || !modificado) continue;
+      objetos.push({
+        // O R2 devolve as chaves com as entidades XML escapadas.
+        key: key.replaceAll("&amp;", "&").replaceAll("&lt;", "<").replaceAll("&gt;", ">"),
+        lastModified: new Date(modificado),
+        bytes: Number(tamanho ?? 0),
+      });
+    }
+
+    const truncado = /<IsTruncated>true<\/IsTruncated>/.test(xml);
+    token = xml.match(/<NextContinuationToken>([^<]*)<\/NextContinuationToken>/)?.[1];
+    if (!truncado || !token) return objetos;
+  }
+
+  // Chegou ao teto de páginas: a lista está INCOMPLETA, e uma lista incompleta
+  // não pode ser usada como base de uma limpeza. Falha em vez de mentir.
+  console.error(`[r2] LIST parou no teto de ${LIST_MAX_PAGES} páginas — lista incompleta.`);
+  return null;
 }

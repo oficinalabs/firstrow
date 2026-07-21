@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { limitByIp } from "@/lib/rate-limit";
+import { limitByAccountShared } from "@/lib/rate-limit";
 import { requireApi, requireApiForEvent } from "@/server/api-guard";
 import { canOperateEvents } from "@/server/authz";
 import { validateTicket } from "@/server/tickets";
@@ -23,16 +23,22 @@ const bodySchema = z.object({
  * limite tem de vir antes da ida à base de dados, senão um scanner encravado
  * fazia-nos pagar as queries todas antes de o travarmos.
  *
- * O limite é por OPERADOR e não só por IP: numa porta com fila, o staff sai
- * todo pelo mesmo router, e um balde partilhado bloqueava a equipa inteira
- * quando um telemóvel encravasse a repetir pedidos. Por conta, trava o
- * scanner em loop sem parar a porta.
+ * O limite é por OPERADOR e o IP NÃO entra na chave: numa porta com fila, o
+ * staff sai todo pelo mesmo router, e um balde por IP bloqueava a equipa
+ * inteira quando um telemóvel encravasse a repetir pedidos. Por conta, trava o
+ * scanner em loop sem parar a porta. (Até esta frente a chave era `IP|conta`,
+ * que dava o resultado certo à porta mas deixava o mesmo operador recomeçar a
+ * contagem só por saltar de wifi para dados móveis.)
+ *
+ * E é o contador PARTILHADO: o de memória não trava nada em serverless, e um
+ * scanner encravado é precisamente o caso em que os pedidos se espalham por
+ * várias instâncias.
  */
 export async function POST(req: Request) {
   const gate = await requireApi();
   if (!gate.ok) return gate.response;
 
-  const limited = limitByIp(req, "ticketValidate", gate.user.id);
+  const limited = await limitByAccountShared("ticketValidate", gate.user.id);
   if (limited) return limited;
 
   const parsed = bodySchema.safeParse(await req.json().catch(() => null));

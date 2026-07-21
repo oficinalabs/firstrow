@@ -5,7 +5,12 @@
 > Frente B (autorização, blindagem de rotas e segredos) +
 > Frente E (isolamento entre canais — ver a secção própria) +
 > Frente H (escolha de canal ao criar, e o isolamento medido ponta a ponta com
-> dois canais a sério).
+> dois canais a sério) +
+> **Frente X, 21 de julho de 2026** — [rate limiting ligado e
+> medido](#rate-limiting--ligado-e-medido), [o "404" das páginas dito como
+> é](#️-o-404-das-páginas-é-na-verdade-um-200--e-porque-é-que-continua-a-servir),
+> [limpeza de imagens órfãs](#imagens-órfãs-no-r2--a-limpeza-e-o-critério) e
+> [cookies e respostas de erro](#cookies-e-respostas-de-erro).
 
 Este documento é o mapa de quem pode o quê e, mais importante, **como é que
 isso é garantido** — porque em Next 16 o sítio onde se põe o gate muda o
@@ -25,7 +30,11 @@ leres uma coisa.
    layout não protege a página do mesmo segmento (ver
    [a fuga que isto fechou](#a-fuga-que-isto-fechou)).
 3. **401 é "não sei quem és". 403 é "sei e não podes".** Recurso que não é teu
-   responde **404** — um 403 confirmaria que existe.
+   tem de ser **indistinguível de um recurso inventado** — um 403 confirmaria
+   que existe. Nas **rotas de API** isso é um 404 a sério. Nas **páginas** o
+   status é 200 e o corpo é o do "não encontrado": é uma limitação do Next,
+   está medida, e o que a torna aceitável é a indistinguibilidade continuar de
+   pé. Ver [o "404" das páginas](#️-o-404-das-páginas-é-na-verdade-um-200--e-porque-é-que-continua-a-servir).
 4. **O erro cai para o lado seguro.** Papel desconhecido é tratado como o menos
    poderoso, nunca como acesso.
 5. **Nada de segredos no cliente.** Verificado com o bundle na mão, não por fé
@@ -254,7 +263,7 @@ Agora o canal é uma linha em `channels`, o poder vive em `channel_members`, e
 
 | A pergunta                     | Quem responde                      | Como                                    |
 | ------------------------------ | ---------------------------------- | --------------------------------------- |
-| "Podes mexer **neste evento**?" | `server/event-access.ts`           | o canal vem de `event.channelId`; não é teu → **404** |
+| "Podes mexer **neste evento**?" | `server/event-access.ts`           | o canal vem de `event.channelId`; não é teu → `notFound()` (**404** nas APIs; **200 com o corpo do 404** nas páginas — ver [porquê](#️-o-404-das-páginas-é-na-verdade-um-200--e-porque-é-que-continua-a-servir)) |
 | "De que canais podes **somar**?" | `manageScope` / `operateScope`     | um `ChannelScope` que entra em cada query agregada |
 
 A regra da segunda é a que mais importa acertar: **uma lista de canais vazia
@@ -340,14 +349,39 @@ nenhum recebe **zeros**, não a receita de toda a gente.
 > Achado da Frente H, ao medir. **Não é regressão de ninguém: é assim desde
 > sempre e é a mesma causa da [fuga do render em paralelo](#a-fuga-que-isto-fechou).**
 
-A matriz acima diz que `/admin/eventos/[id]/**` responde **404** a um evento de
-outro canal. Medido contra o build de produção, responde **200** com o ecrã de
-"não encontrado" no corpo. O mesmo acontece em qualquer página que chame
-`notFound()` em runtime (`/eventos/[id]`, `/canal/[slug]`) — só um caminho que
-não casa com rota nenhuma dá 404 a sério.
+Uma página que chame `notFound()` em runtime responde **200** com o ecrã de "não
+encontrado" no corpo (`/admin/eventos/[id]/**`, `/eventos/[id]`, `/canal/[slug]`).
+Só um caminho que não casa com rota nenhuma dá 404 a sério.
 
-A causa é a de sempre: estas páginas são dinâmicas e a resposta **já começou a
-ser enviada** quando o `notFound()` corre. O status já foi para o fio.
+> **A decisão, tomada pela Frente X: cumpre-se a verdade, não a promessa.**
+> Este documento chegou a prometer 404 em dois sítios (o princípio nº 3 e a
+> tabela das duas perguntas). Ambos foram corrigidos, porque a promessa **não é
+> exequível** — e isso foi medido, não suposto.
+
+**A causa NÃO é "a resposta já começou a ser enviada", como aqui se escreveu
+antes.** Essa explicação foi testada e é falsa. Uma página cuja **primeira e
+única instrução** é `notFound()` — sem layout a correr queries, sem `Suspense`,
+sem nada renderizado antes — responde **200** na mesma. Medido em Next 16.2.10
+contra o build de produção:
+
+| Página de teste                                    | Status |
+| -------------------------------------------------- | ------ |
+| `notFound()` como 1.ª instrução, com `force-dynamic` | **200** |
+| `notFound()` como 1.ª instrução, dinâmica por `headers()`, sem `force-dynamic` | **200** |
+| caminho sem rota nenhuma (controlo)                 | **404** |
+
+Ou seja: não é o gate estar no sítio errado, nem o `force-dynamic`. **Em Next 16
+uma rota renderizada dinamicamente commit-a o status antes de o `notFound()`
+poder mudá-lo, aconteça ele quando acontecer.** Não há onde pôr o gate que
+resolva isto — foi por isso que se corrigiu o documento em vez do código.
+
+O que **não** se fez, e porquê: dava para o `proxy.ts` ler o evento, comparar o
+canal e devolver um 404 verdadeiro antes de a página existir. Rejeitado — isso
+punha a **decisão de autorização em dois sítios**, que é exactamente o padrão
+que já custou a esta plataforma um recurso que não abria para ninguém (ver
+[as zonas do backoffice](../lib/backoffice-zones.ts)). Pagar uma query por
+pedido e duplicar a regra para ganhar um número no log do CDN não compensa,
+sobretudo quando a propriedade de segurança já está de pé.
 
 **O que importa é que a propriedade que o 404 protegia continua de pé.** A regra
 nunca foi "o número tem de ser 404", foi *"um evento de outro canal tem de ser
@@ -366,9 +400,11 @@ devolve informação nenhuma sobre a liga do lado.
 **O que se perde**, e é real: quem contar 4xx no CDN para detetar alguém a bater
 a portas fechadas não vê estes. É a mesma troca já assumida em
 [O preço: o status do 403](#o-preço-o-status-do-403). As **rotas de API** não
-sofrem disto (não streamam) e continuam a dar 404 de verdade — confirmado no
+sofrem disto e continuam a dar 404 de verdade — confirmado no
 `GET /admin/eventos/[id]/bilhetes/export`, que devolveu **404** ao dono da
-outra liga.
+outra liga, e outra vez pela Frente X, em que
+`POST /api/checkout/<uuid inexistente>` devolveu **404** oito vezes seguidas
+enquanto media o rate limiting.
 
 ### ⚠️ A guarda de duplicados não aguentava pedidos em paralelo
 
@@ -603,7 +639,54 @@ culpado. Não é preciso instalar nada: o Next resolve `server-only` internament
 - `lib/server-env.ts` — o leitor genérico de segredos
 - `lib/cloudflare.ts` — token da API + chave que assina os tokens de reprodução
 - `lib/eupago.ts` — chave da API + segredo do webhook
+- `lib/r2.ts` — chaves do bucket de imagens
+- `server/imagens-orfas.ts` — a limpeza que apaga do bucket
 - `app/admin/eventos/[id]/transmissao/stream-credentials.ts` — **a chave RTMPS**
+
+### ⚠️ A guarda não cobria o segredo mais valioso de todos
+
+> Frente X, 21 de julho de 2026. Era a dívida nº 6, e o risco era maior do que o
+> registo dizia.
+
+`lib/env.ts` **não** tinha `server-only`, e exportava um objeto único com o
+`BETTER_AUTH_SECRET` e o `DATABASE_URL` **ao lado** do `NEXT_PUBLIC_APP_URL`.
+Quem precisa do URL público importa `{ env }` — é o que
+`app/eventos/[eventId]/ver/page.tsx` faz para montar o link de partilha — e essa
+é exatamente a linha que alguém copia para um componente `"use client"` no dia
+em que precisar do mesmo URL no browser. Nesse dia o bundler inlineava o objeto
+**inteiro**: o segredo que assina todos os cookies de sessão, em texto, no
+JavaScript público. O build passava verde.
+
+O fio era ainda mais fino do que parece: `lib/auth-client.ts` só não arrasta
+`lib/auth.ts` (e com ele `lib/env.ts`) para o bundle dos sete componentes de
+autenticação porque escreve `import type { auth }`. **Apagar a palavra `type`
+num refactor bastava.**
+
+Corrigido separando o que se importa por hábito do que é segredo:
+
+| Export | Conteúdo | Quem importa |
+| ------ | -------- | ------------ |
+| `env` | só `NEXT_PUBLIC_APP_URL` | qualquer sítio, cliente incluído |
+| `envServidor` | `DATABASE_URL`, `BETTER_AUTH_SECRET`, `BETTER_AUTH_URL` | `db/index.ts` e `lib/auth.ts`, e mais nada |
+
+Já não existe nenhum objeto que junte um segredo a um valor que alguém queira no
+browser. A validação continua a ser uma e a correr no arranque.
+
+**Porque é que `lib/env.ts` continua sem `server-only`** — e isto foi medido,
+não presumido: o `server-only` só é inofensivo dentro do Next, que o resolve
+pela condição `react-server`. Fora dela **lança no import**. Como `db/index.ts`
+importa `lib/env.ts`, pô-lo ali partia **todas** as ferramentas do repositório
+que falam com a base de dados por `tsx` — as migrações (`scripts/migrate-*.ts`),
+os seeds e os scripts de medição. Instalou-se o pacote a sério para confirmar e
+o script de medição rebentou com *"This module cannot be imported from a Client
+Component module"*. Partir as migrações para fechar uma porta que a separação já
+fecha não compensa; o alarme de build volta a ser possível no dia em que os
+scripts correrem por um runner que perceba `react-server`.
+
+**`BETTER_AUTH_URL` passou a ser validado como URL** (`z.url()`, era
+`z.string().min(1)`). Não é cosmético: o Better Auth deriva o `useSecureCookies`
+do protocolo do `baseURL`, por isso um `http://` aqui num ambiente publicado
+tirava a flag **`Secure`** ao cookie de sessão, em silêncio.
 
 > **Sobre a chave de stream (RTMPS).** É o segredo mais perigoso do repositório
 > e não é pela razão óbvia. Um token de reprodução que fuja deixa uma pessoa
@@ -621,54 +704,215 @@ e pelo `Referrer-Policy`.
 
 ---
 
-## Rate limiting — e a limitação, dita como é
+## Rate limiting — ligado, e medido
 
-`lib/rate-limit.ts`, partilhado. Políticas num sítio só:
+> Estado: **ligado e medido a 21 de julho de 2026** pela Frente X, contra o
+> build de produção na porta 3016. Até esta data o contador partilhado existia,
+> estava testado, e **nenhuma rota o chamava** — as cinco continuavam no
+> contador em memória, que em serverless não limita nada.
 
-| Balde            | Limite   | Chave           | Onde                                             |
-| ---------------- | -------- | --------------- | ------------------------------------------------ |
-| `auth`           | 10/min   | IP + caminho    | `/sign-in/email`, `/sign-up/email`, reset        |
-| `authEmail`      | 4/min    | IP + caminho    | pedidos que disparam email                       |
-| `playback`       | 12/min   | conta           | mint do token de reprodução                      |
-| `ticketValidate` | 30/min   | **operador**    | validação de QR à porta                          |
-| `checkout`       | 8/min    | conta           | iniciar pagamentos MB WAY                        |
+`lib/rate-limit.ts`, contador **partilhado em Postgres**. Políticas num sítio só,
+e a tabela agora declara também **de onde sai a chave** — não é uma anotação, é
+o que o código lê (`FonteDaChave`), com os tipos a impedir que uma rota use a
+chave errada:
 
-**Porquê por IP no login e não por conta:** travar por conta deixava um atacante
+| Balde            | Limite   | Chave           | Cobra                | Onde                                      |
+| ---------------- | -------- | --------------- | -------------------- | ----------------------------------------- |
+| `auth`           | 10/min   | IP + caminho    | **só o que falha**   | `/sign-in/email`, reset, mudar password   |
+| `auth`           | 10/min   | IP + caminho    | sempre               | `/sign-up/email` (criar conta é o recurso)|
+| `authEmail`      | 4/min    | IP + caminho    | sempre               | pedidos que disparam email                |
+| `playback`       | 12/min   | **só a conta**  | sempre               | mint do token de reprodução               |
+| `ticketValidate` | 30/min   | **só o operador** | sempre             | validação de QR à porta                   |
+| `checkout`       | 8/min    | **só a conta**  | sempre               | iniciar pagamentos MB WAY (as duas rotas) |
+
+### ⚠️ A chave estava errada, e este documento é que a descrevia bem
+
+A tabela anterior dizia "conta" e "operador". **O código punha o IP na chave à
+mesma**: `limitByIp(req, "checkout", user.id)` construía `checkout:<IP>|<userId>`.
+
+Juntar o IP **torna o balde mais fino, logo mais permissivo** — a mesma conta a
+mudar de rede ganha um balde novo a cada salto, e em dados móveis isso é de
+graça. No `checkout` significava multiplicar quantas vezes se consegue fazer
+tocar o telemóvel de alguém (o número vem no corpo do pedido, não é o de quem
+pede); no `playback`, era a fábrica de tokens que o limite existe para fechar.
+
+Corrigido: os baldes de conta são chaveados **só** pela conta, e os tipos
+(`ScopeDeIp` / `ScopeDeConta`) não deixam compilar o contrário.
+
+### Porquê cada chave
+
+**Por IP no login, e não por conta:** travar por conta deixava um atacante
 trancar a conta de outra pessoa à vontade — bastava saber o email, que é público.
-O limite viraria a arma (*lockout-as-DoS*). O IP é quem paga a fatura do que
-está a tentar. (OWASP Authentication Cheat Sheet.)
+O limite viraria a arma (*lockout-as-DoS*). (OWASP Authentication Cheat Sheet.)
 
-**Porquê por operador na porta:** numa porta com fila, o staff sai todo pelo
-mesmo router. Um balde por IP bloqueava a equipa inteira quando um telemóvel
+**Por operador na porta:** numa porta com fila, o staff sai todo pelo mesmo
+router. Um balde por IP bloqueava a equipa inteira quando um telemóvel
 encravasse a repetir pedidos.
 
-### ⚠️ Isto vive em memória, por instância
+**Um balde de `checkout` para as duas rotas de pagamento:** o que se raciona não
+é "bilhetes" nem "acessos", é quantas vezes uma conta faz tocar um telemóvel com
+um pedido MB WAY. Dois baldes davam-lhe o dobro só por haver dois produtos.
 
-Os contadores estão num `Map` no processo. Na Vercel a app corre em várias
-instâncias em paralelo, cada uma com o seu `Map`, e uma instância fria começa a
-contar do zero. **O limite efetivo é, no pior caso, `limite × nº de instâncias
-ativas`.** Não há forma honesta de contornar isso sem um contador partilhado.
+### O login só paga quando falha — e porque é que isso foi obrigatório
 
-O que **defende mesmo**: o ataque de origem única (o caso comum), o scanner
-encravado em loop, e o pico que fazia disparar a fatura. O que **não** defende:
-um atacante distribuído por muitos IPs, ou com paciência para esperar pelo
-reciclar das instâncias.
+Ligar o contador a sério cria um problema que o contador avariado escondia: as
+operadoras móveis portuguesas põem **muitos clientes atrás do mesmo IPv4**
+(CGNAT). Um limite de 10/min por IP que contasse todos os pedidos trancava
+dezenas de espectadores legítimos na noite de um evento.
 
-Não escrever "temos rate limiting" em material comercial sem esta nota ao lado.
+A saída não foi subir o número (que enfraquece o travão para toda a gente), foi
+**cobrar à entrada e devolver no sucesso**. Quem acerta na password não deixa
+rasto; quem anda a adivinhar falha por definição.
 
-**Upgrade quando houver orçamento** (~10 min, o mais barato primeiro):
-1. Upstash Redis pelo Marketplace da Vercel (o Vercel KV foi descontinuado e
-   migrado para lá em dez/2024) + `@upstash/ratelimit`. Trocar o `hit()` de
-   `lib/rate-limit.ts` por um `INCR`+`EXPIRE` atómico — a superfície pública
-   (`checkRateLimit`, `limitByIp`) foi desenhada para essa troca não tocar em
-   nenhuma rota. Bónus: o Better Auth aceita `rateLimit.storage:
-   "secondary-storage"` e os limites dele passam a ser distribuídos de borla.
-2. Uma regra de rate limit no WAF da Vercel (grátis até 1 M pedidos), à frente
-   de tudo.
+⚠️ **A primeira versão disto tinha um buraco, e foi a medição que o apanhou.**
+Espreitava o balde e só cobrava as falhas — mas uma leitura não tranca nada, e
+**20 passwords erradas em paralelo passaram as 20**, porque as vinte leram
+"balde vazio" no mesmo instante. Era uma rajada de tamanho ilimitado por janela,
+no endpoint de login. Cobrar primeiro usa o `INSERT … ON CONFLICT` atómico, que
+serializa; a devolução no sucesso dá o mesmo benefício sem o buraco.
 
-Proteção de memória: teto de 10 000 chaves e limpeza preguiçosa disparada por
-volume de chamadas (não por `setInterval` — numa função serverless a instância
-congela entre invocações e um temporizador não tem garantia de disparar).
+### ⚠️ O limitador interno do Better Auth mandava mais do que este
+
+`lib/auth.ts` tem o seu próprio `rateLimit.customRules`, **em memória**. Enquanto
+esteve mais **apertado** do que o partilhado, era ele quem decidia na prática — e
+como não distingue sucesso de falha, anulava por completo a regra de cima.
+Medido: com `/sign-in/email` a 10/min lá dentro, **40 logins CERTOS do mesmo IP
+deram 40 × 429**. Os valores internos foram afrouxados (120/min no sign-in) para
+voltarem a ser o que dizem ser: um encosto por instância, não a política.
+
+### O que isto GARANTE agora, em números
+
+Medição contra o build de produção, com sessões reais
+(`scripts/medir-rate-limit-ligado.ts`). O `eventId` é um UUID inexistente, por
+isso o limite corre antes do `getEvent` e **nenhum telemóvel toca**:
+
+| Medição                                                        | Passaram | Travados (429) |
+| -------------------------------------------------------------- | -------- | -------------- |
+| `POST /api/checkout/[id]` — 20 em paralelo, limite 8            | **8**    | 12             |
+| `POST /api/playback/[id]/session` — 24 em paralelo, limite 12   | **12**   | 12             |
+| `POST /api/tickets/validate` — 42 em paralelo, limite 30        | **30**   | 12             |
+| **Mesma conta, 20 IPs diferentes**, limite 8                    | **8**    | 12             |
+| `POST /api/auth/sign-in/email` — 20 falhas em paralelo, limite 10 | **10** | 10             |
+| `/sign-in/email` — falhas **em série** até bloquear             | **10**   | —              |
+| **40 logins CERTOS do mesmo IP** (o caso CGNAT)                  | **40**   | **0**          |
+
+Os dois **controlos** que impedem estes números de serem um falso positivo:
+
+- a conta **B**, com o balde da conta **A** esgotado, passa os seus **8** — não é
+  "está tudo a dar 429";
+- a linha aparece mesmo em `rate_limit_hits` (`auth:198.51.100.8|/sign-in/email
+  → 11`), o que prova que quem travou foi o contador **partilhado** e não o `Map`
+  do processo; e depois dos 40 logins certos essa contagem está a **0**, que é a
+  prova direta de que o sucesso não custa nada.
+
+A linha da **rotação de IP** é a que mede a correção da chave: com a chave antiga
+(`IP|conta`) os vinte pedidos passavam, um por balde.
+
+### O que continua a NÃO defender
+
+O limite é **por chave**. Para os baldes de IP, um atacante com mil IPs tem mil
+baldes — isso é inerente a limitar por IP, e a defesa é outra camada (WAF, prova
+de trabalho). Para os baldes de conta, um atacante com mil contas tem mil baldes
+— e é por isso que criar contas é ele próprio limitado por IP.
+
+**Falha aberta, de propósito:** se a base de dados não responder,
+`checkRateLimitShared` **degrada para o contador em memória** e regista o erro,
+em vez de recusar tudo. Isto foi reconfirmado como a decisão certa, incluindo
+para a autenticação, por uma razão concreta: **as cinco rotas limitadas precisam
+todas da base de dados para fazer o seu trabalho**. Com a base em baixo não há
+login que valide credenciais, nem checkout que crie um entitlement, nem token de
+reprodução que confirme o direito. Um limitador que falhasse fechado
+transformava um problema da tabela de contadores numa indisponibilidade total,
+para não ganhar nada — o que ele protegeria já está indisponível.
+
+O contador em memória **deixou de ser exportado**: hoje só se lá chega por essa
+degradação. Nenhuma rota o consegue usar por engano, e nenhuma rota nova o pode
+adotar sem ir a `lib/rate-limit.ts` abrir a porta de propósito. É a defesa
+estrutural contra a repetição exata do que aconteceu aqui — código construído,
+provado, e nunca ligado.
+
+**Upgrade quando houver orçamento:** uma regra de rate limit no WAF da Vercel
+(grátis até 1 M pedidos), à frente de tudo. O contador em Postgres já resolve o
+essencial; um KV (Upstash) só valeria a pena se a ida à base de dados começar a
+pesar — e a superfície pública foi desenhada para essa troca não tocar em
+nenhuma rota.
+
+**Custo:** um `upsert` por pedido limitado, indexado pela chave primária. Só nas
+rotas sensíveis, que já falam com a base de dados de qualquer forma. A tabela
+`rate_limit_hits` é criada em runtime (`create table if not exists`) e limpa-se
+a si própria com um `delete` probabilístico das janelas mortas.
+
+---
+
+## Imagens órfãs no R2 — a limpeza, e o critério
+
+> Frente X, 21 de julho de 2026. `server/imagens-orfas.ts`, ligado ao cron
+> diário que já existia (`/api/cron/reconciliar`).
+
+Há **um** sítio que escreve no bucket (`app/api/uploads/canal/route.ts`) e ele
+escreve **antes** de o formulário ser gravado — tem de ser, porque a
+pré-visualização precisa de um URL. Daí saem três formas de deixar lixo:
+quem carrega e fecha o separador sem gravar; quem troca de imagem três vezes
+antes de gravar (cada upload gera um id novo e nada sobrescreve); e o ecrã de
+**criar canal**, onde ainda não há id e a chave fica `canais/_novo/<userId>/…`
+sem nunca ser movida.
+
+### ⚠️ O critério NÃO é o prefixo — e essa é a parte que importa
+
+A tentação é apagar tudo o que está sob `canais/_novo/`. **Seria um incidente
+em produção:** um canal criado por esse ecrã guarda esse URL no `logo_url`
+**para sempre**, porque nada o reescreve. Limpar por prefixo apagava logos de
+canais **vivos**, e o sintoma seria imagens partidas no site público de uma liga
+a pagar, sem nada nos registos a explicar porquê.
+
+O critério é por **referência**, e exige as duas condições:
+
+1. a chave **não** é referida por nenhuma linha de `channels` (`logo_url` **nem**
+   `banner_url`, de **todos** os canais, sem âmbito nenhum); **e**
+2. o objeto foi escrito há mais de **7 dias** (`PRAZO_DE_GRACA_MS`).
+
+O prazo de graça não é zelo: entre o upload e o `submit` pode passar muito tempo
+— a pessoa está a escolher, a mudar de ideias, com o formulário aberto noutro
+separador. Sem ele, a limpeza apagava a imagem por baixo de quem a ia gravar.
+
+Confirmado que `channels.logo_url` e `channels.banner_url` são as **únicas**
+colunas do schema que guardam URLs de imagem, e que o único caminho de upload
+escreve sempre sob `canais/` — por isso não há tabela esquecida cujas imagens a
+limpeza pudesse comer.
+
+### As três guardas contra o acidente caro
+
+O modo de falha desta rotina não é "não limpou", é **"limpou tudo"**:
+
+| Guarda | O que impede |
+| ------ | ------------ |
+| `listImages` devolve **`null`** e não lista vazia quando falha | uma leitura falhada tornaria o conjunto "o que existe" incompleto, e ficheiros vivos passariam a órfãos |
+| **aborta** se o bucket tem objetos e a base não referiu nenhum | é o sinal de a query ter corrido contra a base errada, ou de a coluna ter mudado de nome. Vazio significa "zero linhas", nunca "sem filtro" — a mesma lição do `inChannelScope()` |
+| `dryRun` é o valor **por omissão** | quem apaga tem de o pedir |
+
+A listagem também pagina e **falha em vez de devolver uma lista parcial** se
+passar o teto de páginas.
+
+### Como foi verificado
+
+Oito asserções em `tests/integracao/imagens-orfas.test.ts`, com o R2 falso — e a
+mais importante é a negativa: **uma imagem sob `_novo/` que um canal vivo ainda
+refere não é apagada.** Se alguém "simplificar" isto para limpar por prefixo, é
+esse teste que fica vermelho.
+
+Ponta a ponta contra o **bucket real**, pelo cron, com o par de controlos que
+torna o resultado legível:
+
+| Corrida | Resultado |
+| ------- | --------- |
+| bucket real, prefixo `canais/` | `vistos: 0` · **0 apagadas** — o bucket ainda não tem imagens |
+| **controlo:** o mesmo com um bucket inexistente | `403 AccessDenied` → **abortado**, `0 apagadas`, e a guarda registada no log |
+
+O controlo é o que dá sentido ao zero: sem ele, "não vi nada" era
+indistinguível de "não consegui perguntar". Como a corrida contra um bucket
+partido **aborta** e a corrida contra o bucket real devolve um zero limpo, o
+zero é uma leitura verdadeira. A limpeza entra em serviço **antes** de haver
+lixo para limpar.
 
 ---
 
@@ -791,6 +1035,66 @@ Capturas em `docs/screenshots/blindagem/`.
 
 ---
 
+## Cookies e respostas de erro
+
+> Passagem crítica da Frente X, 21 de julho de 2026. Registado o que está **bem**
+> com o mesmo cuidado do que estava mal — um documento que só lista problemas
+> não diz o que já foi olhado.
+
+### Cookies
+
+Há **dois** cookies no projeto, e mais nenhum `Set-Cookie` em lado nenhum.
+
+| Cookie | Flags | Veredicto |
+| ------ | ----- | --------- |
+| `fr_dv` (dispositivo, `app/api/playback/device.ts`) | `httpOnly`, `sameSite=lax`, `path=/`, `secure` em produção, 1 ano | ✅ correto |
+| sessão (Better Auth) | as omissões do Better Auth | ✅ correto **desde que** `BETTER_AUTH_URL` seja `https://` |
+
+O `fr_dv` valida o formato na leitura (`/^[0-9a-f-]{36}$/i`), por isso um valor
+forjado não serve de vetor de injeção. É `lax` e não `strict` de propósito: não
+é credencial nenhuma.
+
+O que **não** estava garantido era o `Secure` do cookie de sessão — o Better
+Auth deriva-o do protocolo do `baseURL`, e o `BETTER_AUTH_URL` era validado como
+string qualquer. Fechado (ver [Auditoria de segredos](#auditoria-de-segredos)).
+É um cookie persistente de 1 ano, por isso **pertence ao aviso de cookies**
+mesmo não sendo de rastreio.
+
+### Respostas de erro — nada escorre
+
+Procurado `error.message`, `String(error)`, `.stack` e `JSON.stringify(error)`
+em `app/`, `server/`, `lib/`, `proxy.ts` e `instrumentation.ts`:
+
+- **Nenhuma** rota de API devolve o texto de uma exceção apanhada. O único
+  candidato, `POST /api/admin/events`, devolve `describeSaveFailure(error)`, que
+  é uma de **duas** frases fixas — não a mensagem original.
+- **Nenhuma** server action o faz: todas registam no servidor e devolvem frase
+  fixa.
+- `app/error.tsx` mostra o `digest` (ou `FR-500`), **nunca** a mensagem. Três
+  fronteiras de erro descartam o `error` por completo (só usam o `reset`).
+- `lib/email.ts` é o único objeto que carrega uma mensagem de fornecedor
+  (`{ sent, error }`). Não sai para lado nenhum — quem o lê só usa o `sent`.
+
+### O que mais foi verificado e está bem
+
+- **CSRF**: o Better Auth recusa pedidos sem `Origin` (`MISSING_OR_NULL_ORIGIN`).
+  Observado a bloquear a primeira versão do script de medição, que não o enviava.
+- **`CRON_SECRET`** e o **segredo do webhook Eupago**: ambos com `timingSafeEqual`
+  e verificação de comprimento, ambos **fecham** quando a variável falta. O 401
+  do cron foi observado nesta frente.
+- **Escalada de papel pelo registo**: `user.additionalFields.role` tem
+  `input: false` — o `role` não entra pelo corpo do sign-up.
+- **Account linking**: `requireLocalEmailVerified: true` com `trustedProviders`
+  vazio, o que fecha o *pre-hijacking*.
+- **Sem `dangerouslySetInnerHTML`, `eval` ou `new Function`** em nenhum de
+  `app/`, `components/`, `lib/`, `server/`, `emails/`.
+- **`sql.raw`** aparece duas vezes, ambas sobre constantes internas; nenhuma
+  entrada de utilizador chega a SQL cru.
+- **Open redirect**: `destinoSeguro()` no `proxy.ts` rejeita `//evil.pt` e
+  `/\evil.pt`.
+
+---
+
 ## Dívida conhecida e próximos passos
 
 Achados que ficam registados por não serem desta frente ou por precisarem de
@@ -816,10 +1120,11 @@ decisão do dono:
    está confirmado se a Cloudflare revalida o `exp` por segmento — se revalidar,
    um evento longo cortava aos 2 minutos. **Testar num evento real antes de
    vender bilhetes.**
-6. **`lib/env.ts` mistura segredos e valores públicos** no mesmo objeto
-   exportado (`BETTER_AUTH_SECRET` ao lado de `NEXT_PUBLIC_APP_URL`). Nada o
-   impede hoje de ser passado a um componente de cliente por engano. Separar em
-   `env.server.ts` (com `server-only`) e `env.public.ts` fecha isto de vez.
+6. ~~**`lib/env.ts` mistura segredos e valores públicos.**~~ ✅ Resolvido pela
+   Frente X: separado em `env` (público) e `envServidor` (segredos). Ver
+   [Auditoria de segredos](#️-a-guarda-não-cobria-o-segredo-mais-valioso-de-todos).
+   Fica **por fazer** o alarme de build (`server-only`) sobre essa cadeia — está
+   bloqueado pelo facto de os scripts `tsx` importarem `@/db`; explicado lá.
 7. **Validar o `next=` no lado que o LÊ.** O `proxy.ts` só produz caminhos
    internos, mas quem lê o `?next=` na página de login deve revalidar antes de
    redirecionar (rejeitar `//evil.pt`, `/\evil.pt`, esquemas embutidos e as
@@ -833,6 +1138,35 @@ decisão do dono:
    ScanOutcome`). Com 401/403/429 fica com um resultado indefinido em vez de
    mostrar um estado — e agora também com **404**, que é o que uma porta de
    outro canal devolve. UI, por isso não foi tocado aqui.
+
+### Deixado pela Frente X (segurança)
+
+18. **`components/admin/period-tabs.tsx` importa `@/server/stats` por VALOR**
+    (`import { PERIODS }`), o que puxa `@/server/stats` → `@/db` → `@/lib/env`
+    para dentro de um ficheiro que vive em `components/`, ao lado de vários
+    `"use client"`. Hoje é inofensivo (é server component, e os segredos já
+    saíram do `env` público), mas os seus vizinhos
+    `charts/platform-sections.tsx` e `event-economics.tsx` usam `import type` e
+    são apagados na compilação — este é o único que não. Mover as `PERIODS` para
+    um módulo folha resolve. **Não foi tocado: `server/stats.ts` é da Frente Y.**
+19. **Não há `app/global-error.tsx`.** Um erro no layout raiz cai na fronteira
+    interna do Next. Não é fuga (em produção o Next mostra uma página genérica),
+    mas perde-se a página com a marca e o `digest`.
+20. **`base-uri` e `form-action` podiam passar já a *enforcing*.** O CSP completo
+    está em `Report-Only` por causa do `script-src`, mas estas duas diretivas não
+    têm risco nenhum de partir a app e fecham *base tag injection* e exfiltração
+    por formulário. Ficam a aguardar a decisão do dono, junto com a promoção do
+    resto.
+21. **A limpeza de órfãs nunca correu com lixo a sério** — o bucket estava vazio
+    quando entrou. Vale a pena olhar para o log do cron na primeira semana em que
+    houver imagens, para confirmar as contagens (`vistos`/`referidas`/`orfas`)
+    contra o que se espera.
+22. **As imagens do ecrã de criar canal continuam sob `canais/_novo/<userId>/`**
+    depois de o canal nascer. Já não é um problema de custo (a limpeza trata do
+    que é órfão) nem de segurança, mas é desarrumação com uma armadilha: quem
+    olhar para o bucket vai achar que aquilo é lixo. Movê-las ao gravar exigia um
+    `CopyObject` no `lib/r2.ts` e uma janela de falha a meio da criação — não
+    compensou. **O aviso está no topo de `server/imagens-orfas.ts`.**
 
 ### Deixado pela Frente E (multi-canal)
 

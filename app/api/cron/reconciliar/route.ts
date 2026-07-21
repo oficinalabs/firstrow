@@ -1,5 +1,6 @@
 import { timingSafeEqual } from "node:crypto";
 import { NextResponse } from "next/server";
+import { limparImagensOrfas } from "@/server/imagens-orfas";
 import { reconcilePending } from "@/server/reconcile";
 
 /*
@@ -67,5 +68,45 @@ export async function GET(req: Request) {
     console.info("[reconciliação] cron:", relatorio);
   }
 
-  return NextResponse.json(relatorio);
+  /*
+   * ── Limpeza das imagens órfãs do R2 ───────────────────────────────────────
+   *
+   * Vem A SEGUIR e nunca antes: o dinheiro é o trabalho importante deste cron, e
+   * uma limpeza de ficheiros não pode roubar-lhe o `maxDuration`.
+   *
+   * PORQUÊ AQUI e não num cron próprio: a Vercel limita o número de crons no
+   * plano em uso, e este já corre uma vez por dia com autenticação a sério
+   * (`CRON_SECRET`, comparação em tempo constante, fecha sem a variável). Um
+   * segundo cron era mais uma superfície autenticada a manter pela mesma
+   * periodicidade.
+   *
+   * O `catch` é deliberado: uma falha a arrumar ficheiros não pode fazer o cron
+   * devolver erro e a Vercel marcar como falhada a execução que RECONCILIOU
+   * pagamentos com sucesso. O trabalho que importa já está feito neste ponto.
+   *
+   * As guardas contra o acidente caro estão em `server/imagens-orfas.ts` — é lá
+   * que vive o critério, e vale a pena lê-lo antes de mexer neste bloco.
+   */
+  const imagens = await limparImagensOrfas({ dryRun: false }).catch((erro) => {
+    console.error("[imagens-órfãs] cron falhou:", erro);
+    return null;
+  });
+
+  if (imagens?.abortadoPorque) {
+    // Uma guarda disparou. Isto TEM de aparecer no log: significa que a limpeza
+    // não está a correr, e um silêncio aqui seria indistinguível de "não havia
+    // nada para limpar".
+    console.warn("[imagens-órfãs] limpeza abortada:", imagens.abortadoPorque);
+  } else if (imagens && (imagens.apagadas > 0 || imagens.orfas.length > 0)) {
+    console.info("[imagens-órfãs] cron:", {
+      vistos: imagens.vistos,
+      referidas: imagens.referidas,
+      recentes: imagens.recentes,
+      orfas: imagens.orfas.length,
+      apagadas: imagens.apagadas,
+      bytesOrfaos: imagens.bytesOrfaos,
+    });
+  }
+
+  return NextResponse.json({ ...relatorio, imagens: imagens ?? undefined });
 }

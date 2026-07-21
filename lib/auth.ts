@@ -6,7 +6,7 @@ import { db } from "@/db";
 import * as authSchema from "@/db/auth-schema";
 import { DEFAULT_ROLE } from "@/db/auth-schema";
 import { isEmailEnabled, sendPasswordResetEmail, sendVerificationEmail } from "@/lib/email";
-import { env } from "@/lib/env";
+import { envServidor } from "@/lib/env";
 import {
   checkPassword,
   PASSWORD_MAX_LENGTH,
@@ -58,12 +58,12 @@ function buildVerificationUrl(token: string, userEmail: string): string {
   const callback = encodeURIComponent(
     `/verificar-email?confirmado=1&email=${encodeURIComponent(userEmail)}`,
   );
-  return `${env.BETTER_AUTH_URL}/api/auth/verify-email?token=${token}&callbackURL=${callback}`;
+  return `${envServidor.BETTER_AUTH_URL}/api/auth/verify-email?token=${token}&callbackURL=${callback}`;
 }
 
 /** Link de redefinição — aponta direto à nossa página, sem saltos extra. */
 function buildPasswordResetUrl(token: string): string {
-  return `${env.BETTER_AUTH_URL}/redefinir-password?token=${token}`;
+  return `${envServidor.BETTER_AUTH_URL}/redefinir-password?token=${token}`;
 }
 
 /*
@@ -111,8 +111,8 @@ const enforcePasswordPolicy = createAuthMiddleware(async (ctx) => {
 });
 
 export const auth = betterAuth({
-  baseURL: env.BETTER_AUTH_URL,
-  secret: env.BETTER_AUTH_SECRET,
+  baseURL: envServidor.BETTER_AUTH_URL,
+  secret: envServidor.BETTER_AUTH_SECRET,
   database: drizzleAdapter(db, {
     provider: "pg",
     schema: authSchema,
@@ -219,17 +219,32 @@ export const auth = betterAuth({
 
   rateLimit: {
     /*
-     * Trava anti-spam nos caminhos que disparam emails ou adivinham passwords.
-     * Nota para a Frente B: isto é o mínimo indispensável desta frente e vive
-     * em memória (por instância). O rate limiting a sério — partilhado entre
-     * instâncias — é vosso, em lib/rate-limit.ts.
+     * ⚠️ ISTO É UM ENCOSTO, NÃO A POLÍTICA. A política vive em
+     * `lib/rate-limit.ts` e é aplicada em `app/api/auth/[...all]/route.ts`,
+     * contra o contador PARTILHADO em Postgres.
+     *
+     * PORQUE É QUE OS NÚMEROS SUBIRAM TODOS (e é para ficar mais seguro, não
+     * menos): este limitador do Better Auth vive em MEMÓRIA, por instância — o
+     * mesmo defeito que fazia o nosso não valer nada em serverless. Enquanto
+     * esteve mais APERTADO do que o de fora, era ELE quem decidia na prática, e
+     * a política escrita na tabela partilhada nunca chegava a aplicar-se.
+     *
+     * Foi medido: com `/sign-in/email` a 10/min aqui dentro, 40 logins CERTOS
+     * do mesmo IP levaram 40 respostas 429 — ou seja, o contador de dentro
+     * anulava por completo a regra de fora ("só as tentativas FALHADAS custam"),
+     * que existe precisamente para não trancar dezenas de clientes legítimos
+     * atrás do mesmo IPv4 de operadora móvel (CGNAT).
+     *
+     * Agora estes valores são folgados de propósito: continuam a travar um
+     * script a martelar uma instância quente, e deixam a decisão fina para o
+     * contador partilhado, que é global e sabe distinguir sucesso de falha.
      */
     enabled: true,
     customRules: {
-      "/send-verification-email": { window: 60, max: 3 },
-      "/request-password-reset": { window: 60, max: 3 },
-      "/sign-in/email": { window: 60, max: 10 },
-      "/sign-up/email": { window: 60, max: 5 },
+      "/send-verification-email": { window: 60, max: 30 },
+      "/request-password-reset": { window: 60, max: 30 },
+      "/sign-in/email": { window: 60, max: 120 },
+      "/sign-up/email": { window: 60, max: 60 },
     },
   },
 

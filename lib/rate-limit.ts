@@ -77,6 +77,29 @@ export type RateLimitPolicy = {
   windowMs: number;
 };
 
+/**
+ * De onde sai a CHAVE do balde — e isto é segurança, não arrumação.
+ *
+ *  - `"ip"`    — quem paga é a origem do pedido. É o certo quando ainda não há
+ *                conta em que confiar (login, registo): travar por conta deixava
+ *                um atacante trancar a conta alheia só com o email, que é
+ *                público (*lockout-as-DoS*, OWASP Authentication Cheat Sheet).
+ *  - `"conta"` — quem paga é a conta autenticada, SEM o IP pelo meio. É o certo
+ *                quando o recurso protegido está preso à conta e não à rede: o
+ *                token de reprodução, o pedido MB WAY, o scanner da porta.
+ *
+ * ⚠️ PORQUE É QUE O IP NÃO PODE ENTRAR NA CHAVE DE UM BALDE DE CONTA
+ * Juntar o IP TORNA O BALDE MAIS FINO, logo mais PERMISSIVO: a mesma conta a
+ * mudar de rede (dados móveis mudam de IP à vontade) ganha um balde novo a cada
+ * salto. Num balde de `checkout` isso é literalmente multiplicar quantas vezes
+ * se consegue fazer tocar o telemóvel de alguém; num de `playback`, é a fábrica
+ * de tokens que o limite existia para fechar.
+ */
+export type FonteDaChave = "ip" | "conta";
+
+/** Política + de onde sai a chave. É a tabela que manda, não o sítio que chama. */
+type PoliticaComChave = RateLimitPolicy & { chave: FonteDaChave };
+
 export type RateLimitResult = {
   /** O pedido pode seguir? */
   allowed: boolean;
@@ -97,23 +120,56 @@ export type RateLimitResult = {
  * segundos em fila cheia — 30/min dá folga de sobra sem deixar enumerar QRs.
  */
 export const RATE_LIMITS = {
-  /** Entrar/registar: adivinhar passwords tem de custar caro. */
-  auth: { max: 10, windowMs: 60_000 },
-  /** Caminhos que disparam email (ativação, recuperação) — anti-spam. */
-  authEmail: { max: 4, windowMs: 60_000 },
+  /**
+   * TENTATIVAS FALHADAS de credenciais. Só conta o que CORRE MAL — ver
+   * `chargeFailedAttempt` e a nota do CGNAT em `app/api/auth/[...all]/route.ts`.
+   *
+   * 10 por minuto por IP é generoso para quem se engana a escrever a password e
+   * hostil para quem a anda a adivinhar. Como o login BEM SUCEDIDO não gasta
+   * nada, uma operadora móvel a esconder centenas de clientes atrás do mesmo IP
+   * (CGNAT — o caso normal em Portugal) nunca esbarra nisto.
+   */
+  auth: { max: 10, windowMs: 60_000, chave: "ip" },
+  /**
+   * Caminhos que CRIAM ou DISPARAM alguma coisa para fora (registo, email de
+   * ativação, recuperação). Aqui conta-se SEMPRE, com ou sem sucesso: o recurso
+   * gasto é a conta criada ou o email enviado, e um pedido bem sucedido é
+   * exatamente o abuso de que nos queremos defender.
+   */
+  authEmail: { max: 4, windowMs: 60_000, chave: "ip" },
   /** Mint do token de reprodução: 1 play não precisa de 20 tokens/min. */
-  playback: { max: 12, windowMs: 60_000 },
+  playback: { max: 12, windowMs: 60_000, chave: "conta" },
   /** Validação de QR à porta: rápido para a fila, lento para enumerar. */
-  ticketValidate: { max: 30, windowMs: 60_000 },
+  ticketValidate: { max: 30, windowMs: 60_000, chave: "conta" },
   /** Iniciar pagamentos: evita encher a Eupago de referências órfãs. */
-  checkout: { max: 8, windowMs: 60_000 },
+  checkout: { max: 8, windowMs: 60_000, chave: "conta" },
   /**
    * Mensagens do chat. Limitado por CONTA (ver `CHAT_MESSAGES_PER_MINUTE` em
    * `server/chat.ts`): por IP punia quatro telemóveis atrás do mesmo NAT — uma
    * casa a ver a mesma batalha — e não travava quem trocasse de rede.
    */
-  chat: { max: 12, windowMs: 60_000 },
-} as const satisfies Record<string, RateLimitPolicy>;
+  chat: { max: 12, windowMs: 60_000, chave: "conta" },
+} as const satisfies Record<string, PoliticaComChave>;
+
+/** Nome de um balde. */
+export type RateLimitScope = keyof typeof RATE_LIMITS;
+
+/*
+ * Os baldes, separados por fonte de chave, para o COMPILADOR não deixar chamar
+ * o atalho errado. `limitByAccountShared(… "auth" …)` não compila, e
+ * `limitByIpShared(… "checkout" …)` também não — que é como se garante que a
+ * tabela acima é a verdade, e não uma anotação que o código pode contradizer.
+ * Foi essa contradição que esta frente encontrou: o documento dizia "conta" e o
+ * código punha o IP na chave à mesma.
+ */
+type ScopePorFonte<F extends FonteDaChave> = {
+  [K in RateLimitScope]: (typeof RATE_LIMITS)[K]["chave"] extends F ? K : never;
+}[RateLimitScope];
+
+/** Baldes cuja chave é o IP de quem pede. */
+export type ScopeDeIp = ScopePorFonte<"ip">;
+/** Baldes cuja chave é a conta autenticada. */
+export type ScopeDeConta = ScopePorFonte<"conta">;
 
 // ── Armazenamento ───────────────────────────────────────────────────────────
 
@@ -314,20 +370,53 @@ async function sharedHit(key: string, policy: RateLimitPolicy): Promise<RateLimi
   };
 }
 
+/**
+ * DEVOLVE ao balde uma unidade já cobrada.
+ *
+ * É a segunda metade do padrão "só o que falha custa": cobra-se SEMPRE à
+ * entrada (atomicamente, que é o que faz o limite valer) e devolve-se se a
+ * operação correr bem.
+ *
+ * ⚠️ PORQUE É QUE NÃO SE FAZ AO CONTRÁRIO — espreitar primeiro e só cobrar o que
+ * falha. Foi tentado e MEDIDO nesta frente: 20 passwords erradas em paralelo
+ * passaram TODAS as 20, porque uma leitura não tranca nada e as vinte leram
+ * "balde vazio" no mesmo instante. Dava a um atacante uma rajada de tamanho
+ * ilimitado por janela — precisamente o que o limite existe para impedir. O
+ * `ON CONFLICT` do `sharedHit` não tem esse problema: serializa.
+ *
+ * O `greatest(…, 0)` impede uma devolução a mais de pôr a contagem negativa e
+ * oferecer crédito de borla; a condição da janela impede devolver a um balde
+ * que entretanto já reiniciou (aí a unidade a devolver já não existe).
+ */
+async function sharedRefund(key: string, policy: RateLimitPolicy): Promise<void> {
+  const windowSecs = policy.windowMs / 1000;
+  await db.execute(sql`
+    update rate_limit_hits
+    set count = greatest(count - 1, 0)
+    where key = ${key}
+      and window_started_at > now() - make_interval(secs => ${windowSecs})
+  `);
+}
+
 // ── Superfície pública ──────────────────────────────────────────────────────
 
-/**
- * Verifica (e consome) uma unidade do limite.
+/*
+ * ⚠️ NÃO HÁ AQUI NENHUM ATALHO PARA O CONTADOR EM MEMÓRIA, E É DE PROPÓSITO.
  *
- * @param scope  nome da política, para não misturar baldes entre rotas
- * @param id     quem está a ser limitado (IP, id de utilizador, ou os dois)
+ * Havia (`checkRateLimit`, `limitByIp`) e as cinco rotas sensíveis ficaram
+ * agarradas a ele durante toda a vida do projeto — construiu-se o contador
+ * partilhado, provou-se com uma medição, e ninguém o ligou. É o mesmo padrão
+ * que já mordeu esta plataforma no `cfVodUid`.
+ *
+ * A defesa é estrutural e não uma nota: o `hit()` em memória deixou de ser
+ * exportado. Hoje só se lá chega pela DEGRADAÇÃO de `checkRateLimitShared`
+ * quando a base de dados não responde. Nenhuma rota o consegue usar por engano,
+ * e nenhuma rota nova o pode adotar sem vir aqui abrir a porta de propósito.
  */
-export function checkRateLimit(
-  scope: keyof typeof RATE_LIMITS,
-  id: string,
-  policy: RateLimitPolicy = RATE_LIMITS[scope],
-): RateLimitResult {
-  return hit(`${scope}:${id}`, policy, Date.now());
+
+/** A chave completa de um balde. Um sítio só a formá-la, para não divergirem. */
+function chaveDoBalde(scope: RateLimitScope, id: string): string {
+  return `${scope}:${id}`;
 }
 
 /**
@@ -339,15 +428,16 @@ export function checkRateLimit(
  * os logins é pior do que um limiter degradado. Ver o cabeçalho do ficheiro.
  */
 export async function checkRateLimitShared(
-  scope: keyof typeof RATE_LIMITS,
+  scope: RateLimitScope,
   id: string,
   policy: RateLimitPolicy = RATE_LIMITS[scope],
 ): Promise<RateLimitResult> {
+  const key = chaveDoBalde(scope, id);
   try {
-    return await sharedHit(`${scope}:${id}`, policy);
+    return await sharedHit(key, policy);
   } catch (erro) {
     console.error("[rate-limit] contador partilhado indisponível, uso o de memória:", erro);
-    return hit(`${scope}:${id}`, policy, Date.now());
+    return hit(key, policy, Date.now());
   }
 }
 
@@ -383,43 +473,63 @@ export function rateLimitHeaders(result: RateLimitResult): Record<string, string
 }
 
 /**
- * Atalho para o padrão mais comum numa rota: limita por IP e devolve já a
- * resposta 429 se estourou (ou `null` se pode seguir).
+ * Limita POR IP, contra o contador partilhado. Devolve já a resposta 429 se
+ * estourou, ou `null` se o pedido pode seguir.
  *
- *   const limited = limitByIp(req, "playback");
+ *   const limited = await limitByIpShared(req, "authEmail", "/forget-password");
  *   if (limited) return limited;
+ *
+ * @param sufixo discrimina baldes do mesmo IP (o CAMINHO, no Better Auth):
+ *   gastar as tentativas de login não deve impedir a pessoa de pedir um email
+ *   de recuperação.
  */
-export function limitByIp(
+export async function limitByIpShared(
   req: Request,
-  scope: keyof typeof RATE_LIMITS,
-  suffix?: string,
-): NextResponse | null {
-  const id = suffix ? `${clientIp(req)}|${suffix}` : clientIp(req);
-  const result = checkRateLimit(scope, id);
+  scope: ScopeDeIp,
+  sufixo?: string,
+): Promise<NextResponse | null> {
+  const id = sufixo ? `${clientIp(req)}|${sufixo}` : clientIp(req);
+  const result = await checkRateLimitShared(scope, id);
   return result.allowed ? null : rateLimitResponse(result);
 }
 
 /**
- * O mesmo atalho, mas contra o contador PARTILHADO — o limite vale entre
- * instâncias serverless. É a versão a preferir nas rotas sensíveis.
+ * Limita POR CONTA, contra o contador partilhado. O IP não entra na chave — ver
+ * a nota em `FonteDaChave` para o porquê de o juntar ser MAIS permissivo, não
+ * mais seguro.
  *
- * É `async`: a troca numa rota é trocar
- *
- *   const limited = limitByIp(req, "checkout", gate.user.id);
- *
- * por
- *
- *   const limited = await limitByIpShared(req, "checkout", gate.user.id);
- *
- * e mais nada — a assinatura de retorno (`NextResponse | null`) é a mesma, por
- * isso o `if (limited) return limited;` a seguir não muda.
+ *   const limited = await limitByAccountShared("checkout", gate.user.id);
+ *   if (limited) return limited;
  */
-export async function limitByIpShared(
-  req: Request,
-  scope: keyof typeof RATE_LIMITS,
-  suffix?: string,
+export async function limitByAccountShared(
+  scope: ScopeDeConta,
+  contaId: string,
 ): Promise<NextResponse | null> {
-  const id = suffix ? `${clientIp(req)}|${suffix}` : clientIp(req);
-  const result = await checkRateLimitShared(scope, id);
+  const result = await checkRateLimitShared(scope, contaId);
   return result.allowed ? null : rateLimitResponse(result);
+}
+
+/**
+ * Devolve ao balde a unidade cobrada por `limitByIpShared`, porque a operação
+ * acabou por correr BEM.
+ *
+ * É o que torna um limite por IP compatível com o CGNAT das operadoras móveis:
+ * quem acerta na password não deixa rasto no contador, por isso uma multidão
+ * legítima atrás do mesmo IPv4 nunca o enche. Só quem falha acumula.
+ *
+ * NUNCA REBENTA O PEDIDO: a resposta ao cliente já está decidida quando isto
+ * corre. Uma devolução perdida só torna o limite ligeiramente mais severo para
+ * aquele IP durante o resto da janela, o que é o lado seguro para falhar.
+ */
+export async function refundAttempt(
+  req: Request,
+  scope: ScopeDeIp,
+  sufixo?: string,
+): Promise<void> {
+  const id = sufixo ? `${clientIp(req)}|${sufixo}` : clientIp(req);
+  try {
+    await sharedRefund(chaveDoBalde(scope, id), RATE_LIMITS[scope]);
+  } catch (erro) {
+    console.error("[rate-limit] devolução ao contador partilhado falhou:", erro);
+  }
 }

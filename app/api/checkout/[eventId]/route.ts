@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { createMbwayCharge } from "@/lib/eupago";
 import { tipoDeConsentimentoDoEvento, validarConsentimento } from "@/lib/legal/consentimentos";
-import { limitByIp } from "@/lib/rate-limit";
+import { limitByAccountShared } from "@/lib/rate-limit";
 import { buildSplit } from "@/lib/split";
 import { requireApi } from "@/server/api-guard";
 import { guardarConsentimento } from "@/server/consents";
@@ -15,6 +15,14 @@ import { recordChargeReference, releaseCharge, reserveCharge } from "@/server/pu
  *
  * Limite: cada chamada cria uma referência MB WAY na Eupago e faz o telemóvel
  * de alguém tocar. Sem travão, isto era um botão de spam para push notifications.
+ *
+ * POR CONTA, contra o contador PARTILHADO. As duas coisas importam:
+ *  • partilhado porque o de memória não limita nada em serverless — cada
+ *    instância tinha o seu contador e morria entre pedidos;
+ *  • por conta e SEM o IP na chave porque o telemóvel que toca é o do `phone`
+ *    que vem no corpo, não o de quem pede. Com o IP na chave, um atacante em
+ *    dados móveis ganhava um balde novo a cada mudança de IP e o limite deixava
+ *    de valer para o único caso que interessa. Ver `FonteDaChave`.
  */
 export async function POST(req: Request, { params }: { params: Promise<{ eventId: string }> }) {
   const { eventId } = await params;
@@ -22,7 +30,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ eventId
   const gate = await requireApi();
   if (!gate.ok) return gate.response;
 
-  const limited = limitByIp(req, "checkout", gate.user.id);
+  const limited = await limitByAccountShared("checkout", gate.user.id);
   if (limited) return limited;
 
   const event = await getEvent(eventId);

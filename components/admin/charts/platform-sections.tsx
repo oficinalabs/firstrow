@@ -285,7 +285,7 @@ export function SalesByEventSection({
 // ── Comissão vs custo de vídeo: o rácio que decide o negócio ────────────────
 
 export function MarginSection({ economics }: { economics: PlatformEconomics }) {
-  const { rows, totals, commissionPct, usdToEur } = economics;
+  const { rows, totals, commissionPct, usdToEur, periodLabel } = economics;
 
   // Só os eventos COM estimativa de entrega entram no gráfico: um evento sem
   // sessões medidas tem custo desconhecido, e desenhá-lo com uma barra de custo
@@ -309,7 +309,10 @@ export function MarginSection({ economics }: { economics: PlatformEconomics }) {
     <ChartCard
       title="Comissão vs custo de vídeo"
       description="A comissão cresce com quem paga; a entrega cresce com quem vê. Este é o rácio que decide o negócio."
-      meta={`${commissionPct}% · câmbio ${usdToEur} $/€`}
+      // A janela entra na meta porque este bloco já não é "desde sempre": segue
+      // o seletor da página, como tudo o resto. Sem o dizer, dois períodos
+      // diferentes desenhavam o mesmo gráfico sem nada a distingui-los.
+      meta={`${periodLabel ?? "desde o início"} · ${commissionPct}% · câmbio ${usdToEur} $/€`}
       hasData={medidos.length > 0}
       empty={{
         title: "Ainda sem visionamento medido",

@@ -266,26 +266,92 @@ describe.skipIf(!temBaseDeDados())("dashboard da plataforma", () => {
   });
 
   /*
-   * O teste que o plano exige por escrito: dois ecrãs sobre o mesmo dinheiro
-   * não podem dizer números diferentes. O extrato conta HOJE só PPV, por isso a
-   * identidade é sobre a parte PPV — e é ela que tem de bater ao cêntimo.
+   * ============================================================================
+   *  RECONCILIAÇÃO COM O EXTRATO — a identidade ESTENDEU-SE, não se apagou
+   * ============================================================================
+   *
+   * Dois ecrãs sobre o mesmo dinheiro não podem dizer números diferentes.
+   *
+   * O extrato contava só PPV, e a identidade era `ppvCents ≡ grossCents`. Com os
+   * bilhetes lá dentro, cada lado passou a ter as suas duas parcelas e a
+   * igualdade é sobre ambas — parcela A PARCELA, e não só no total.
+   *
+   * Isso é de propósito: dois erros simétricos (PPV a mais e bilhetes a menos)
+   * davam um total certo com dois números errados, e um teste só sobre o total
+   * deixava-os passar sem uma linha vermelha.
+   *
+   * Contas à mão do cenário, todas em cêntimos:
+   *
+   *   PPV       5 × 850 + 1 × 1000       = 5250   comissão 5×85 + 1×100 = 525
+   *   Bilhetes  2 × 1500                 = 3000   comissão 2×150        = 300
+   *   Bruto                              = 8250   comissão              = 825
    */
   describe("reconciliação com o extrato de ganhos", () => {
-    it("o PPV da dashboard é, ao cêntimo, o bruto do extrato", async () => {
+    it("as duas parcelas da dashboard são, ao cêntimo, as duas do extrato", async () => {
       await cenario();
 
       const serie = await getRevenueByPeriod(TODOS, "12m", AGORA);
       const extrato = await getMonthlyStatement(TODOS);
-      const brutoExtrato = extrato.rows.reduce((n, r) => n + r.grossCents, 0);
-      const taxaExtrato = extrato.rows.reduce((n, r) => n + r.firstrowFeeCents, 0);
-      const comprasExtrato = extrato.rows.reduce((n, r) => n + r.purchases, 0);
+      const soma = (campo: keyof (typeof extrato.rows)[number]) =>
+        extrato.rows.reduce((n, r) => n + (r[campo] as number), 0);
 
-      expect(serie.totals.ppvCents).toBe(brutoExtrato);
-      expect(serie.totals.ppvCommissionCents).toBe(taxaExtrato);
-      expect(serie.totals.ppvPurchases).toBe(comprasExtrato);
-      // E o valor calculado à mão, para o caso de ambos estarem errados juntos.
-      expect(brutoExtrato).toBe(5250);
-      expect(taxaExtrato).toBe(525);
+      // Parcela a parcela — é isto que um total sozinho não prova.
+      expect(serie.totals.ppvCents).toBe(soma("ppvGrossCents"));
+      expect(serie.totals.ticketCents).toBe(soma("ticketGrossCents"));
+      expect(serie.totals.ppvPurchases).toBe(soma("ppvPurchases"));
+      expect(serie.totals.ticketsSold).toBe(soma("ticketsSold"));
+
+      // E depois a soma, que é o que a liga recebe.
+      expect(serie.totals.ppvCents + serie.totals.ticketCents).toBe(soma("grossCents"));
+      expect(serie.totals.ppvCommissionCents + serie.totals.ticketCommissionCents).toBe(
+        soma("firstrowFeeCents"),
+      );
+      expect(serie.totals.ppvPurchases + serie.totals.ticketsSold).toBe(soma("purchases"));
+
+      // Os valores calculados à mão, para o caso de ambos os lados estarem
+      // errados da mesma maneira — que é o que uma identidade sozinha não apanha.
+      expect(soma("ppvGrossCents")).toBe(5250);
+      expect(soma("ticketGrossCents")).toBe(3000);
+      expect(soma("grossCents")).toBe(8250);
+      expect(soma("firstrowFeeCents")).toBe(825);
+      expect(soma("purchases")).toBe(8);
+    });
+
+    /*
+     * O ruído do cenário, verificado do lado do extrato: um acesso `pending`,
+     * um `refunded` e um bilhete `pending` não são dinheiro entrado. Se algum
+     * deles passasse a contar, os números acima subiam e este teste diria qual.
+     */
+    it("nem um acesso pendente, nem um reembolsado, nem um bilhete por pagar entram", async () => {
+      await cenario();
+      const extrato = await getMonthlyStatement(TODOS);
+
+      const bruto = extrato.rows.reduce((n, r) => n + r.grossCents, 0);
+      const bilhetes = extrato.rows.reduce((n, r) => n + r.ticketsSold, 0);
+      const acessos = extrato.rows.reduce((n, r) => n + r.ppvPurchases, 0);
+
+      // 8 acessos criados, 6 activos. 3 bilhetes criados, 2 pagos.
+      expect(acessos).toBe(6);
+      expect(bilhetes).toBe(2);
+      // Com o pendente e o reembolsado a contar seriam 8250 + 2×850 = 9950;
+      // com o bilhete pendente, mais 1500.
+      expect(bruto).toBe(8250);
+    });
+
+    it("o líquido é o bruto menos as duas taxas, ao cêntimo", async () => {
+      await cenario();
+      const extrato = await getMonthlyStatement(TODOS);
+      const soma = (campo: keyof (typeof extrato.rows)[number]) =>
+        extrato.rows.reduce((n, r) => n + (r[campo] as number), 0);
+
+      /*
+       * Eupago à mão: 0,07 € + 0,7 % por transação, arredondado por transação.
+       *   PPV 8,50 €  → 7 + round(5,95)  = 13, cinco vezes = 65
+       *   PPV 10,00 € → 7 + round(7,00)  = 14, uma vez     = 14
+       *   Bilhete 15,00 € → 7 + round(10,5) = 18, duas vezes = 36
+       */
+      expect(soma("eupagoFeeCents")).toBe(5 * 13 + 14 + 2 * 18);
+      expect(soma("netCents")).toBe(8250 - 825 - 115);
     });
 
     it("bate por canal, e não só no total", async () => {
@@ -294,11 +360,31 @@ describe.skipIf(!temBaseDeDados())("dashboard da plataforma", () => {
 
       const serie = await getRevenueByPeriod(soA, "12m", AGORA);
       const extrato = await getMonthlyStatement(soA);
+      const soma = (campo: keyof (typeof extrato.rows)[number]) =>
+        extrato.rows.reduce((n, r) => n + (r[campo] as number), 0);
 
-      expect(serie.totals.ppvCents).toBe(extrato.rows.reduce((n, r) => n + r.grossCents, 0));
-      expect(serie.totals.ppvCommissionCents).toBe(
-        extrato.rows.reduce((n, r) => n + r.firstrowFeeCents, 0),
+      expect(serie.totals.ppvCents).toBe(soma("ppvGrossCents"));
+      expect(serie.totals.ticketCents).toBe(soma("ticketGrossCents"));
+      expect(serie.totals.ppvCents + serie.totals.ticketCents).toBe(soma("grossCents"));
+      expect(serie.totals.ppvCommissionCents + serie.totals.ticketCommissionCents).toBe(
+        soma("firstrowFeeCents"),
       );
+      // O canal A é o único com bilhetes — os 3000 são todos dele.
+      expect(soma("ticketGrossCents")).toBe(3000);
+      expect(soma("grossCents")).toBe(5 * PPV_A + 3000);
+    });
+
+    it("o dono de um canal não vê um bilhete do outro", async () => {
+      const { canalB } = await cenario();
+      const soB: ChannelScope = { all: false, channelIds: [canalB.id] };
+
+      const extrato = await getMonthlyStatement(soB);
+
+      // Os bilhetes são todos do canal A. O extrato do B não pode ter nenhum.
+      expect(extrato.rows.reduce((n, r) => n + r.ticketGrossCents, 0)).toBe(0);
+      expect(extrato.rows.reduce((n, r) => n + r.ticketsSold, 0)).toBe(0);
+      expect(extrato.rows.reduce((n, r) => n + r.grossCents, 0)).toBe(PPV_B);
+      expect(extrato.rows.every((r) => r.channelId === canalB.id)).toBe(true);
     });
 
     it("a comissão arredonda por transação, como o extrato e o split", async () => {
@@ -314,16 +400,37 @@ describe.skipIf(!temBaseDeDados())("dashboard da plataforma", () => {
         });
       }
 
+      /*
+       * E 7 bilhetes ao MESMO preço de meio cêntimo. Os bilhetes passam pela
+       * mesma expressão de comissão (`firstrowFeeOf`), e é aqui que se prova:
+       * se algum dia alguém lhes puser um `round(sum(...))`, a soma dos dois
+       * lados deixa de bater e esta linha fica vermelha.
+       */
+      for (let i = 0; i < 7; i += 1) {
+        const pessoa = await criarUtilizador();
+        await criarBilhete(pessoa.id, evento.id, {
+          status: "issued",
+          priceCents: 855,
+          createdAt: new Date("2026-07-15T10:00:00Z"),
+        });
+      }
+
       const serie = await getRevenueByPeriod(TODOS, "12m", AGORA);
       const extrato = await getMonthlyStatement(TODOS);
+      const soma = (campo: keyof (typeof extrato.rows)[number]) =>
+        extrato.rows.reduce((n, r) => n + (r[campo] as number), 0);
 
-      // round(85,5) = 86 cêntimos por compra × 131 = 11 266.
+      // round(85,5) = 86 cêntimos por transação × 131 acessos = 11 266.
       expect(serie.totals.ppvCommissionCents).toBe(131 * 86);
-      expect(serie.totals.ppvCommissionCents).toBe(
-        extrato.rows.reduce((n, r) => n + r.firstrowFeeCents, 0),
+      // E × 7 bilhetes = 602. Cada origem arredonda a sua, e só depois somam.
+      expect(serie.totals.ticketCommissionCents).toBe(7 * 86);
+      expect(serie.totals.ppvCommissionCents + serie.totals.ticketCommissionCents).toBe(
+        soma("firstrowFeeCents"),
       );
-      // A conta que NÃO se faz, para o teste falhar se alguém a trocar.
+      expect(soma("firstrowFeeCents")).toBe(138 * 86);
+      // As contas que NÃO se fazem, para o teste falhar se alguém as trocar.
       expect(serie.totals.ppvCommissionCents).not.toBe(Math.round((131 * 855 * 10) / 100));
+      expect(soma("firstrowFeeCents")).not.toBe(Math.round((138 * 855 * 10) / 100));
     });
   });
 

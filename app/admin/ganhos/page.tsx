@@ -7,10 +7,12 @@ import { buttonVariants } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
 import { TableCell, TableRow } from "@/components/ui/table";
-import { formatEuro, formatNumber } from "@/lib/format";
+import { formatEuro, formatNumber, formatRate } from "@/lib/format";
 import { isPlatformAdmin, manageScope, requireBackofficePage } from "@/server/authz";
 import { channelsInScope } from "@/server/channels";
 import {
+  EUPAGO_FIXED_FEE_CENTS,
+  EUPAGO_VARIABLE_RATE,
   getMonthlyStatement,
   getPlatformEconomics,
   type MonthlyStatementRow,
@@ -66,14 +68,27 @@ export default async function EarningsPage() {
 
   const totals = rows.reduce(
     (acc, r) => ({
-      purchases: acc.purchases + r.purchases,
+      ppvPurchases: acc.ppvPurchases + r.ppvPurchases,
+      ticketsSold: acc.ticketsSold + r.ticketsSold,
       grossCents: acc.grossCents + r.grossCents,
       firstrowFeeCents: acc.firstrowFeeCents + r.firstrowFeeCents,
       eupagoFeeCents: acc.eupagoFeeCents + r.eupagoFeeCents,
       netCents: acc.netCents + r.netCents,
     }),
-    { purchases: 0, grossCents: 0, firstrowFeeCents: 0, eupagoFeeCents: 0, netCents: 0 },
+    {
+      ppvPurchases: 0,
+      ticketsSold: 0,
+      grossCents: 0,
+      firstrowFeeCents: 0,
+      eupagoFeeCents: 0,
+      netCents: 0,
+    },
   );
+
+  // Com uma liga que ainda não vendeu um único bilhete, a coluna era uma coluna
+  // de zeros a roubar espaço ao que interessa. A mesma regra da coluna "Canal":
+  // só aparece quando tem alguma coisa para dizer.
+  const temBilhetes = rows.some((r) => r.ticketsSold > 0);
 
   return (
     <div className="mx-auto flex w-full max-w-5xl flex-col gap-5">
@@ -114,7 +129,21 @@ export default async function EarningsPage() {
                       },
                     ]
                   : []),
-                { header: "Compras", numeric: true, cell: (r) => formatNumber(r.purchases) },
+                /*
+                 * As duas origens do dinheiro, em contagens separadas. O "Bruto"
+                 * ao lado é a soma das duas — mas quem lê o extrato precisa de
+                 * saber se vendeu online ou à porta, e um número só não o diz.
+                 */
+                { header: "Acessos", numeric: true, cell: (r) => formatNumber(r.ppvPurchases) },
+                ...(temBilhetes
+                  ? [
+                      {
+                        header: "Bilhetes",
+                        numeric: true,
+                        cell: (r: MonthlyStatementRow) => formatNumber(r.ticketsSold),
+                      },
+                    ]
+                  : []),
                 { header: "Bruto", numeric: true, cell: (r) => formatEuro(r.grossCents) },
                 {
                   header: `Taxa FirstRow · ${commissionPct}%`,
@@ -142,7 +171,10 @@ export default async function EarningsPage() {
                 <TableRow className="border-t-2 border-border font-semibold hover:bg-transparent">
                   <TableCell>Total</TableCell>
                   {channels.many ? <TableCell /> : null}
-                  <TableCell numeric>{formatNumber(totals.purchases)}</TableCell>
+                  <TableCell numeric>{formatNumber(totals.ppvPurchases)}</TableCell>
+                  {temBilhetes ? (
+                    <TableCell numeric>{formatNumber(totals.ticketsSold)}</TableCell>
+                  ) : null}
                   <TableCell numeric>{formatEuro(totals.grossCents)}</TableCell>
                   <TableCell numeric className="text-destructive">
                     {formatEuro(-totals.firstrowFeeCents)}
@@ -156,11 +188,32 @@ export default async function EarningsPage() {
                 </TableRow>
               }
             />
+            {/*
+              A frase monta-se em JavaScript e entra inteira: em JSX, o espaço
+              entre uma expressão e o texto que lhe segue depende de onde cai a
+              quebra de linha, e o formatador move as quebras sozinho. Já saiu
+              "5eventos" para o ecrã noutro sítio deste backoffice.
+            */}
             <p className="border-t-2 border-accent pt-2.5 font-mono text-2xs leading-relaxed text-muted-foreground">
-              Taxa Eupago estimada: 0,07 € + 0,7% por transação MB WAY — o valor certo está no
-              extrato Eupago. A taxa FirstRow ({commissionPct}%) sai no split de cada pagamento.
+              {[
+                /*
+                 * `formatRate` e NÃO `formatPercent`: o segundo arredonda à
+                 * percentagem inteira e escrevia "1 %" onde a taxa é 0,7 % — um número
+                 * de contrato inflacionado em 43 %, impresso por baixo da tabela que a
+                 * liga usa para conferir o que lhe é devido.
+                 */
+                `Taxa Eupago estimada: ${formatEuro(EUPAGO_FIXED_FEE_CENTS)} + ${formatRate(EUPAGO_VARIABLE_RATE)} por transação MB WAY — o valor certo está no extrato Eupago.`,
+                `A taxa FirstRow (${commissionPct}%) sai no split de cada pagamento.`,
+                // Porque é que o bruto tem duas origens, e porque é que os preços
+                // não vêm do mesmo sítio. Quem confere o extrato ao cêntimo
+                // merece saber de onde saiu cada metade.
+                temBilhetes
+                  ? "O bruto soma os acessos PPV (preço do evento) e os bilhetes de porta (preço copiado em cada bilhete, no momento da compra). Bilhetes por pagar e reembolsados não entram."
+                  : null,
+              ]
+                .filter(Boolean)
+                .join(" ")}
             </p>
-            {/* TODO(frente-d): somar bilhetes físicos ao extrato quando existirem. */}
           </CardContent>
         </Card>
       ) : (

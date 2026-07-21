@@ -59,8 +59,13 @@ import { inChannelScope } from "@/server/events";
  * `listBlockedSessionsToday`) não levam âmbito: quem as chama já passou pelo
  * portão do evento em `server/event-access.ts`, que é onde o canal foi visto.
  *
- * TODO(frente-d): juntar bilhetes à receita do mês, aos pagamentos recentes,
- * à lista de eventos e ao extrato de ganhos.
+ * O extrato de ganhos (`getMonthlyStatement`) já conta bilhetes — PPV e
+ * bilhetes em parcelas separadas, com o total somado. Falta o mesmo em três
+ * sítios, e enquanto faltar cada um deles conta só PPV:
+ *
+ * TODO(frente-d): juntar bilhetes à receita do mês (`getDashboardStats`), aos
+ * pagamentos recentes (`listRecentPayments`) e à lista de eventos
+ * (`listEventsWithSales`).
  */
 
 const LISBON = "Europe/Lisbon";
@@ -115,7 +120,33 @@ export type MonthlyStatementRow = {
   monthLabel: string;
   /** De que canal é este dinheiro. Ver a nota em `getMonthlyStatement`. */
   channelId: string;
+  /*
+   * ────────────────────────────────────────────────────────────────────────
+   *  AS DUAS ORIGENS SAEM SEPARADAS, E O TOTAL SAI SOMADO
+   * ────────────────────────────────────────────────────────────────────────
+   *
+   * `grossCents` é o que a liga faturou no mês: acessos PPV **mais** bilhetes
+   * de porta. É a soma que interessa a quem tem de ser pago — um extrato que
+   * mostrasse só metade do dinheiro não serve para pagar nada.
+   *
+   * Mas as parcelas ficam à vista, porque são perguntas diferentes: "vendi
+   * mais online ou à porta?" não se responde com o total. E é a existência
+   * destas parcelas que mantém a identidade com a dashboard verificável ao
+   * cêntimo, parcela a parcela — ver a nota em `getRevenueByPeriod`.
+   *
+   * ⚠️ O PREÇO VEM DE FONTES DIFERENTES DE PROPÓSITO: o PPV lê-se de
+   * `events.price_cents` (preço único do evento) e o bilhete de
+   * `tickets.price_cents`, que é uma CÓPIA por bilhete, feita na compra.
+   * Não se unificam: o preço do evento pode mudar depois de um bilhete estar
+   * vendido, e o extrato tem de continuar a dizer o que essa pessoa pagou.
+   */
+  ppvGrossCents: number;
+  ppvPurchases: number;
+  ticketGrossCents: number;
+  ticketsSold: number;
+  /** PPV + bilhetes. */
   grossCents: number;
+  /** Transações do mês, das duas origens. */
   purchases: number;
   firstrowFeeCents: number;
   eupagoFeeCents: number;
@@ -182,7 +213,75 @@ function platformCommissionPct(): number {
 
 const activeEntitlement = eq(entitlements.status, "active");
 
+/**
+ * Um bilhete que é dinheiro entrado: emitido (na mão de alguém) ou já usado à
+ * porta. `pending` nunca pagou e `refunded` voltou para trás.
+ *
+ * Está definido AQUI, ao lado do `activeEntitlement`, e não junto da primeira
+ * query que o usa, porque é a definição de "vendido" que o extrato e a
+ * dashboard TÊM de partilhar — se os dois ecrãs contarem bilhetes diferentes,
+ * a identidade entre eles deixa de bater e ninguém consegue explicar porquê.
+ * A mesma definição está em `getEventTicketStats` (server/tickets.ts).
+ */
+const paidTicket = inArray(tickets.status, ["issued", "used"]);
+
 const grossCents = sql<number>`coalesce(sum(${events.priceCents}), 0)`.mapWith(Number);
+
+/*
+ * ────────────────────────────────────────────────────────────────────────────
+ *  A TAXA DA EUPAGO — dois números que estavam escritos dentro do SQL
+ * ────────────────────────────────────────────────────────────────────────────
+ *
+ * 0,07 € fixos + 0,7 % por transação MB WAY. É uma ESTIMATIVA nossa: o valor
+ * que conta está no extrato da Eupago, e o ecrã diz isso onde os mostra.
+ *
+ * Passaram a constantes porque deixaram de estar num sítio só: com os bilhetes
+ * no extrato há duas queries a aplicá-la (PPV e bilhetes) e a frase do rodapé a
+ * escrevê-la por extenso. Três cópias de "0.007" é uma para ficar para trás no
+ * dia em que a Eupago mudar de preçário.
+ */
+export const EUPAGO_FIXED_FEE_CENTS = 7;
+export const EUPAGO_VARIABLE_RATE = 0.007;
+
+/**
+ * A taxa Eupago estimada de UMA transação, somada transação a transação.
+ *
+ * ⚠️  OS DOIS CASTS NÃO SÃO DECORAÇÃO — MEDIDO CONTRA O POSTGRES.
+ *
+ * Estes números estavam escritos LITERALMENTE dentro do texto SQL
+ * (`round(price * 0.007)`), e aí o Postgres lia-os como `numeric`. Ao passarem
+ * a constantes ligadas como PARÂMETRO, quem infere o tipo deixa de ser o
+ * parser: o drizzle vê `${rate}` multiplicado por uma coluna `integer` e
+ * declara o parâmetro como `int4`. O resultado foi imediato e não deu erro de
+ * compilação nenhum:
+ *
+ *     PostgresError: invalid input syntax for type integer: "0.007"
+ *
+ * `::numeric` devolve-lhe o tipo certo. É a mesma família de armadilha do
+ * `date_trunc(${unit})` documentada em `bucketOf` — um parâmetro ligado não é
+ * um literal, e o que muda é o que o Postgres consegue inferir à volta dele.
+ *
+ * A aritmética fica toda em `numeric` (decimal exato) e nunca em vírgula
+ * flutuante, que é o mínimo para uma conta de dinheiro.
+ */
+function eupagoFeeOf(priceColumn: AnyPgColumn): SQL<number> {
+  return sql<number>`coalesce(sum(${EUPAGO_FIXED_FEE_CENTS}::int + round(${priceColumn} * ${EUPAGO_VARIABLE_RATE}::numeric)), 0)`.mapWith(
+    Number,
+  );
+}
+
+/**
+ * A comissão da FirstRow de UMA transação, somada transação a transação.
+ *
+ * `sum(round(...))` e nunca `round(sum(...))`: é o que o split faz a cada
+ * pagamento (`lib/split.ts`), e as duas fórmulas divergem em cêntimos a preços
+ * cujo 10 % caia num meio cêntimo. Ver a nota em `eventEconomics`.
+ */
+function firstrowFeeOf(priceColumn: AnyPgColumn, pct: number): SQL<number> {
+  return sql<number>`coalesce(sum(round(${priceColumn} * ${pct}::numeric / 100)), 0)`.mapWith(
+    Number,
+  );
+}
 
 export async function getDashboardStats(scope: ChannelScope): Promise<DashboardStats> {
   const now = new Date();
@@ -259,11 +358,33 @@ export async function listRecentPayments(scope: ChannelScope, limit = 6): Promis
   return rows.map((r) => ({ ...r, kind: "ppv" as const }));
 }
 
-export async function listEventsWithSales(scope: ChannelScope): Promise<EventWithSales[]> {
+/**
+ * Eventos com compradores e receita.
+ *
+ * `since` limita as COMPRAS contadas, não os eventos listados: `null` conta
+ * desde o início (é o que `/admin/eventos` quer — a lista de eventos é a lista
+ * toda), uma data conta só o que entrou de lá para cá.
+ *
+ * ⚠️  O corte vai na condição do LEFT JOIN e não no `where`, e a diferença é
+ * visível: no `where`, um evento sem compras dentro da janela desaparecia da
+ * lista em vez de aparecer com zero. Um evento que existe e não vendeu nada
+ * este mês é um facto que a lista tem de conseguir dizer.
+ */
+export async function listEventsWithSales(
+  scope: ChannelScope,
+  since: Date | null = null,
+): Promise<EventWithSales[]> {
   const rows = await db
     .select({ event: events, buyers: count(entitlements.id) })
     .from(events)
-    .leftJoin(entitlements, and(eq(entitlements.eventId, events.id), activeEntitlement))
+    .leftJoin(
+      entitlements,
+      and(
+        eq(entitlements.eventId, events.id),
+        activeEntitlement,
+        since ? gte(entitlements.createdAt, since) : undefined,
+      ),
+    )
     .where(inChannelScope(scope))
     .groupBy(events.id)
     .orderBy(desc(events.startsAt));
@@ -273,6 +394,56 @@ export async function listEventsWithSales(scope: ChannelScope): Promise<EventWit
     buyers,
     revenueCents: buyers * event.priceCents,
   }));
+}
+
+/**
+ * Um evento tal como a AGENDA o mostra a quem só opera: sem um número de
+ * dinheiro dentro.
+ *
+ * `hasTickets` é um booleano CALCULADO NO POSTGRES (`is not null`) e não o
+ * `ticketPriceCents` trazido para cá e comparado em JavaScript. A diferença é
+ * toda: assim o preço do bilhete nunca sai da base de dados, logo não pode
+ * aparecer no payload do RSC por distração de quem escrever o JSX a seguir.
+ */
+export type EventForOperations = {
+  id: string;
+  title: string;
+  startsAt: Date;
+  status: string;
+  channelId: string;
+  /** Tem bilhete de porta à venda → há scanner e lista de bilhetes para abrir. */
+  hasTickets: boolean;
+};
+
+/**
+ * A lista de eventos da agenda (`/admin/agenda`) — a zona `operate`.
+ *
+ * ⚠️  AS COLUNAS SÃO ESCOLHIDAS À MÃO, E ISSO É A FUNÇÃO INTEIRA.
+ *
+ * Não é `select()` nem `EventRow`: `listEventsInScope` (server/events.ts) traz
+ * a linha completa, com `priceCents`, `ticketPriceCents` e `cfLiveInputId`.
+ * Numa página servida ao `staff`, cada um desses é uma fuga — o preço é
+ * dinheiro e o `cfLiveInputId` é o identificador da transmissão. O que esta
+ * query não pede não pode escorrer.
+ *
+ * Não há aqui compradores, receita nem contagem de vendas por uma razão
+ * diferente da do âmbito: mesmo o dono, se vier por este caminho, não os vê.
+ * A agenda responde "o que há para operar", e a resposta a essa pergunta não
+ * tem valores. Quem quer os números tem `/admin/eventos`.
+ */
+export async function listEventsForOperations(scope: ChannelScope): Promise<EventForOperations[]> {
+  return db
+    .select({
+      id: events.id,
+      title: events.title,
+      startsAt: events.startsAt,
+      status: events.status,
+      channelId: events.channelId,
+      hasTickets: sql<boolean>`${events.ticketPriceCents} is not null`.mapWith(Boolean),
+    })
+    .from(events)
+    .where(inChannelScope(scope))
+    .orderBy(desc(events.startsAt));
 }
 
 export async function getEventSales(
@@ -376,41 +547,123 @@ export async function getMonthlyStatement(scope: ChannelScope): Promise<{
   rows: MonthlyStatementRow[];
 }> {
   const pct = platformCommissionPct();
-  const monthKey = sql<string>`to_char(${entitlements.createdAt} at time zone 'UTC' at time zone 'Europe/Lisbon', 'YYYY-MM')`;
+  const mine = inChannelScope(scope);
 
-  // Taxas por transação: FirstRow espelha lib/split.ts (round(preço × pct%));
-  // Eupago é estimativa — 0,07 € + 0,7% por transação MB WAY.
-  const rows = await db
-    .select({
+  /*
+   * O mês de cada origem sai da SUA data de compra: `entitlements.created_at`
+   * para o PPV, `tickets.created_at` para os bilhetes. Não é o mesmo que a data
+   * do evento — um bilhete vendido em junho para um evento de julho é
+   * faturação de junho, que é quando o dinheiro entrou.
+   */
+  const ppvMonth = sql<string>`to_char(${entitlements.createdAt} at time zone 'UTC' at time zone 'Europe/Lisbon', 'YYYY-MM')`;
+  const ticketMonth = sql<string>`to_char(${tickets.createdAt} at time zone 'UTC' at time zone 'Europe/Lisbon', 'YYYY-MM')`;
+
+  /*
+   * DUAS queries e um merge, e não um join só — a armadilha de cardinalidade já
+   * documentada em `getPlatformEconomics`, `getRevenueByPeriod` e
+   * `listChannelsInScope`: um evento com 100 acessos e 30 bilhetes numa query
+   * agrupada dava 3000 de cada, sem erro nenhum a assinalá-lo.
+   *
+   * O join a `channels` é só para a ORDEM: dentro do mesmo mês os canais saem
+   * pela ordem que valem no resto da app (o mais antigo à cabeça), e não pela
+   * ordem arbitrária dos ids. Por isso `channels.createdAt` vem no select — é
+   * o que permite reproduzir essa ordem depois do merge, em JavaScript.
+   */
+  const [ppvRows, ticketRows] = await Promise.all([
+    db
+      .select({
+        monthKey: ppvMonth,
+        channelId: events.channelId,
+        channelCreatedAt: channels.createdAt,
+        cents: grossCents,
+        n: count(),
+        firstrowFeeCents: firstrowFeeOf(events.priceCents, pct),
+        eupagoFeeCents: eupagoFeeOf(events.priceCents),
+      })
+      .from(entitlements)
+      .innerJoin(events, eq(entitlements.eventId, events.id))
+      .innerJoin(channels, eq(events.channelId, channels.id))
+      .where(and(activeEntitlement, mine))
+      .groupBy(ppvMonth, events.channelId, channels.createdAt),
+    db
+      .select({
+        monthKey: ticketMonth,
+        channelId: events.channelId,
+        channelCreatedAt: channels.createdAt,
+        // `tickets.price_cents` — a cópia por bilhete, nunca `events`.
+        cents: sql<number>`coalesce(sum(${tickets.priceCents}), 0)`.mapWith(Number),
+        n: count(),
+        firstrowFeeCents: firstrowFeeOf(tickets.priceCents, pct),
+        eupagoFeeCents: eupagoFeeOf(tickets.priceCents),
+      })
+      .from(tickets)
+      // O join a `events` é o âmbito: `tickets` não tem canal. Sem ele, esta
+      // query respondia com os bilhetes da plataforma toda.
+      .innerJoin(events, eq(tickets.eventId, events.id))
+      .innerJoin(channels, eq(events.channelId, channels.id))
+      .where(and(paidTicket, mine))
+      .groupBy(ticketMonth, events.channelId, channels.createdAt),
+  ]);
+
+  type Acumulador = MonthlyStatementRow & { channelCreatedAt: Date };
+  const porChave = new Map<string, Acumulador>();
+  const linha = (monthKey: string, channelId: string, channelCreatedAt: Date): Acumulador => {
+    const chave = `${monthKey}·${channelId}`;
+    const atual = porChave.get(chave) ?? {
       monthKey,
-      channelId: events.channelId,
-      grossCents,
-      purchases: count(),
-      firstrowFeeCents:
-        sql<number>`coalesce(sum(round(${events.priceCents} * ${pct}::numeric / 100)), 0)`.mapWith(
-          Number,
-        ),
-      eupagoFeeCents:
-        sql<number>`coalesce(sum(7 + round(${events.priceCents} * 0.007)), 0)`.mapWith(Number),
-    })
-    .from(entitlements)
-    .innerJoin(events, eq(entitlements.eventId, events.id))
-    // O join a `channels` é só para a ordem: dentro do mesmo mês os canais saem
-    // pela ordem que valem no resto da app (o mais antigo à cabeça), e não pela
-    // ordem arbitrária dos ids.
-    .innerJoin(channels, eq(events.channelId, channels.id))
-    .where(and(activeEntitlement, inChannelScope(scope)))
-    .groupBy(monthKey, events.channelId, channels.createdAt)
-    .orderBy(desc(monthKey), asc(channels.createdAt));
-
-  return {
-    commissionPct: pct,
-    rows: rows.map((r) => ({
-      ...r,
-      monthLabel: monthLabel(r.monthKey),
-      netCents: r.grossCents - r.firstrowFeeCents - r.eupagoFeeCents,
-    })),
+      monthLabel: monthLabel(monthKey),
+      channelId,
+      channelCreatedAt,
+      ppvGrossCents: 0,
+      ppvPurchases: 0,
+      ticketGrossCents: 0,
+      ticketsSold: 0,
+      grossCents: 0,
+      purchases: 0,
+      firstrowFeeCents: 0,
+      eupagoFeeCents: 0,
+      netCents: 0,
+    };
+    porChave.set(chave, atual);
+    return atual;
   };
+
+  for (const r of ppvRows) {
+    const alvo = linha(r.monthKey, r.channelId, r.channelCreatedAt);
+    alvo.ppvGrossCents += r.cents;
+    alvo.ppvPurchases += r.n;
+    alvo.firstrowFeeCents += r.firstrowFeeCents;
+    alvo.eupagoFeeCents += r.eupagoFeeCents;
+  }
+  for (const r of ticketRows) {
+    const alvo = linha(r.monthKey, r.channelId, r.channelCreatedAt);
+    alvo.ticketGrossCents += r.cents;
+    alvo.ticketsSold += r.n;
+    alvo.firstrowFeeCents += r.firstrowFeeCents;
+    alvo.eupagoFeeCents += r.eupagoFeeCents;
+  }
+
+  /*
+   * Os totais derivam-se só no fim, das parcelas JÁ arredondadas por transação.
+   * É o que garante que somar as duas origens não mexe um cêntimo: mudar de
+   * sítio a soma de valores já arredondados dá o mesmo resultado.
+   */
+  const rows = [...porChave.values()]
+    .map((r) => {
+      r.grossCents = r.ppvGrossCents + r.ticketGrossCents;
+      r.purchases = r.ppvPurchases + r.ticketsSold;
+      r.netCents = r.grossCents - r.firstrowFeeCents - r.eupagoFeeCents;
+      return r;
+    })
+    .sort(
+      (a, b) =>
+        b.monthKey.localeCompare(a.monthKey) ||
+        a.channelCreatedAt.getTime() - b.channelCreatedAt.getTime(),
+    )
+    // `channelCreatedAt` serviu a ordem e não tem que ir para o ecrã.
+    .map(({ channelCreatedAt: _ordem, ...row }) => row);
+
+  return { commissionPct: pct, rows };
 }
 
 /*
@@ -484,9 +737,18 @@ const capSeconds = sql.raw(String(MAX_SESSION_MINUTES * 60));
  * Eventos sem uma única sessão NÃO aparecem no mapa — de propósito. "Ausente" é
  * o que permite a quem chama distinguir "não sabemos" de "zero", e é o que faz
  * o ecrã mostrar "sem dados" em vez de um zero com ar de facto.
+ *
+ * `since` corta pelo INÍCIO da sessão (`startedAt`), e não pelo fim: é quando a
+ * entrega começou a contar. Uma sessão aberta antes da janela e fechada dentro
+ * dela fica de fora inteira — é a escolha certa das duas más, porque a
+ * alternativa (parti-la ao meio) obrigava a inventar quantos minutos caíram de
+ * cada lado, e o ecrã passaria a mostrar um número que nenhuma linha da base de
+ * dados justifica. Com eventos de 2-3 h e janelas de 30 dias, o erro é uma
+ * sessão a cavalo da meia-noite do primeiro dia.
  */
 export async function getDeliveryByEvent(
   scope: ChannelScope,
+  since: Date | null = null,
 ): Promise<Map<string, DeliveryEstimate>> {
   const rows = await db
     .select({
@@ -502,7 +764,7 @@ export async function getDeliveryByEvent(
     // O join a `events` existe só para o âmbito: `playback_sessions` não tem
     // canal, e sem ele esta query respondia com as sessões de toda a plataforma.
     .innerJoin(events, eq(playbackSessions.eventId, events.id))
-    .where(inChannelScope(scope))
+    .where(and(inChannelScope(scope), since ? gte(playbackSessions.startedAt, since) : undefined))
     .groupBy(playbackSessions.eventId);
 
   return new Map(
@@ -539,6 +801,19 @@ export type PlatformEconomics = {
   commissionPct: number;
   /** A taxa usada na conversão, para o ecrã a poder escrever. */
   usdToEur: number;
+  /**
+   * A janela a que estes números se referem — "90 dias", ou `null` para desde o
+   * início.
+   *
+   * Viaja DENTRO do objeto, e não como prop separada dos componentes, por uma
+   * razão prática: os três sítios que mostram economia (os cartões de
+   * `/admin/plataforma`, o gráfico da margem e o bloco de `/admin/ganhos`)
+   * recebem todos este objeto e mais nada. Um rótulo à parte era um quarto
+   * argumento para alguém se esquecer de passar — e um cartão a dizer "90 dias"
+   * ao lado de números de sempre é precisamente o erro que esta frente veio
+   * corrigir.
+   */
+  periodLabel: string | null;
   rows: EventEconomicsRow[];
   totals: EconomicsTotals;
 };
@@ -555,16 +830,38 @@ export type PlatformEconomics = {
  * As duas queries levam o MESMO âmbito. Tem de ser: uma lista de eventos mais
  * larga do que o mapa de minutos (ou o contrário) dava linhas de um canal com
  * os minutos de outro.
+ *
+ * ────────────────────────────────────────────────────────────────────────────
+ *  E LEVAM A MESMA JANELA, PELA MESMÍSSIMA RAZÃO
+ * ────────────────────────────────────────────────────────────────────────────
+ *
+ * `period` é a janela temporal; `null` conta desde o início, que é o que
+ * `/admin/ganhos` quer (não tem seletor — o extrato é a história toda).
+ *
+ * Isto NÃO tinha janela nenhuma, e o efeito era um ecrã a dizer duas coisas
+ * sobre o mesmo intervalo: em `/admin/plataforma` os cartões "Receita" e
+ * "Comissão" respeitavam o seletor de período e os cartões "Custo de vídeo" e
+ * "Margem" somavam desde sempre, lado a lado, com a diferença confessada numa
+ * pista em letra pequena. Uma comissão de 90 dias comparada com um custo de
+ * vídeo de sempre não é um rácio de coisa nenhuma.
+ *
+ * As duas queries recebem o MESMO `since`: compradores de uma janela com
+ * minutos de outra dava exatamente o rácio falso que se veio corrigir.
  */
-export async function getPlatformEconomics(scope: ChannelScope): Promise<PlatformEconomics> {
+export async function getPlatformEconomics(
+  scope: ChannelScope,
+  period: PeriodKey | null = null,
+  now = new Date(),
+): Promise<PlatformEconomics> {
   const commissionPct = platformCommissionPct();
   // A taxa é lida AQUI, do lado do servidor, e entregue pura ao modelo — ver a
   // nota sobre `NEXT_PUBLIC_` no topo de `lib/video-costs.ts`.
   const usdToEur = resolveUsdToEur(process.env.USD_TO_EUR_RATE);
+  const since = period ? periodStart(period, now) : null;
 
   const [eventRows, delivery] = await Promise.all([
-    listEventsWithSales(scope),
-    getDeliveryByEvent(scope),
+    listEventsWithSales(scope, since),
+    getDeliveryByEvent(scope, since),
   ]);
 
   const rows = eventRows
@@ -591,7 +888,13 @@ export async function getPlatformEconomics(scope: ChannelScope): Promise<Platfor
     // mostrar — só empurrava para fora do ecrã os eventos que têm.
     .filter((row) => row.buyers > 0 || row.sessions > 0);
 
-  return { commissionPct, usdToEur, rows, totals: totalEconomics(rows) };
+  return {
+    commissionPct,
+    usdToEur,
+    periodLabel: period ? PERIODS[period].label : null,
+    rows,
+    totals: totalEconomics(rows),
+  };
 }
 
 /**
@@ -633,24 +936,38 @@ export async function getPlatformTotals(): Promise<PlatformTotals> {
  *  BILHETES ENTRAM AQUI, MAS SEPARADOS DO PPV — E ISSO É O PONTO
  * ────────────────────────────────────────────────────────────────────────────
  *
- * O extrato (`getMonthlyStatement`) conta HOJE só PPV: tem um
- * `TODO(frente-d)` por cumprir. Se esta dashboard somasse PPV + bilhetes num
- * único "receita", os dois ecrãs diziam números diferentes sobre o mesmo
- * dinheiro — e isso é pior do que não ter dashboard nenhuma.
+ * Se esta dashboard somasse PPV + bilhetes num único "receita", perdia-se a
+ * única forma de reconciliar dois ecrãs sobre o mesmo dinheiro. A saída não é
+ * esconder os bilhetes (são dinheiro real que já entrou): é NUNCA os fundir.
+ * Cada balde traz `ppv*` e `ticket*` em campos separados.
  *
- * A saída não é esconder os bilhetes (são dinheiro real que já entrou): é
- * NUNCA os fundir. Cada balde traz `ppv*` e `ticket*` em campos separados, e a
- * regra que daqui sai, verificada em teste, é:
+ * ────────────────────────────────────────────────────────────────────────────
+ *  A IDENTIDADE COM O EXTRATO — ESTENDIDA, NÃO APAGADA
+ * ────────────────────────────────────────────────────────────────────────────
+ *
+ * O extrato contava só PPV, e a regra era:
  *
  *     soma dos `ppvCents`           ≡ `grossCents` do extrato
  *     soma dos `ppvCommissionCents` ≡ `firstrowFeeCents` do extrato
  *
- * ao cêntimo, para o mesmo âmbito. Quando a Frente D juntar bilhetes ao
- * extrato, é essa identidade que se estende — não se apaga.
+ * Com os bilhetes no extrato, cada lado ganhou a sua parcela e a igualdade
+ * passou a ser sobre a SOMA das duas — verificada em teste, ao cêntimo, para o
+ * mesmo âmbito e o mesmo intervalo:
+ *
+ *     ppvCents           ≡ `ppvGrossCents`    do extrato
+ *     ticketCents        ≡ `ticketGrossCents` do extrato
+ *     ppv + ticket       ≡ `grossCents`       do extrato
+ *     comissão ppv+ticket ≡ `firstrowFeeCents` do extrato
+ *
+ * As parcelas batem UMA A UMA e não só no total. É de propósito: dois erros
+ * simétricos — PPV a mais e bilhetes a menos — davam um total certo e dois
+ * números errados, e um teste só sobre o total deixava-os passar.
  *
  * A COMISSÃO ARREDONDA-SE POR TRANSAÇÃO (`sum(round(...))`), como em
  * `getMonthlyStatement` e em `lib/split.ts`. `round(sum(...))` divergia em
  * cêntimos e era exatamente o tipo de diferença que ninguém consegue explicar.
+ * Os dois ecrãs partilham a MESMA expressão (`firstrowFeeOf`) para que isso
+ * seja verdade por construção, e não por as duas cópias coincidirem.
  */
 
 /** O passo do eixo do tempo. Amarrado ao período — ver `PERIODS`. */
@@ -797,8 +1114,6 @@ function bucketOf(column: AnyPgColumn, unit: BucketUnit): SQL<string> {
   return sql<string>`to_char(date_trunc('${unidade}', ${column} at time zone 'UTC' at time zone 'Europe/Lisbon'), 'YYYY-MM-DD')`;
 }
 
-const paidTicket = inArray(tickets.status, ["issued", "used"]);
-
 // ── Receita por período, canal a canal ──────────────────────────────────────
 
 export type RevenueBucket = {
@@ -842,9 +1157,10 @@ export async function getRevenueByPeriod(
   const start = periodStart(period, now);
   const mine = inChannelScope(scope);
 
-  // A comissão de cada transação, arredondada uma a uma antes de somar.
-  const feeOf = (priceColumn: AnyPgColumn) =>
-    sql<number>`coalesce(sum(round(${priceColumn} * ${pct}::numeric / 100)), 0)`.mapWith(Number);
+  // A MESMA expressão de comissão que o extrato usa (`firstrowFeeOf`), e não
+  // uma cópia: é essa partilha que faz a identidade entre os dois ecrãs bater
+  // ao cêntimo por construção, em vez de por coincidência.
+  const feeOf = (priceColumn: AnyPgColumn) => firstrowFeeOf(priceColumn, pct);
 
   const [ppvRows, ticketRows] = await Promise.all([
     db

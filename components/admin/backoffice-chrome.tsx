@@ -2,7 +2,12 @@
 
 import { usePathname } from "next/navigation";
 import { type BackofficeNavItem, BackofficeShell } from "@/components/ui/backoffice-shell";
-import { type BackofficeGate, gateForPath, SCANNER_PATH } from "@/lib/backoffice-zones";
+import {
+  AGENDA_PATH,
+  type BackofficeGate,
+  gateForPath,
+  SCANNER_PATH,
+} from "@/lib/backoffice-zones";
 import type { Channel } from "@/lib/channels";
 
 /*
@@ -32,6 +37,13 @@ import type { Channel } from "@/lib/channels";
 const NAV: BackofficeNavItem[] = [
   { label: "Dashboard", href: "/admin" },
   { label: "Eventos", href: "/admin/eventos" },
+  /*
+   * A agenda fica encostada a "Eventos" porque é a mesma lista sem valores — e
+   * fica DEPOIS porque, para quem vê as duas (o dono), a de gestão é a que ele
+   * quer. Para quem só opera, esta é a primeira coisa da lista, porque é a
+   * única que sobra além do scanner.
+   */
+  { label: "Agenda", href: AGENDA_PATH },
   { label: "Canais", href: "/admin/canais" },
   { label: "Subscritores", href: "/admin/subscritores" },
   { label: "Pagamentos", href: "/admin/pagamentos" },

@@ -234,6 +234,27 @@ const nextConfig: NextConfig = {
   serverExternalPackages: ["sharp"],
 
   /*
+   * ...MAS o `serverExternalPackages` sozinho não chegou. Com o pnpm, o binário
+   * nativo do `sharp` não vive ao lado do pacote: está em
+   * `.pnpm/@img+sharp-<plat>/node_modules/@img/sharp-<plat>/lib/*.node`, alcançado
+   * por symlink. O tracer de ficheiros da função serverless (`@vercel/nft`) não
+   * segue esses symlinks e a função ia para produção SEM o `.node` do linux — o
+   * `import sharp` rebentava no arranque do módulo e o upload dava 500 cru (sem
+   * corpo JSON), só em produção. Medido: o pipeline do sharp corre local em
+   * macOS sem falha; o 500 é exclusivo da Vercel (linux-x64).
+   *
+   * `outputFileTracingIncludes` obriga a função do upload a levar consigo os
+   * binários do LINUX (glibc x64, que é o que a Vercel corre) — o `sharp` e a
+   * sua `libvips`. Glob por prefixo de diretório para não prender à versão.
+   */
+  outputFileTracingIncludes: {
+    "/api/uploads/canal": [
+      "./node_modules/.pnpm/@img+sharp-linux-x64*/node_modules/@img/sharp-linux-x64/**",
+      "./node_modules/.pnpm/@img+sharp-libvips-linux-x64*/node_modules/@img/sharp-libvips-linux-x64/**",
+    ],
+  },
+
+  /*
    * As imagens de canal vêm do bucket R2, e o `next/image` recusa por omissão
    * tudo o que não esteja aqui. Não é chatice: é o que impede que gravar um
    * `logo_url` apontado a um servidor de fora ponha o nosso optimizador a

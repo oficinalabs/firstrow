@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import sharp from "sharp";
+import type { Sharp } from "sharp";
 import {
   checkImage,
   detectImageFormat,
@@ -13,8 +13,20 @@ import {
 import { newId } from "@/lib/ids";
 import { isImageStorageReady, putImage } from "@/lib/r2";
 import { requireApi } from "@/server/api-guard";
-import { isPlatformAdmin } from "@/server/authz";
+import { getCurrentUser, isPlatformAdmin } from "@/server/authz";
 import { inspectChannel } from "@/server/channel-access";
+
+/*
+ * O `sharp` entra por IMPORT DINÂMICO, não estático no topo. Se o binário nativo
+ * não carregar (ver a nota do `outputFileTracingIncludes` em next.config.ts), um
+ * import estático rebentava o MÓDULO INTEIRO — a rota respondia 500 cru, sem
+ * corpo, antes de o nosso código correr. Dinâmico, a falha é um valor que se
+ * apanha e se explica, em vez de derrubar o handler.
+ */
+async function carregarSharp(bytes: Uint8Array, limitInputPixels: number): Promise<Sharp> {
+  const { default: sharp } = await import("sharp");
+  return sharp(bytes, { limitInputPixels });
+}
 
 /*
  * ============================================================================
@@ -100,7 +112,38 @@ function sharpFormat(format: string | undefined): ImageFormat | null {
   return null;
 }
 
-export async function POST(req: Request) {
+/*
+ * O invólucro público. Existe por uma razão só: em produção houve um 500 CRU
+ * (sem corpo) que a mensagem do cliente não sabia explicar. Uma exceção que
+ * escape a `handleUpload` — o `sharp` a não carregar, uma query a ir abaixo —
+ * é apanhada aqui, registada por inteiro no log, e devolvida com um DETALHE
+ * curto **apenas ao `platform_admin`** (é infra do próprio dono; a mais ninguém
+ * sai nada além da mensagem genérica). Sem isto, o erro real morria no servidor
+ * e não havia como o ler sem acesso aos logs da Vercel.
+ */
+export async function POST(req: Request): Promise<Response> {
+  try {
+    return await handleUpload(req);
+  } catch (error) {
+    console.error("[uploads] exceção não tratada:", error);
+    let detail: string | undefined;
+    try {
+      const user = await getCurrentUser();
+      if (isPlatformAdmin(user)) {
+        detail = error instanceof Error ? `${error.name}: ${error.message}` : String(error);
+      }
+    } catch {
+      // Ler a sessão pode falhar se for ela a origem do erro — não faz mal, o
+      // detalhe fica de fora e resta a mensagem genérica.
+    }
+    return NextResponse.json(
+      { error: "Não conseguimos processar a imagem. Tenta outra vez daqui a pouco.", detail },
+      { status: 500 },
+    );
+  }
+}
+
+async function handleUpload(req: Request): Promise<Response> {
   /*
    * Sem R2 configurado responde-se 503 e diz-se porquê. Não é 500: não há avaria
    * nenhuma — há uma capacidade desligada, que é exactamente o que o
@@ -201,7 +244,7 @@ export async function POST(req: Request) {
    *  2. `limitInputPixels` é a rede por baixo, para o caso de o `sharp` ter de
    *     tocar nos dados na mesma.
    */
-  const image = sharp(bytes, { limitInputPixels: MAX_INPUT_PIXELS });
+  const image = await carregarSharp(bytes, MAX_INPUT_PIXELS);
 
   let width: number | undefined;
   let height: number | undefined;

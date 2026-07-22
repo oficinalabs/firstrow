@@ -204,7 +204,15 @@ export function EventEconomics({
           rows={rows}
           rowKey={(r) => r.eventId}
           footer={
-            <TableRow className="border-t-2 border-border font-semibold hover:bg-transparent">
+            /*
+             * Fundo `bg-muted`, NÃO uma borda superior. O `footer` é renderizado
+             * como último `<tr>` do `TableBody`, e este tem
+             * `[&_tr:last-child]:border-0` — que zera qualquer `border-t` posto
+             * aqui, deixando o total a ler-se como uma linha normal. O fundo
+             * cinza é o mesmo tratamento (medido) da tabela principal do extrato.
+             * O `hover:bg-muted` impede que passar o rato o "apague".
+             */
+            <TableRow className="bg-muted font-semibold hover:bg-muted">
               <TableCell>Total</TableCell>
               {channels.many ? <TableCell /> : null}
               <TableCell numeric>{formatNumber(rows.reduce((n, r) => n + r.buyers, 0))}</TableCell>

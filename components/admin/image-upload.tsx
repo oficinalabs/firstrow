@@ -196,7 +196,7 @@ export function ImageUpload({
 
     xhr.onload = () => {
       xhrRef.current = null;
-      const payload = xhr.response as { url?: string; error?: string } | null;
+      const payload = xhr.response as { url?: string; error?: string; detail?: string } | null;
 
       if (xhr.status === 201 && payload?.url) {
         setStatus("idle");
@@ -209,7 +209,11 @@ export function ImageUpload({
         return;
       }
 
-      fail(payload?.error ?? "Não conseguimos guardar a imagem. Tenta outra vez daqui a pouco.");
+      // `detail` só vem preenchido para o platform_admin (ver a rota) — serve
+      // para diagnosticar em produção sem abrir a consola. Anexa-se à mensagem.
+      const base =
+        payload?.error ?? "Não conseguimos guardar a imagem. Tenta outra vez daqui a pouco.";
+      fail(payload?.detail ? `${base} [${payload.detail}]` : base);
     };
 
     xhr.onerror = () => {
